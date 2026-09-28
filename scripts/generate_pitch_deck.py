@@ -823,7 +823,7 @@ Key Takeaway for Judges:
     # ==========================================
     s9 = prs.slides.add_slide(blank_layout)
     add_background(s9, alt=False)
-    add_header(s9, "REVENUE MODEL & TOKEN FLYWHEEL", "Protocol monetization driving staker yields & token burns.", "Automated on-chain fee distribution paired with developer-driven spot buybacks.", "staker yields & token burns.")
+    add_header(s9, "REVENUE MODEL & TOKEN FLYWHEEL", "Protocol monetization driving staker yields & 30% token burns.", "Automated on-chain fee distribution paired with 30% revenue buyback & burn.", "30% token burns.")
 
     rev_cards = [
         ("💰 3 Protocol Inflows", "Automated Monetization", [
@@ -836,13 +836,13 @@ Key Takeaway for Judges:
             "50% of Origination Fees: Direct USDC dividend yield to SKR stakers via SkrYieldVault PDA.",
             "85% of Loan Interest: Paid directly into Desk Owner Vaults (100% principal protected).",
             "100% of P2P Loan Interest: Directly transferred to peer funder wallets.",
-            "Treasury PDA Reserve: Collects remaining fees and margins for growth and token burns."
+            "Treasury PDA Reserve: 70% reserved for protocol operations, insurance, and growth."
         ], EMERALD),
-        ("🔥 SKR Buyback & Burn", "Deflationary Token Flywheel", [
-            "Direct Burn: Instant atomic SPL burn for Treasury SKR (zero DEX fees, zero slippage).",
-            "Jupiter Spot Buy & Burn: Treasury USDC/SOL executes open-market buy orders and burns SKR.",
-            "Dynamic Developer Control: Developer chooses exact amount or % based on market conditions.",
-            "Verifiable On-Chain Proof: Public Solscan transaction proof for every burn event."
+        ("🔥 30% Revenue Buy & Burn", "Deflationary Token Flywheel", [
+            "30% Revenue Commitment: 30% of all project revenue is dedicated to buying & burning SKR.",
+            "Jupiter Spot Buy & Burn: Treasury USDC/SOL executes market buy orders on DEX, elevating price floor.",
+            "Direct SPL Burn: Atomically burns Treasury-accumulated SKR with zero slippage and zero fees.",
+            "Verifiable On-Chain Proof: Permanent supply destruction verified with public Solscan proofs."
         ], CYAN)
     ]
     for idx, (title, sub, bullets, col) in enumerate(rev_cards):
@@ -877,10 +877,11 @@ Key Takeaway for Judges:
 "Here is how ClockLend makes money and generates real value:
 1. 3 Automated Inflows: 0.25%-0.50% origination fees, 15% interest take-rate on repayments, and 5% liquidation margins.
 2. Value Distribution: 50% of origination fees flow directly to SKR stakers as USDC dividends. Desk owners keep 85% of interest and 100% of principal.
-3. Deflationary Flywheel: The developer can withdraw profits or execute automated SKR buyback-and-burn via Jupiter DEX or direct atomic burns, permanently decreasing SKR circulating supply on Solscan."
+3. 30% Deflationary Commitment: 30% of all project revenue is used to buy and burn SKR tokens via Jupiter DEX and direct on-chain burns, permanently shrinking circulating supply and rewarding long-term holders."
 Key Business Takeaway:
 - Real cash-flow protocol with no unbacked token emissions.
 - LPs get real yield, stakers get USDC dividends, and SKR supply decreases.""")
+
 
     # ==========================================
     # SLIDE 10: WHY THIS WINS FOR THE ECOSYSTEM

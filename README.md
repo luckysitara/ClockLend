@@ -219,9 +219,11 @@ flowchart TD
     LiquidationFlow -->|95% Collateral| DeskVault
     LiquidationFlow -->|5% Liquidation Margin| Treasury
     
-    Treasury -->|WithdrawTreasury (Tag 14)| DevProfit([Developer / Deployer Wallet])
-    Treasury -->|Atomic Direct Burn| BurnDirect["🔥 Direct SPL Token Burn<br>(Treasury SKR → Destroyed)"]
-    Treasury -->|Jupiter Spot Swap & Burn| BurnJupiter["📈 Spot Market Buy & Burn<br>(Treasury USDC/SOL → SKR → Destroyed)"]
+    Treasury -->|30% Revenue Allocation| BuyBurn["🔥 30% Buyback & Burn Engine<br>(Permanent $SKR Supply Destruction)"]
+    Treasury -->|70% Protocol Allocation| TreasuryReserves["🛡️ 70% Protocol Reserves & Ops<br>(Audits, Insurance & Growth)"]
+    
+    BuyBurn -->|Direct Burn| BurnDirect["Direct SPL Token Burn<br>(Treasury SKR → Destroyed)"]
+    BuyBurn -->|Jupiter Spot Swap| BurnJupiter["Spot Market Buy & Burn<br>(Treasury USDC/SOL → SKR → Destroyed)"]
 ```
 
 #### A. Protocol Revenue Streams (How the Platform Earns)
@@ -236,48 +238,54 @@ flowchart TD
 - **SKR Token Stakers**: Receive **50% of all protocol origination fees** accumulated as a USDC dividend pool inside `SkrYieldVault`. Stakers claim proportional dividends anytime via `ClaimSkrYield` (Tag 17) protected by a 1-hour anti-flash-loan cooldown.
 - **P2P Pawn Funders**: Receive **100% of agreed loan interest** directly to their wallet upon borrower repayment, or 100% of escrowed NFT/custom token collateral on default.
 
-#### C. Developer Profit Withdrawals
-All platform revenue collects safely in the on-chain **Treasury PDA** (`6yY4P4x29kpJKKkwCTFAvJp4uyPuei4NZix8Vs2xL4dq`). The instruction [`process_withdraw_treasury`](program/src/processor.rs#L3540) (**Tag 14**) enforces cryptographic signer authorization by the Admin keypair (`mainnet-deployer.json`).
+#### C. Protocol Treasury Allocation: 30% Buyback & Burn Commitment
+All protocol revenue collects safely in the on-chain **Treasury PDA** (`6yY4P4x29kpJKKkwCTFAvJp4uyPuei4NZix8Vs2xL4dq`). 
 
-The developer can inspect and withdraw accumulated profits to cold storage using [`scripts/withdraw-treasury.mjs`](scripts/withdraw-treasury.mjs):
+To drive relentless deflation and long-term value accrual for the $SKR token, **30% of all project revenue is used to buy and burn the $SKR token**:
+
+- **🔥 30% Dedicated SKR Buyback & Burn**: Systematically deployed to absorb circulating $SKR supply off the open market (via Jupiter DEX) or burn accumulated SKR directly from the Treasury PDA.
+- **🛡️ 70% Protocol Reserves & Operations**: Dedicated to protocol security, insurance reserves, ongoing development, and liquidity bootstrapping.
+
+The protocol operations engine executes the 30% buyback and burn via [`scripts/burn-skr.mjs`](scripts/burn-skr.mjs):
+
+1. **Mode 1: Direct Burn (Zero DEX Fees & Zero Slippage)**:
+   - When borrowers pay origination fees in SKR, or when defaulted SKR collateral is liquidated (5% protocol margin), SKR accumulates directly in the Treasury PDA.
+   - The CLI script bundles `WithdrawTreasury` and SPL Token `Burn` into a **single atomic transaction**. The tokens are permanently destroyed on-chain without any DEX slippage.
+   ```bash
+   # Burn 30% of Treasury SKR holdings atomically
+   node scripts/burn-skr.mjs --direct --pct 30 --network mainnet
+
+   # Or burn a fixed SKR amount
+   node scripts/burn-skr.mjs --direct --amount 5000 --network mainnet
+   ```
+
+2. **Mode 2: Buy & Burn (Spot Market Buy via Jupiter DEX Aggregator)**:
+   - Allocates 30% of accumulated Treasury USDC or SOL to execute spot market buy orders via the **Jupiter v1 Swap API**, creating direct buy volume on the SKR market.
+   - Automatically executes the SPL Token `Burn` instruction on 100% of acquired SKR tokens, publishing verified Solscan proof links.
+   ```bash
+   # Use 30% of Treasury USDC to buy & burn SKR on DEX
+   node scripts/burn-skr.mjs --buy --token usdc --pct 30 --network mainnet
+
+   # Use 30% of Treasury SOL to buy & burn SKR on DEX
+   node scripts/burn-skr.mjs --buy --token sol --pct 30 --network mainnet
+
+   # Or specify an exact dollar amount
+   node scripts/burn-skr.mjs --buy --token usdc --amount 250 --network mainnet
+   ```
+
+#### D. Protocol Reserves & Treasury Withdrawals
+The remaining 70% of Treasury capital can be managed and withdrawn to secure operational accounts or cold storage using [`scripts/withdraw-treasury.mjs`](scripts/withdraw-treasury.mjs):
 ```bash
 # Check Treasury balance
 node scripts/withdraw-treasury.mjs --status --network mainnet
 
-# Withdraw USDC profit to developer wallet or cold storage
+# Withdraw USDC profit to operational wallet or cold storage
 node scripts/withdraw-treasury.mjs --amount 500 --token usdc --dest <WALLET> --network mainnet
 
 # Withdraw native SOL profit
 node scripts/withdraw-treasury.mjs --amount 2.5 --token sol --dest <WALLET> --network mainnet
 ```
 
-#### D. Dynamic Developer-Driven SKR Buyback & Burn Engine
-To drive continuous deflation and token value accrual, the developer dynamically allocates profits to burn SKR using [`scripts/burn-skr.mjs`](scripts/burn-skr.mjs). The developer has 100% discretion over timing, asset, and percentage/amount:
-
-1. **Mode 1: Direct Burn (Zero DEX Fees & Zero Slippage)**:
-   - When borrowers pay origination fees in SKR, or when defaulted SKR collateral is liquidated (5% protocol margin), SKR accumulates directly in the Treasury PDA.
-   - The CLI script bundles `WithdrawTreasury` and SPL Token `Burn` into a **single atomic transaction**. The tokens are permanently destroyed on-chain without any DEX slippage.
-   ```bash
-   # Burn 5,000 SKR directly from Treasury PDA
-   node scripts/burn-skr.mjs --direct --amount 5000 --network mainnet
-
-   # Burn 50% of whatever SKR is currently in the Treasury
-   node scripts/burn-skr.mjs --direct --pct 50 --network mainnet
-   ```
-
-2. **Mode 2: Buy & Burn (Spot Market Buy via Jupiter DEX Aggregator)**:
-   - Uses accumulated Treasury USDC or SOL to execute spot market buy orders via the **Jupiter v1 Swap API**, creating direct market buy volume for SKR.
-   - Automatically executes the SPL Token `Burn` instruction on 100% of acquired SKR tokens, publishing verified Solscan proof links.
-   ```bash
-   # Use $250 USDC from Treasury to buy & burn SKR
-   node scripts/burn-skr.mjs --buy --token usdc --amount 250 --network mainnet
-
-   # Use 25% of all Treasury USDC to buy & burn SKR
-   node scripts/burn-skr.mjs --buy --token usdc --pct 25 --network mainnet
-
-   # Use 2.0 SOL from Treasury to buy & burn SKR
-   node scripts/burn-skr.mjs --buy --token sol --amount 2.0 --network mainnet
-   ```
 
 #### E. Tier Staking Matrix & Reputation Slashes
 | Tier Level | Required Staked SKR | Maximum Allowed LTV | APR Interest Discount | Credit Rating Boost |
