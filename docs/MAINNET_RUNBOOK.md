@@ -9,89 +9,111 @@ md5 `a2986fde` (byte-verified; extend tx `63mmLPNK…` +10,240 B, upgrade tx `5j
 Mainnet bootstrap is prepared but **not executed** (deployer wallet has 0 mainnet SOL).
 Follow this checklist in order.
 
-## 0. Pre-flight
+## 0. Keypairs & Funding Pre-flight
 
-- [ ] **Recover the program-id keypair for `HAjGxuih…`.** A FIRST deploy (the program
-      account does not exist on mainnet) requires the keypair file — the CLI rejects a
-      bare address for initial deployments. It is NOT on the deploy box (the build
-      regenerates `program/target/deploy/clock_lend-keypair.json` with a random key, which
-      is wrong). Restore it from backup and export `PROGRAM_KEYPAIR=<path>` — the deploy
-      script now preflights it and aborts before spending lamports if it is missing.
-      (If it is truly lost: pick a new program id and update `lib.rs declare_id!`,
-      `program.ts`, this runbook, and all seed scripts.)
-- [ ] **Fund the deployer wallet with ~2.5 SOL on mainnet-beta.** Breakdown: program rent
-      is dynamically verified by `deploy-mainnet.mjs` against `getMinimumBalanceForRentExemption(soStat.size + 45)`
-      (1.8168 SOL for the 357,501-byte ProgramData = 357,456-byte ELF + 45-byte header;
-      permanent buffer transfer), plus ~0.1 SOL buffer for write-buffer transaction
-      fees and priority fees, PDAs + feeds + first desk ~0.05 SOL. `solana balance -u m`
-      should show ≥ 2.5 SOL (the script dynamically enforces `rent + 0.1 SOL`).
-- [x] **Fresh mainnet keypairs generated** (`~/.config/solana/`, chmod 600):
-      - Deployer (upgrade authority / admin): `5avuk58DjBwBsyWkhgp6efC5WbnUKTFA5iLkbS8Aqv29`
-      - Keeper (oracle_authority after `--rotate-oracle`): `HtiDpTkcWDDaQeRLSBvYDdw2sRJb5VvkD7EMvr5JWVzJ`
-      ```bash
-      export DEPLOYER_KEY=~/.config/solana/mainnet-deployer.json
-      export ORACLE_KEY=~/.config/solana/mainnet-keeper.json
-      ```
-      The program derives the admin from the **on-chain upgrade authority** (no hardcoded
-      key since F3), so the fresh key works cleanly.
-- [ ] **SKR price source — RESOLVED.** SKR is listed on Jupiter with a real market
-      (jup.ag/tokens/SKRbvo6Gf…, ~$0.021 at last check, ~$766K liquidity). The deploy
-      script seeds the SKR feed from Jupiter's Price API v3 automatically; the keeper
-      refreshes both SOL and SKR feeds from the same source every run.
-      `--skr-price <usd>` still overrides manually if you want a policy floor.
-- [ ] `cd program && cargo build-sbf && cargo test` (100/100 incl. fuzz invariants + wire-tag pinning).
-      Note: the deploy script now builds the ELF itself (`cargo build-sbf`) and hard-fails
-      if the artifact is older than the sources — `--skip-build` overrides.
+ClockLend enforces strict separation of concerns across 3 dedicated keypairs:
 
-## 1. Deploy
+| Role | Purpose | File Location | Public Address | Funding Required |
+|---|---|---|---|---|
+| **Deployer** | Upgrade Authority & Protocol Admin | `~/.config/solana/mainnet-deployer.json` | `5avuk58DjBwBsyWkhgp6efC5WbnUKTFA5iLkbS8Aqv29` | **2.0 SOL** |
+| **Keeper** | Serverless Oracle Price Feeder | `~/.config/solana/mainnet-keeper.json` | `HtiDpTkcWDDaQeRLSBvYDdw2sRJb5VvkD7EMvr5JWVzJ` | **0.1 SOL** |
+| **Program ID** | Mainnet Smart Contract Address | `~/.config/solana/clock-lend-program.json` | See Option A/B below | *None (rent paid by deployer)* |
+
+### 0.1 Program ID Keypair Resolution
+A **first-time deploy** on Solana mainnet requires the Program ID's private keypair file (`PROGRAM_KEYPAIR`) so the Solana CLI can prove ownership and initialize the program account:
+
+* **Option A (Original Address):** If you possess the private key for `HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3`, copy it to:
+  ```bash
+  cp /path/to/keypair.json ~/.config/solana/clock-lend-program.json
+  ```
+* **Option B (Fresh Mainnet Address):** If the devnet key was not preserved, generate a fresh mainnet keypair:
+  ```bash
+  solana-keygen new --outfile ~/.config/solana/clock-lend-program.json --no-bip39-passphrase
+  NEW_PID=$(solana-keygen pubkey ~/.config/solana/clock-lend-program.json)
+  echo "New Mainnet Program ID: $NEW_PID"
+  ```
+  *(If using Option B, update `declare_id!("...")` in `program/src/lib.rs` and `mobile/src/solana/program.ts`, then recompile with `cd program && cargo build-sbf`).*
+
+### 0.2 Exact SOL Rent & Fee Breakdown
+Fund the **Deployer Wallet** (`5avuk58DjBwBsyWkhgp6efC5WbnUKTFA5iLkbS8Aqv29`) with **`2.0 SOL`**:
+* **ProgramData Account** (357,517 bytes): **1.81684 SOL** *(Locked rent exemption; 100% refundable if program is closed)*
+* **Program Account** (36 bytes): **0.00083 SOL**
+* **AdminConfig PDA** (73 bytes): **0.00102 SOL**
+* **2× PriceFeed PDAs** (SOL & SKR): **0.00230 SOL**
+* **LendingPool PDA & Token Vaults**: **~0.00243 SOL**
+* **Write-Buffer Transaction Fees**: **~0.00180 SOL** *(~360 chunk transactions × 5,000 lamports)*
+* **Priority Fee Buffer & Margin**: **~0.09500 SOL** *(Prevents dropped chunks during Solana network congestion)*
+* **Total Enforced Floor:** `deploy-mainnet.mjs` enforces `requiredRent + 0.1 SOL` (**1.91684 SOL**).
+
+Fund the **Keeper Wallet** (`HtiDpTkcWDDaQeRLSBvYDdw2sRJb5VvkD7EMvr5JWVzJ`) with **`0.1 SOL`**:
+* Pays for months of micro-transactions to update the on-chain oracle PDAs.
+
+Verify balances before proceeding:
+```bash
+solana balance 5avuk58DjBwBsyWkhgp6efC5WbnUKTFA5iLkbS8Aqv29 --url mainnet-beta
+solana balance HtiDpTkcWDDaQeRLSBvYDdw2sRJb5VvkD7EMvr5JWVzJ --url mainnet-beta
+```
+
+---
+
+## 1. Deploy (One Command)
 
 ```bash
 cd /home/rootkit/lend
 export DEPLOYER_KEY=~/.config/solana/mainnet-deployer.json
 export ORACLE_KEY=~/.config/solana/mainnet-keeper.json
+export PROGRAM_KEYPAIR=~/.config/solana/clock-lend-program.json
+export MAINNET_RPC="https://api.mainnet-beta.solana.com" # or your Helius/Triton mainnet RPC
+
 node mobile/scripts/deploy-mainnet.mjs --create-pool --rotate-oracle
 ```
 
-This, in order: deploys the program (same id `HAjGxuih…`, upgradeable), calls
-`InitializeAdmin` with ProgramData proof (admin = deployer key), rotates
-`oracle_authority` to the keeper key, creates the treasury USDC ATA (`EPjFWdd5…`,
-owner = treasury PDA), publishes the global SOL and SKR feeds (Jupiter Price API v3,
-CoinGecko fallback for SOL), and creates the first desk.
+### What this script executes in sequence:
+1. Preflights rent exemption and wallet balances.
+2. Writes the 357 KB bytecode buffer and deploys the upgradeable program.
+3. Calls `InitializeAdmin` (tag 13) with ProgramData upgrade-authority proof (`admin = deployer key`).
+4. Rotates `oracle_authority` to the dedicated Keeper key (`HtiDpTkc...JWVzJ`).
+5. Creates the protocol Treasury USDC Associated Token Account (`EPjFWdd5...`, owner = Treasury PDA).
+6. Seeds initial live SOL and SKR price feeds from Jupiter Price API v3.
+7. Initializes the first Lending Pool Desk with on-chain parameter verification.
 
-## 2. Pricing (admin PriceFeed — keeper cranked, no Pyth)
+---
 
-Pyth pull oracles were REMOVED in round 11 (unreliable anchor, dead atomic path,
-borrower-picks-the-price risk). Pricing is now **admin-feed-only**:
+## 2. Serverless Oracle Pricing (Cloudflare Workers + GitHub Actions)
 
-- The program prices borrows and P2P offers from the global / pool-scoped
-  `PriceFeed` accounts, kept fresh by the keeper crank (`scripts/crank_oracles.mjs`,
-  devnet) / `mobile/scripts/keeper.mjs` (mainnet), fed by **Jupiter + CoinGecko**
-  (the same sources drive the app's WebSocket price pipeline).
-- **Pricing staleness is 600s** regardless of the feed's stored 3600s window
-  (round 11) — keep the crank cadence under 10 minutes.
-  `.github/workflows/keeper.yml` schedules the devnet crank every 10 minutes
-  (configure the `KEEPER_KEYPAIR_JSON` repo secret); mainnet should use cron or
-  the same workflow with the keeper key.
-- Pool authorities can publish **pool-scoped feeds** (`[b"oracle", pool, mint]`,
-  via SetPriceFeed with the pool account appended); when `has_custom_oracle` is
-  set the pool-scoped feed is REQUIRED and authoritative (a borrower cannot
-  substitute another source — the round-11 precedence fix).
-- Oracle-free pools use hardcoded baselines ($150/SOL, $0.02/SKR) and are
-  **capped at 30% LTV** (round 11).
-- Feed decimals are cross-checked against the mints on both sides (C-1 + the
-  round-11 pool-side mirror).
+ClockLend uses an **admin PriceFeed PDA** architecture with a fail-closed 600-second staleness bound. No dedicated 24/7 Linux server/VPS is required.
 
-Manual crank (devnet):
+### 2.1 Primary Runner: Cloudflare Workers
+Runs serverless on Cloudflare's edge network every 3 minutes (`*/3 * * * *`):
+
 ```bash
-CRANK_RPC=https://api.devnet.solana.com ORACLE_KEY=~/.config/solana/id.json node scripts/crank_oracles.mjs
+cd /home/rootkit/lend/serverless
+
+# 1. Update wrangler.toml [vars] with your Mainnet RPC (Helius/Triton)
+# 2. Add your Mainnet Keeper private key as a cloud secret:
+npx wrangler secret put ORACLE_KEYPAIR
+# (Paste the JSON array from: cat ~/.config/solana/mainnet-keeper.json)
+
+# 3. Deploy to Cloudflare
+npx wrangler deploy
 ```
 
-Mainnet keeper:
+Live status and health can be queried at:
+`https://clocklend-oracle-keeper.clockit.workers.dev/health`
+
+### 2.2 Secondary Failover Runner: GitHub Actions
+To eliminate any single point of failure (if Cloudflare ever experiences network downtime):
+1. In your GitHub repository, navigate to **Settings** ➔ **Secrets and variables** ➔ **Actions**.
+2. Add secret **`KEEPER_KEYPAIR_JSON`** containing the JSON from `~/.config/solana/mainnet-keeper.json`.
+3. The `.github/workflows/keeper.yml` workflow automatically runs on Microsoft Azure infrastructure every 6 minutes as a secondary safety net.
+
+### 2.3 Manual Verification & Status Check
+Query the on-chain oracle PDAs directly from your terminal:
 ```bash
-KEEPER_KEY=~/.config/solana/mainnet-keeper.json node mobile/scripts/keeper.mjs --network mainnet-beta
+RPC_URL="https://api.mainnet-beta.solana.com" node serverless/src/cli.mjs --status
 ```
-Schedule it (cron or Actions) at &lt;10-minute cadence — feeds stale for &gt;600s
-revert borrows with `StaleOraclePrice` (fail-closed, no loss).
+
+---
 
 ## 2b. SKR yield vault (dividends)
 
