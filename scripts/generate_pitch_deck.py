@@ -819,15 +819,79 @@ Key Takeaway for Judges:
 - Merchants stake SKR to earn trusted merchant badges.""")
 
     # ==========================================
-    # SLIDE 9: WHY THIS WINS FOR THE ECOSYSTEM
+    # SLIDE 9: REVENUE MODEL & VALUE ACCRUAL
     # ==========================================
     s9 = prs.slides.add_slide(blank_layout)
     add_background(s9, alt=False)
-    add_header(s9, "ECOSYSTEM IMPACT", "A lending layer for the Seeker social graph.", "Creating structural demand for SKR while delivering the flagship consumer lending dApp.", "Seeker social graph")
+    add_header(s9, "REVENUE MODEL & TOKEN FLYWHEEL", "Protocol monetization driving staker yields & token burns.", "Automated on-chain fee distribution paired with developer-driven spot buybacks.", "staker yields & token burns.")
+
+    rev_cards = [
+        ("💰 3 Protocol Inflows", "Automated Monetization", [
+            "Loan Origination Fees: 0.25% on SOL, 0.50% on USDC/SKR withheld upfront at disbursement.",
+            "15% Interest Take-Rate: Diverted automatically from borrower repayments to Treasury PDA.",
+            "5% Liquidation Margin: Captured on seized collateral when defaults exceed 24h grace.",
+            "Zero Float / Macro-Free: Enforced deterministically in native SBF Rust contract."
+        ], GOLD),
+        ("⚖️ On-Chain Fee Routing", "Decentralized Value Split", [
+            "50% of Origination Fees: Direct USDC dividend yield to SKR stakers via SkrYieldVault PDA.",
+            "85% of Loan Interest: Paid directly into Desk Owner Vaults (100% principal protected).",
+            "100% of P2P Loan Interest: Directly transferred to peer funder wallets.",
+            "Treasury PDA Reserve: Collects remaining fees and margins for growth and token burns."
+        ], EMERALD),
+        ("🔥 SKR Buyback & Burn", "Deflationary Token Flywheel", [
+            "Direct Burn: Instant atomic SPL burn for Treasury SKR (zero DEX fees, zero slippage).",
+            "Jupiter Spot Buy & Burn: Treasury USDC/SOL executes open-market buy orders and burns SKR.",
+            "Dynamic Developer Control: Developer chooses exact amount or % based on market conditions.",
+            "Verifiable On-Chain Proof: Public Solscan transaction proof for every burn event."
+        ], CYAN)
+    ]
+    for idx, (title, sub, bullets, col) in enumerate(rev_cards):
+        cx = 0.8 + idx * 4.0
+        add_card(s9, cx, 1.85, 3.733, 4.95, glow=(idx == 2))
+        tb = s9.shapes.add_textbox(Inches(cx + 0.2), Inches(2.05), Inches(3.333), Inches(4.55))
+        tf = tb.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.text = title
+        p.font.size = Pt(18)
+        p.font.bold = True
+        p.font.color.rgb = col
+        p.font.name = FONT_HEADING
+
+        p_s = tf.add_paragraph()
+        p_s.text = sub
+        p_s.font.size = Pt(11)
+        p_s.font.bold = True
+        p_s.font.color.rgb = TEXT_WHITE
+        p_s.space_before = Pt(2)
+
+        for b in bullets:
+            pb = tf.add_paragraph()
+            pb.space_before = Pt(10)
+            r = pb.add_run()
+            r.text = "• " + b
+            r.font.size = Pt(11.5)
+            r.font.color.rgb = TEXT_SUB
+
+    add_notes(s9, """PRESENTER NOTES (Slide 9):
+"Here is how ClockLend makes money and generates real value:
+1. 3 Automated Inflows: 0.25%-0.50% origination fees, 15% interest take-rate on repayments, and 5% liquidation margins.
+2. Value Distribution: 50% of origination fees flow directly to SKR stakers as USDC dividends. Desk owners keep 85% of interest and 100% of principal.
+3. Deflationary Flywheel: The developer can withdraw profits or execute automated SKR buyback-and-burn via Jupiter DEX or direct atomic burns, permanently decreasing SKR circulating supply on Solscan."
+Key Business Takeaway:
+- Real cash-flow protocol with no unbacked token emissions.
+- LPs get real yield, stakers get USDC dividends, and SKR supply decreases.""")
+
+    # ==========================================
+    # SLIDE 10: WHY THIS WINS FOR THE ECOSYSTEM
+    # ==========================================
+    s10 = prs.slides.add_slide(blank_layout)
+    add_background(s10, alt=True)
+    add_header(s10, "ECOSYSTEM IMPACT", "A lending layer for the Seeker social graph.", "Creating structural demand for SKR while delivering the flagship consumer lending dApp.", "Seeker social graph")
 
     # Left: For SKR
-    add_card(s9, 0.8, 1.85, 5.7, 4.9, glow=False)
-    tb_skr = s9.shapes.add_textbox(Inches(1.05), Inches(2.05), Inches(5.2), Inches(4.5))
+    add_card(s10, 0.8, 1.85, 5.7, 4.9, glow=False)
+    tb_skr = s10.shapes.add_textbox(Inches(1.05), Inches(2.05), Inches(5.2), Inches(4.5))
     tf_skr = tb_skr.text_frame
     tf_skr.word_wrap = True
     p = tf_skr.paragraphs[0]
@@ -857,8 +921,8 @@ Key Takeaway for Judges:
         r_d.font.color.rgb = TEXT_SUB
 
     # Right: For Seeker
-    add_card(s9, 6.833, 1.85, 5.7, 4.9, glow=True)
-    tb_sk = s9.shapes.add_textbox(Inches(7.083), Inches(2.05), Inches(5.2), Inches(4.5))
+    add_card(s10, 6.833, 1.85, 5.7, 4.9, glow=True)
+    tb_sk = s10.shapes.add_textbox(Inches(7.083), Inches(2.05), Inches(5.2), Inches(4.5))
     tf_sk = tb_sk.text_frame
     tf_sk.word_wrap = True
     p = tf_sk.paragraphs[0]
@@ -887,22 +951,22 @@ Key Takeaway for Judges:
         r_d.font.size = Pt(11.5)
         r_d.font.color.rgb = TEXT_SUB
 
-    add_notes(s9, """PRESENTER NOTES (Slide 9):
+    add_notes(s10, """PRESENTER NOTES (Slide 10):
 "The ecosystem case: ClockLend turns SKR from a holding into a working asset — staked for discounts, locked as collateral, priced by Pyth. And it gives every Seeker wallet a portable credit history — the missing primitive for the social graph Solana Mobile is building."
 Key Ecosystem Takeaway:
 - Seeker needs real utility dApps that can't exist on Apple/Google App Stores.
 - ClockLend leverages Seed Vault, MWA, and NFC hardware features.""")
 
     # ==========================================
-    # SLIDE 10: THE ASK & COMMITMENTS
+    # SLIDE 11: THE ASK & COMMITMENTS
     # ==========================================
-    s10 = prs.slides.add_slide(blank_layout)
-    add_background(s10, alt=True)
-    add_header(s10, "THE ASK & COMMITMENTS", "Two prizes. One launch.", "A clear, actionable plan to take ClockLend from hackathon winner to Seeker essential.", "One launch")
+    s11 = prs.slides.add_slide(blank_layout)
+    add_background(s11, alt=False)
+    add_header(s11, "THE ASK & COMMITMENTS", "Two prizes. One launch.", "A clear, actionable plan to take ClockLend from hackathon winner to Seeker essential.", "One launch")
 
     # Left: What We Ask
-    add_card(s10, 0.8, 1.85, 5.7, 4.9, glow=False)
-    tb_ask = s10.shapes.add_textbox(Inches(1.05), Inches(2.1), Inches(5.2), Inches(4.4))
+    add_card(s11, 0.8, 1.85, 5.7, 4.9, glow=False)
+    tb_ask = s11.shapes.add_textbox(Inches(1.05), Inches(2.1), Inches(5.2), Inches(4.4))
     tf_ask = tb_ask.text_frame
     tf_ask.word_wrap = True
     p = tf_ask.paragraphs[0]
@@ -931,8 +995,8 @@ Key Ecosystem Takeaway:
         r_d.font.color.rgb = TEXT_SUB
 
     # Right: What We Deliver
-    add_card(s10, 6.833, 1.85, 5.7, 4.9, glow=True)
-    tb_del = s10.shapes.add_textbox(Inches(7.083), Inches(2.1), Inches(5.2), Inches(4.4))
+    add_card(s11, 6.833, 1.85, 5.7, 4.9, glow=True)
+    tb_del = s11.shapes.add_textbox(Inches(7.083), Inches(2.1), Inches(5.2), Inches(4.4))
     tf_del = tb_del.text_frame
     tf_del.word_wrap = True
     p = tf_del.paragraphs[0]
@@ -961,24 +1025,24 @@ Key Ecosystem Takeaway:
         r_d.font.size = Pt(11)
         r_d.font.color.rgb = TEXT_SUB
 
-    add_notes(s10, """PRESENTER NOTES (Slide 10):
+    add_notes(s11, """PRESENTER NOTES (Slide 11):
 "The ask is specific: a grand prize and the SKR integration prize. What you get in return is equally specific: a published Seeker app, seeded mainnet desks, and a borrower community — the lending layer for the social graph Solana Mobile is building."
 Key Closing Points:
 - Ready to ship on day one of Seeker retail deliveries.
 - Full mainnet deployment already verified.""")
 
     # ==========================================
-    # SLIDE 11: CLOSING & LIVE DEMO
+    # SLIDE 12: CLOSING & LIVE DEMO
     # ==========================================
-    s11 = prs.slides.add_slide(blank_layout)
-    add_background(s11, alt=False)
+    s12 = prs.slides.add_slide(blank_layout)
+    add_background(s12, alt=True)
 
     # Logo
     if os.path.exists(logo_path):
-        s11.shapes.add_picture(logo_path, Inches(5.666), Inches(1.0), width=Inches(2.0), height=Inches(2.0))
+        s12.shapes.add_picture(logo_path, Inches(5.666), Inches(1.0), width=Inches(2.0), height=Inches(2.0))
 
     # Title & Tagline
-    tbox_c = s11.shapes.add_textbox(Inches(1.5), Inches(3.1), Inches(10.333), Inches(1.3))
+    tbox_c = s12.shapes.add_textbox(Inches(1.5), Inches(3.1), Inches(10.333), Inches(1.3))
     tf_c = tbox_c.text_frame
     tf_c.word_wrap = True
     p = tf_c.paragraphs[0]
@@ -1007,8 +1071,8 @@ Key Closing Points:
     r_sub.font.name = FONT_HEADING
 
     # Verification Info Card
-    add_card(s11, 2.0, 4.4, 9.333, 1.6, glow=True, fill_color=RGBColor(16, 45, 60))
-    tb_info = s11.shapes.add_textbox(Inches(2.2), Inches(4.45), Inches(8.933), Inches(1.5))
+    add_card(s12, 2.0, 4.4, 9.333, 1.6, glow=True, fill_color=RGBColor(16, 45, 60))
+    tb_info = s12.shapes.add_textbox(Inches(2.2), Inches(4.45), Inches(8.933), Inches(1.5))
     tf_i = tb_info.text_frame
     tf_i.word_wrap = True
 
@@ -1050,7 +1114,7 @@ Key Closing Points:
     r_tech.font.color.rgb = TEXT_SUB
 
     # Device Invite Bottom Box
-    inv = s11.shapes.add_textbox(Inches(1.5), Inches(6.25), Inches(10.333), Inches(0.5))
+    inv = s12.shapes.add_textbox(Inches(1.5), Inches(6.25), Inches(10.333), Inches(0.5))
     tf_inv = inv.text_frame
     p_inv = tf_inv.paragraphs[0]
     p_inv.alignment = PP_ALIGN.CENTER
@@ -1060,7 +1124,7 @@ Key Closing Points:
     r_inv.font.bold = True
     r_inv.font.color.rgb = GOLD
 
-    add_notes(s11, """PRESENTER NOTES (Slide 11):
+    add_notes(s12, """PRESENTER NOTES (Slide 12):
 "Thank you. The repo is public — the program, the audits, the fuzz suite, the app. And the phone is on the table: let's take a live borrow on mainnet."
 Demo Checklist:
 1. Show Seeker home screen with ClockLend icon.
@@ -1073,4 +1137,7 @@ Demo Checklist:
     print(f"✅ Presentation successfully generated and saved to: {output_path}")
 
 if __name__ == "__main__":
-    create_deck()
+    import sys
+    out = sys.argv[1] if len(sys.argv) > 1 else "docs/ClockLend_Pitch_Deck.pptx"
+    create_deck(out)
+

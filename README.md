@@ -200,25 +200,86 @@ classDiagram
 
 ---
 
-### 4. Economic Engine: SKR Reputation Bond & Protocol Monetization
+### 4. Economic Engine: SKR Reputation Bond, Revenue Model & Buyback-and-Burn
 
-ClockLend is built to drive long-term organic utility and deflationary pressure for the **Solana Mobile Seeker Token ($SKR)**:
+ClockLend is built with a self-sustaining on-chain economic model that generates protocol cash flow while driving organic utility and continuous deflationary pressure for the **Solana Mobile Seeker Token ($SKR)**:
 
 ```mermaid
-graph TD
-    User["Seeker User"] -->|Stake SKR| Bond["Reputation Escrow PDA"]
-    Bond --> Tier["Reputation Tier Assigned"]
-    Tier -->|Standard <1,000 SKR| T1["65% LTV • 0% APR Discount"]
-    Tier -->|Silver 1,000 SKR| T2["75% LTV • 10% APR Discount"]
-    Tier -->|Gold 2,500 SKR| T3["85% LTV • 25% APR Discount"]
-    Tier -->|Diamond 5,000+ SKR| T4["90% LTV • 50% APR Discount • Verified Badge"]
+flowchart TD
+    Borrower([Borrower]) -->|Disbursement| OriginationFee["Loan Origination Fee<br>(0.25% SOL · 0.50% USDC/SKR)"]
     
-    Order["Loan Default Event"] -->|Saturating Slashing| Slash["Slashing Engine"]
-    Slash -->|80% of Staked Bond| Burn["🔥 Burn Address (Deflation)"]
-    Slash -->|20% of Staked Bond| Treas["Protocol Treasury Reserve"]
+    OriginationFee -->|50% Staker Dividend| YieldVault["SKR Yield Vault PDA [b'skr_yield_vault']<br>(USDC Cash Flow to Stakers)"]
+    OriginationFee -->|50% Protocol Cut| Treasury["ClockLend Treasury PDA [b'treasury']"]
+    
+    Borrower -->|Repays Principal + Interest| RepayFlow["Repayment Processor"]
+    RepayFlow -->|100% Principal + 85% Interest| DeskVault["Desk Owner Vault PDA [b'vault']<br>(Real Yield to Liquidity Providers)"]
+    RepayFlow -->|15% Interest Take-Rate| Treasury
+    
+    Borrower -.->|Defaults past 24h Grace| LiquidationFlow["Liquidation / ClaimDefault"]
+    LiquidationFlow -->|95% Collateral| DeskVault
+    LiquidationFlow -->|5% Liquidation Margin| Treasury
+    
+    Treasury -->|WithdrawTreasury (Tag 14)| DevProfit([Developer / Deployer Wallet])
+    Treasury -->|Atomic Direct Burn| BurnDirect["🔥 Direct SPL Token Burn<br>(Treasury SKR → Destroyed)"]
+    Treasury -->|Jupiter Spot Swap & Burn| BurnJupiter["📈 Spot Market Buy & Burn<br>(Treasury USDC/SOL → SKR → Destroyed)"]
 ```
 
-#### Tier Staking Matrix:
+#### A. Protocol Revenue Streams (How the Platform Earns)
+| Revenue Stream | Fee Rate | When Triggered | Destination | Smart Contract Logic |
+| :--- | :--- | :--- | :--- | :--- |
+| **Loan Origination Fee** | **0.25%** (SOL)<br>**0.50%** (USDC/SKR) | Withheld upfront at loan disbursement | **50%** Treasury PDA<br>**50%** SKR Yield Vault | [`processor.rs#L1742-L1827`](program/src/processor.rs#L1742-L1827) |
+| **Interest Take-Rate** | **15%** of interest | Deducted upon borrower loan repayment | **100%** Treasury PDA | [`processor.rs#L2400-L2462`](program/src/processor.rs#L2400-L2462) |
+| **Liquidation Margin** | **5%** of collateral | Claimed if borrower defaults past 24h grace | **100%** Treasury PDA | [`processor.rs#L2952-L2975`](program/src/processor.rs#L2952-L2975) |
+
+#### B. What Happens to the Rest of the Capital?
+- **Lending Desk Owners & LPs**: Receive **100% of their loan principal** and **85% of all loan interest** compounded automatically into their pool vault PDA (`pool.vault_pda`). If a loan defaults past grace, they receive **95% of the seized collateral**. Desk owners can withdraw anytime via `WithdrawLiquidity` (Tag 9).
+- **SKR Token Stakers**: Receive **50% of all protocol origination fees** accumulated as a USDC dividend pool inside `SkrYieldVault`. Stakers claim proportional dividends anytime via `ClaimSkrYield` (Tag 17) protected by a 1-hour anti-flash-loan cooldown.
+- **P2P Pawn Funders**: Receive **100% of agreed loan interest** directly to their wallet upon borrower repayment, or 100% of escrowed NFT/custom token collateral on default.
+
+#### C. Developer Profit Withdrawals
+All platform revenue collects safely in the on-chain **Treasury PDA** (`6yY4P4x29kpJKKkwCTFAvJp4uyPuei4NZix8Vs2xL4dq`). The instruction [`process_withdraw_treasury`](program/src/processor.rs#L3540) (**Tag 14**) enforces cryptographic signer authorization by the Admin keypair (`mainnet-deployer.json`).
+
+The developer can inspect and withdraw accumulated profits to cold storage using [`scripts/withdraw-treasury.mjs`](scripts/withdraw-treasury.mjs):
+```bash
+# Check Treasury balance
+node scripts/withdraw-treasury.mjs --status --network mainnet
+
+# Withdraw USDC profit to developer wallet or cold storage
+node scripts/withdraw-treasury.mjs --amount 500 --token usdc --dest <WALLET> --network mainnet
+
+# Withdraw native SOL profit
+node scripts/withdraw-treasury.mjs --amount 2.5 --token sol --dest <WALLET> --network mainnet
+```
+
+#### D. Dynamic Developer-Driven SKR Buyback & Burn Engine
+To drive continuous deflation and token value accrual, the developer dynamically allocates profits to burn SKR using [`scripts/burn-skr.mjs`](scripts/burn-skr.mjs). The developer has 100% discretion over timing, asset, and percentage/amount:
+
+1. **Mode 1: Direct Burn (Zero DEX Fees & Zero Slippage)**:
+   - When borrowers pay origination fees in SKR, or when defaulted SKR collateral is liquidated (5% protocol margin), SKR accumulates directly in the Treasury PDA.
+   - The CLI script bundles `WithdrawTreasury` and SPL Token `Burn` into a **single atomic transaction**. The tokens are permanently destroyed on-chain without any DEX slippage.
+   ```bash
+   # Burn 5,000 SKR directly from Treasury PDA
+   node scripts/burn-skr.mjs --direct --amount 5000 --network mainnet
+
+   # Burn 50% of whatever SKR is currently in the Treasury
+   node scripts/burn-skr.mjs --direct --pct 50 --network mainnet
+   ```
+
+2. **Mode 2: Buy & Burn (Spot Market Buy via Jupiter DEX Aggregator)**:
+   - Uses accumulated Treasury USDC or SOL to execute spot market buy orders via the **Jupiter v1 Swap API**, creating direct market buy volume for SKR.
+   - Automatically executes the SPL Token `Burn` instruction on 100% of acquired SKR tokens, publishing verified Solscan proof links.
+   ```bash
+   # Use $250 USDC from Treasury to buy & burn SKR
+   node scripts/burn-skr.mjs --buy --token usdc --amount 250 --network mainnet
+
+   # Use 25% of all Treasury USDC to buy & burn SKR
+   node scripts/burn-skr.mjs --buy --token usdc --pct 25 --network mainnet
+
+   # Use 2.0 SOL from Treasury to buy & burn SKR
+   node scripts/burn-skr.mjs --buy --token sol --amount 2.0 --network mainnet
+   ```
+
+#### E. Tier Staking Matrix & Reputation Slashes
 | Tier Level | Required Staked SKR | Maximum Allowed LTV | APR Interest Discount | Credit Rating Boost |
 | :--- | :--- | :--- | :--- | :--- |
 | **Standard** | 0 SKR | 65.0% LTV | 0.0% APR Discount | Base (70 Score) |
@@ -226,13 +287,13 @@ graph TD
 | **Gold** | 2,500 SKR | 85.0% LTV | 25.0% APR Discount | +15 Score (Gold Badge) |
 | **Diamond** | 5,000+ SKR | **90.0% LTV** | **50.0% APR Discount** | +25 Score (Diamond Merchant) |
 
-#### Slashing Invariant:
-When a borrower defaults past both the loan due date and the 24-hour Social Grace period, the on-chain engine executes deterministic slashing:
+When a borrower defaults past the 24-hour Social Grace period, the on-chain engine executes deterministic reputation bond slashing:
 $$\text{Slashed Amount} = \text{staked\_skr} \times 20\%$$
 $$\text{Burn Allocation} = \text{Slashed Amount} \times 80\% \quad (\text{permanently burned})$$
 $$\text{Treasury Allocation} = \text{Slashed Amount} \times 20\% \quad (\text{compensates lender bad debt})$$
 
 ---
+
 
 ## 💻 Core Product Modules
 

@@ -423,7 +423,50 @@
   </div>
 </div>
 
-<!-- 9 · ECOSYSTEM -->
+<!-- 9 · REVENUE MODEL & FLYWHEEL -->
+<div class="slide">
+  <span class="caption animate-in">Revenue Model & Value Accrual</span>
+  <h1 class="h1 animate-in" style="margin-top: 16px;">Protocol monetization driving<br><span class="text-primary">staker yields & token burns.</span></h1>
+  <div class="divider animate-in"></div>
+  <div class="grid-3 animate-in" style="margin-top: 12px;">
+    <div class="card">
+      <h3 class="h3" style="color: var(--c-warning); margin-bottom: 8px;">💰 3 Protocol Inflows</h3>
+      <ul class="bullet-list">
+        <li><strong>Origination Fees:</strong> 0.25% on SOL, 0.50% on USDC/SKR withheld upfront</li>
+        <li><strong>15% Interest Take-Rate:</strong> Diverted automatically from borrower repayments</li>
+        <li><strong>5% Liquidation Margin:</strong> Seized collateral spread on defaulted loans past grace</li>
+        <li>Deterministic native SBF Rust math — zero floating point</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 class="h3 text-primary" style="margin-bottom: 8px;">⚖️ On-Chain Value Split</h3>
+      <ul class="bullet-list">
+        <li><strong>50% Origination Fees:</strong> Direct USDC dividend yield to SKR stakers via Yield Vault PDA</li>
+        <li><strong>85% Loan Interest:</strong> Paid directly into Desk Owner Vaults (100% principal protected)</li>
+        <li><strong>100% P2P Interest:</strong> Direct to peer funder wallets</li>
+        <li><strong>Treasury PDA:</strong> Accumulates reserves for growth & deflation</li>
+      </ul>
+    </div>
+    <div class="card-glow">
+      <h3 class="h3" style="color: #00D4FF; margin-bottom: 8px;">🔥 SKR Buyback & Burn</h3>
+      <ul class="bullet-list">
+        <li><strong>Direct Burn:</strong> Instant atomic burn of Treasury SKR (zero DEX fees, zero slippage)</li>
+        <li><strong>Jupiter Spot Buy & Burn:</strong> Treasury USDC/SOL executes market buy orders & burns SKR</li>
+        <li><strong>Developer Discretion:</strong> Exact amount or % chosen dynamically based on market</li>
+        <li><strong>Verifiable On-Chain:</strong> Solscan transaction proofs published publicly</li>
+      </ul>
+    </div>
+  </div>
+  <div class="notes">
+    <div class="notes-label">Speaker notes</div>
+    Here is how ClockLend makes money and generates real value:
+    1. 3 Automated Inflows: 0.25%-0.50% origination fees, 15% interest take-rate on repayments, and 5% liquidation margins.
+    2. Value Distribution: 50% of origination fees flow directly to SKR stakers as USDC dividends. Desk owners keep 85% of interest and 100% of principal.
+    3. Deflationary Flywheel: The developer can withdraw profits or execute automated SKR buyback-and-burn via Jupiter DEX or direct atomic burns, permanently decreasing SKR circulating supply on Solscan.
+  </div>
+</div>
+
+<!-- 10 · ECOSYSTEM -->
 <div class="slide bg-alt">
   <span class="caption animate-in">Why This Wins For The Ecosystem</span>
   <h1 class="h1 animate-in" style="margin-top: 16px;">A lending layer for the Seeker<br>social graph.</h1>
