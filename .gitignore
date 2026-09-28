@@ -58,6 +58,7 @@ build/
 Tardis/
 .superstack/
 
-# Serverless & Wrangler
+# Serverless & Deployment Cache
 .wrangler/
+.vercel/
 

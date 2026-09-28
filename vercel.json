@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "outputDirectory": "site",
+  "cleanUrls": false,
+  "rewrites": [
+    { "source": "/", "destination": "/site/index.html" },
+    { "source": "/terms", "destination": "/site/terms.html" },
+    { "source": "/terms.html", "destination": "/site/terms.html" },
+    { "source": "/privacy", "destination": "/site/privacy.html" },
+    { "source": "/privacy.html", "destination": "/site/privacy.html" },
+    { "source": "/legal", "destination": "/site/legal.html" },
+    { "source": "/legal.html", "destination": "/site/legal.html" },
+    { "source": "/css/(.*)", "destination": "/site/css/$1" },
+    { "source": "/assets/(.*)", "destination": "/site/assets/$1" },
+    { "source": "/(.*)", "destination": "/site/$1" }
+  ]
+}
