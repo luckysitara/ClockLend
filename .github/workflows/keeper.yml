@@ -1,11 +1,10 @@
-# ClockLend price keeper — refreshes the admin PriceFeeds (the sole pricing
-# source since Pyth was removed). Cadence MUST stay under the 600s pricing
-# staleness bound; 10-minute cron gives ~2x headroom.
-name: ClockLend Keeper
+# ClockLend secondary price keeper (Failover / Backup)
+# Runs on GitHub Actions (Azure infrastructure) to back up Cloudflare Workers.
+name: ClockLend Keeper Backup
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '*/6 * * * *'
   workflow_dispatch: {}
 
 jobs:
@@ -17,11 +16,11 @@ jobs:
         with:
           node-version: '22'
       - name: Install dependencies
-        run: npm --prefix mobile ci --ignore-scripts
+        run: npm --prefix serverless ci
       - name: Run keeper (devnet)
         env:
-          ORACLE_KEY: ${{ secrets.KEEPER_KEYPAIR_JSON }}
-          CRANK_RPC: https://api.devnet.solana.com
-        run: |
-          echo "$ORACLE_KEY" > "$RUNNER_TEMP/oracle.json"
-          NODE_PATH=mobile/node_modules ORACLE_KEY="$RUNNER_TEMP/oracle.json" node scripts/crank_oracles.mjs
+          ORACLE_KEYPAIR: ${{ secrets.KEEPER_KEYPAIR_JSON }}
+          RPC_URL: https://api.devnet.solana.com
+          NETWORK: devnet
+        run: node serverless/src/cli.mjs
+
