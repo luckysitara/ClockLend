@@ -187,3 +187,45 @@ solana program deploy --url mainnet-beta --keypair $DEPLOYER_KEY \
 
 Note the known CLI quirk: `solana program deploy <file>` can appear to no-op; the
 write-buffer + `--buffer` flow is the reliable path.
+
+## 6. Treasury Operations: Profit Withdrawal & SKR Buyback / Burn
+
+Protocol revenue (loan origination fees, 15% interest take-rates, and 5% liquidation margins) accumulates continuously in the **ClockLend Treasury PDA** (`6yY4P4x29kpJKKkwCTFAvJp4uyPuei4NZix8Vs2xL4dq`).
+
+### Inspecting Live Treasury Balances
+```bash
+node scripts/burn-skr.mjs --status --network mainnet
+# Or check raw balances via withdraw-treasury
+node scripts/withdraw-treasury.mjs --status --network mainnet
+```
+
+### Direct Burn (When Treasury holds SKR)
+Defaulters with SKR collateral or borrowers paying fees in SKR deposit SKR directly into the Treasury PDA. Direct Burn atomically withdraws and destroys SKR on-chain without any DEX fees or slippage:
+```bash
+# Burn a specific amount of SKR (e.g. 10,000 SKR)
+node scripts/burn-skr.mjs --direct --amount 10000 --network mainnet
+
+# Burn a percentage of current Treasury SKR (e.g. 50%)
+node scripts/burn-skr.mjs --direct --pct 50 --network mainnet
+```
+
+### Buy & Burn (Using Treasury USDC or SOL via Jupiter DEX)
+Use accumulated USDC or SOL profits to purchase SKR on Jupiter DEX and immediately burn them:
+```bash
+# Spend 100 USDC from Treasury to buy & burn SKR
+node scripts/burn-skr.mjs --buy --token usdc --amount 100 --network mainnet
+
+# Spend 25% of all Treasury USDC to buy & burn SKR
+node scripts/burn-skr.mjs --buy --token usdc --pct 25 --network mainnet
+
+# Spend 1.5 SOL from Treasury to buy & burn SKR
+node scripts/burn-skr.mjs --buy --token sol --amount 1.5 --network mainnet
+```
+
+### Withdrawing Developer Profit to Cold Storage
+To withdraw USDC or SOL directly to a personal wallet, operating account, or multisig:
+```bash
+node scripts/withdraw-treasury.mjs --amount 500 --token usdc --dest <YOUR_WALLET> --network mainnet
+node scripts/withdraw-treasury.mjs --amount 2.5 --token sol --dest <YOUR_WALLET> --network mainnet
+```
+
