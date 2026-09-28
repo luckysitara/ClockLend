@@ -58,3 +58,6 @@ build/
 Tardis/
 .superstack/
 
+# Serverless & Wrangler
+.wrangler/
+

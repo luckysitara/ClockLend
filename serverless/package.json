@@ -1,0 +1,33 @@
+{
+  "name": "clocklend-serverless-oracle",
+  "version": "1.0.0",
+  "description": "Serverless Oracle Crank for ClockLend Protocol (Cloudflare Workers & AWS Lambda)",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test:local": "node src/cli.mjs",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.0",
+    "bs58": "^6.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240925.0",
+    "@types/node": "^26.6.3",
+    "typescript": "^5.6.2",
+    "wrangler": "^3.78.10"
+  },
+  "keywords": [
+    "solana",
+    "oracle",
+    "keeper",
+    "clocklend",
+    "cloudflare-workers",
+    "serverless"
+  ],
+  "license": "UNLICENSED",
+  "private": true
+}
