@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClockLend — Round-9 Audit Report (2026-09-24)</title>
+<style>
+  :root { --bg:#0C1435; --card:#141d47; --text:#e8ecff; --muted:#9aa3cc; --crit:#ff5f6d; --high:#ffb347; --med:#ffd97d; --low:#7fd8ff; --ok:#4ade80; }
+  * { box-sizing: border-box; }
+  body { background:var(--bg); color:var(--text); font-family: system-ui, -apple-system, sans-serif; margin:0; padding:2rem 1rem; line-height:1.5; }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size:1.5rem; margin-bottom:.25rem; }
+  h2 { font-size:1.15rem; margin-top:2rem; border-bottom:1px solid #2a3568; padding-bottom:.4rem; }
+  .sub { color:var(--muted); margin-bottom:1.5rem; }
+  .scores { display:flex; gap:1rem; flex-wrap:wrap; margin:1rem 0; }
+  .score { background:var(--card); border-radius:10px; padding:1rem 1.25rem; min-width:180px; }
+  .score .grade { font-size:2rem; font-weight:700; }
+  .score .label { color:var(--muted); font-size:.85rem; }
+  .badge { display:inline-block; padding:.15rem .6rem; border-radius:999px; font-size:.75rem; font-weight:600; letter-spacing:.03em; }
+  .crit { background:rgba(255,95,109,.15); color:var(--crit); border:1px solid rgba(255,95,109,.4); }
+  .high { background:rgba(255,179,71,.15); color:var(--high); border:1px solid rgba(255,179,71,.4); }
+  .med  { background:rgba(255,217,125,.15); color:var(--med); border:1px solid rgba(255,217,125,.4); }
+  .low  { background:rgba(127,216,255,.15); color:var(--low); border:1px solid rgba(127,216,255,.4); }
+  .ok   { background:rgba(74,222,128,.15); color:var(--ok); border:1px solid rgba(74,222,128,.4); }
+  .finding { background:var(--card); border-radius:10px; padding:1rem 1.25rem; margin:.75rem 0; }
+  .finding h3 { margin:.25rem 0 .4rem; font-size:1rem; }
+  .finding .meta { color:var(--muted); font-size:.8rem; font-family:ui-monospace, monospace; margin-bottom:.4rem; }
+  .finding p { margin:.35rem 0; font-size:.92rem; }
+  .fix { background:#0f1738; border-left:3px solid var(--low); border-radius:6px; padding:.5rem .75rem; font-size:.85rem; }
+  .fix code, .finding code { font-family:ui-monospace, monospace; font-size:.82rem; }
+  .verified { color:var(--ok); font-size:.8rem; }
+  table { border-collapse: collapse; width:100%; font-size:.88rem; }
+  th, td { text-align:left; padding:.45rem .6rem; border-bottom:1px solid #2a3568; vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  code { font-family:ui-monospace, monospace; }
+  ul li { margin:.3rem 0; font-size:.92rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>ClockLend — Round-9 Audit Report</h1>
+<div class="sub">2026-09-24 · scope: NEW uncommitted SKR yield vault + LST feature on top of committed round-8 fix round (52927da) · 3 fresh-eyes agents (program / mobile / ops) + main-loop verification of all criticals &amp; highs</div>
+
+<div class="scores">
+  <div class="score"><div class="grade" style="color:var(--med)">C+</div><div class="label">Program security (core lending B+, yield feature D)</div></div>
+  <div class="score"><div class="grade" style="color:var(--med)">C+</div><div class="label">Program quality/tests</div></div>
+  <div class="score"><div class="grade" style="color:var(--crit)">D+</div><div class="label">Mobile security</div></div>
+  <div class="score"><div class="grade" style="color:var(--med)">C</div><div class="label">Mobile quality</div></div>
+  <div class="score"><div class="grade" style="color:var(--crit)">C−</div><div class="label">Deploy tooling</div></div>
+  <div class="score"><div class="grade" style="color:var(--crit)">FALSE</div><div class="label">ready_for_mainnet</div></div>
+</div>
+
+<h2>Headline</h2>
+<p>The committed round-8 fix round survived intact — <strong>zero regressions</strong> from the new diff. But the new <strong>SKR yield vault is not safe to ship</strong>: the share accounting trusts a cached counter instead of the actual escrowed SKR (drain exploit), and the vault can be re-initialized by anyone to zero all accrued rewards. On top of that, the deploy script would ship a <em>stale</em> program artifact that predates both round-8 hardening and the feature itself.</p>
+
+<h2>Round-8 regression check — all present</h2>
+<table>
+<tr><th>Fix</th><th>Status</th><th>Evidence</th></tr>
+<tr><td>let-bound unpack (AccountBorrowFailed)</td><td class="badge ok">PRESENT</td><td><code>processor.rs:868-881, 2330-2334</code></td></tr>
+<tr><td>oracle-omit bypass closed</td><td class="badge ok">PRESENT</td><td><code>processor.rs:1300-1316</code></td></tr>
+<tr><td>admin-feed decimals cross-check</td><td class="badge ok">PRESENT</td><td><code>processor.rs:1319-1322</code> + P2P twin</td></tr>
+<tr><td>InitializePool USDC allowlist</td><td class="badge ok">PRESENT</td><td><code>processor.rs:436-437</code></td></tr>
+<tr><td>hex32! length assert</td><td class="badge ok">PRESENT</td><td><code>pyth.rs:50-60</code></td></tr>
+<tr><td>Mobile: quorum-aware Pyth attach, blockhash ordering, exact-amount reads, raw-string fields, honest state</td><td class="badge ok">PRESENT</td><td>verified at each site by the mobile agent</td></tr>
+</table>
+
+<h2>Critical findings</h2>
+
+<div class="finding">
+  <span class="badge crit">CRITICAL</span> <span class="badge crit">C-1</span>
+  <h3>Share inflation: cached total_staked_skr + unstake that never decrements = one stake drains the dividend pool</h3>
+  <div class="meta">program/src/processor.rs:3582-3588 (claim sync) · 725-815 (unstake) · 3596-3607 (no-profile branch)</div>
+  <p><code>vault.total_staked_skr</code> is only ever mutated inside <code>process_claim_skr_yield</code>, from <code>profile.staked_skr + locked_skr</code>. <code>process_unstake_skr</code> returns the SKR to the user and never touches the yield vault, and the claim path's no-profile branch keeps earning on the <em>cached</em> <code>position.staked_skr</code>. Exploit: stake X → ClaimSkrYield (registers X shares) → UnstakeSKR (SKR back, shares remain) → repeat with N fresh accounts re-staking the same X → N·X shares against X real escrowed SKR. On the next dividend the attacker's positions claim ~all of it (payout is first-come, capped by the vault token balance); honest stakers receive 0 and their <code>accrued_rewards</code> is silently written off. Cost to the attacker: transaction fees only.</p>
+  <div class="fix">Derive stake from the real SKR escrow token account balance (<code>spl_token::state::Account::unpack(&amp;skr_escrow...)</code>) instead of the cached counter — or at minimum decrement <code>vault.total_staked_skr</code> in <code>process_unstake_skr</code> (and the ClaimDefault slash path) and make the profile account mandatory on the claim path.</div>
+  <div class="verified">✔ VERIFIED — claim sync reads the profile counter; unstake grep-shows zero yield-vault references; no-profile branch re-earns cached stake</div>
+</div>
+
+<div class="finding">
+  <span class="badge crit">CRITICAL</span> <span class="badge crit">C-2</span>
+  <h3>InitializeSkrYieldVault is permissionless AND has no is_initialized guard — anyone can zero the vault and strand all rewards</h3>
+  <div class="meta">program/src/processor.rs:3355-3399</div>
+  <p><code>create_or_allocate_pda</code> returns <code>Ok</code> when the account is already program-owned, and there is no <code>is_initialized</code> read anywhere in the handler — so a second call unconditionally packs a fresh zeroed vault: <code>acc_reward_per_share = 0</code>, <code>total_staked_skr = 0</code>, <code>pending_rewards = 0</code>, <code>authority = caller</code>. The PDA is derived from <code>reward_mint</code> only, so any wallet can call it. Consequences: every user's stored <code>reward_debt</code> now exceeds <code>staked·acc/1e12</code> → all accrued rewards compute to 0 (stranded), and with <code>total_staked_skr == 0</code> all subsequent deposits stop updating <code>acc</code> → permanently unclaimable dividends. This is repeatable sabotage, and it also lets anyone race the team for first-call ownership of the vault (the <code>authority</code> field is currently read nowhere, but any future consumer inherits the hole).</p>
+  <div class="fix">Unpack first and bail: <code>if existing.is_initialized { return Err(...) }</code>, and gate first init on the AdminConfig admin (same pattern as WithdrawTreasury).</div>
+  <div class="verified">✔ VERIFIED — no is_initialized check; zeroed struct packed unconditionally; no admin/authority check in the handler</div>
+</div>
+
+<div class="finding">
+  <span class="badge crit">CRITICAL</span> <span class="badge crit">C-3</span>
+  <h3>Deploy script ships a stale artifact — today's deploy would silently omit round-8 hardening AND the yield feature</h3>
+  <div class="meta">mobile/scripts/deploy-mainnet.mjs:106-109 · program/target/deploy/clock_lend.so</div>
+  <p>The script's only check is <code>fs.existsSync(soPath)</code> — it never builds and never compares freshness. The artifact on disk (300,104 bytes, md5 <code>189a61df</code>, mtime 2026-09-23 09:30) predates both the round-8 commit (09:46) and the yield sources — all five <code>program/src/*.rs</code> files are newer. Running the runbook command today write-buffers and upgrades that old ELF, prints "MAINNET BOOTSTRAP COMPLETE", and ships a program without the Pyth Full-verification hardening, the ±staleness bounds, the allowlists, or the yield feature.</p>
+  <div class="fix">Preflight: run <code>cargo build-sbf</code> (or hard-fail without <code>--skip-build</code>); fail if any <code>program/src/**</code> file or <code>program/Cargo.lock</code> is newer than the .so; print md5 + size before upload.</div>
+  <div class="verified">✔ VERIFIED — mtimes and md5 checked; all five source files newer than the artifact</div>
+</div>
+
+<h2>High findings</h2>
+
+<div class="finding">
+  <span class="badge high">HIGH</span> <span class="badge high">H-1</span>
+  <h3>The yield feature is inert in the shipped client — and the deployed program can't run it anyway</h3>
+  <div class="meta">mobile/src/solana/onChainService.ts:1954 · program/src/instruction.rs:210-240</div>
+  <p><code>buildClaimSkrYieldTx</code> has zero callers; there are no <code>buildInitializeSkrYieldVaultTx</code> / <code>buildDepositSkrYieldTx</code> builders at all; no UI screen wires it; and <code>buildBorrowTx</code> never appends the two yield-vault PDAs, so the program's 50/50 origination-fee split never fires from the app — the vault can never be funded in production. The deployed program (devnet) predates tags 15–17, so a claim would revert with invalid-instruction-data even if wired. <span class="verified">✔ VERIFIED — grep: zero callers</span></p>
+  <div class="fix">Either ship it (add the two missing builders, append the vault PDAs in buildBorrowTx gated on vault-is-initialized, add UI gated on an on-chain <code>CLK_SYLD</code> read) or cut the dead code until the upgrade lands. Don't ship a live-looking claim path against an un-upgraded program.</div>
+</div>
+
+<div class="finding">
+  <span class="badge high">HIGH</span> <span class="badge high">H-2</span>
+  <h3>No time weighting / cooldown — JIT front-running snipes origination-fee dividends</h3>
+  <div class="meta">program/src/processor.rs:3467-3475, 3644</div>
+  <p>Accrual is purely by <code>acc_reward_per_share</code> snapshot; <code>last_interaction_time</code> is recorded but never enforced. Both deposit triggers (permissionless <code>DepositSkrYield</code> and the borrow-path fee split) are observable before they land, so an attacker can stake in slot N, register shares, let the dividend land in N+1, claim pro-rata, and unstake in N+2 — capital returned, zero holding risk, disproportionate payout. <span class="verified">✔ VERIFIED in source — no time check on the claim path</span></p>
+  <div class="fix">Time-weighted accrual (per-slot reward_rate with <code>last_acc_update</code>), or a minimum stake age before claimability.</div>
+</div>
+
+<div class="finding">
+  <span class="badge high">HIGH</span> <span class="badge high">H-3</span>
+  <h3>DepositSkrYield is permissionless and the reward mint is unrestricted at init</h3>
+  <div class="meta">program/src/processor.rs:3417, 3342</div>
+  <p>Only <code>assert_signer</code> — no vault-authority/treasury/admin check, so anyone can push rewards at any time and thereby control exactly when <code>acc</code> moves (who gets entitled), or interleave dust deposits to shift rounding. Init accepts any <code>reward_mint</code> pubkey. <span class="verified">✔ VERIFIED in source</span></p>
+  <div class="fix">Gate deposits on <code>vault.authority</code> (with a rotation path proving upgrade authority), allowlist <code>reward_mint</code> to {USDC devnet/mainnet, SKR}. If the drip is meant to be permissionless, add epoch pacing so it can't control accrual timing.</div>
+</div>
+
+<div class="finding">
+  <span class="badge high">HIGH</span> <span class="badge high">H-4</span>
+  <h3>SOL collateral sizing always uses a hardcoded $150.0 — the live-price lookup can never match</h3>
+  <div class="meta">mobile/src/components/P2PExpressView.tsx:43</div>
+  <p><code>solHolding = tokenList.find(symbol === 'SOL')</code> is always undefined — <code>tokenList</code> comes from <code>getParsedTokenAccountsByOwner</code>, which never contains native SOL — so <code>150.0</code> is always used. That flows into the on-chain collateral amount: the tx reverts <code>InvalidCollateralRatio</code> when the price is above market and silently over-locks when below. Two hardcoded SOL prices coexist (150.0 here, 101.12 in <code>livePrices</code>). <span class="verified">✔ VERIFIED</span></p>
+  <div class="fix">Use <code>livePrices.sol</code> (already fetched every 120s); disable the borrow CTA with "price unavailable" when stale rather than substituting a constant.</div>
+</div>
+
+<div class="finding">
+  <span class="badge high">HIGH</span> <span class="badge high">H-5</span>
+  <h3>Runbook devnet hash is unreproducible — its own verify recipe reports a false mismatch</h3>
+  <div class="meta">docs/MAINNET_RUNBOOK.md:5</div>
+  <p>Live devnet ProgramData holds a 299,937-byte ELF (md5 <code>69577ae6…</code>); the local artifact is 300,104 bytes (<code>189a61df</code>) and the ELFs differ at e_entry — different builds. The runbook recipe yields <code>1c4ac89d</code> for live devnet vs <code>189a61df</code> locally — a false mismatch — and no 600fba4a prefix is reproducible from anything on this box. The field churns each round (9bbcdc68 → 25b68ef2 → 600fba4a) without a recorded recipe. <span class="verified">✔ VERIFIED via live RPC by the ops agent</span></p>
+  <div class="fix">Record the exact recipe + inputs; add a <code>verify-devnet.sh</code> that computes it; state which build the deployed ELF actually is.</div>
+</div>
+
+<div class="finding">
+  <span class="badge high">HIGH</span> <span class="badge high">H-6</span>
+  <h3>The multi-user yield test is flaky — "96/96 passing" is not reproducible</h3>
+  <div class="meta">program/tests/skr_yield_and_lst_tests.rs:572, 581</div>
+  <p>Observed ~30–50% failure rate across agents (4/12 for one, multiple runs for another), always <code>left: 0</code> at :572/:581; also reproduces in isolation. An instrumented verbatim copy passed 3/3, so the mechanism is <em>inconclusive</em> — non-deterministic solana-program-test behavior, not a proven program error. Either way, <code>cargo test</code> is not a trustworthy deploy gate today. <span class="verified">✔ OBSERVED by two independent agents</span></p>
+  <div class="fix">Give each submission a distinct blockhash and assert on returned results/program state rather than later reads; require ≥20 consecutive green runs before treating the gate as real.</div>
+</div>
+
+<div class="finding">
+  <span class="badge high">HIGH</span> <span class="badge high">H-7</span>
+  <h3>Dividends deposited while total_staked_skr == 0 are permanently stranded</h3>
+  <div class="meta">program/src/processor.rs:3467 (deposit), 1588 (borrow split)</div>
+  <p>Both allocation sites skip <code>acc_reward_per_share</code> when <code>total_staked_skr == 0</code> but still credit <code>pending_rewards</code> — and claims pay only <code>staked · acc / 1e12</code>, which never includes that money. The first dividend (e.g. keeper deposits before any user syncs) is lost forever. On devnet this is 100% of routed revenue, because the SKR mint doesn't exist there. <span class="verified">✔ VERIFIED in source</span></p>
+  <div class="fix">Add an <code>unallocated_rewards</code> field rolled into the next <code>acc</code> increase, or reject deposits while <code>total_staked_skr == 0</code>.</div>
+</div>
+
+<h2>Mediums</h2>
+<ul>
+<li><strong>M-1</strong> No solvency invariant between <code>pending_rewards</code> and the vault token balance — over-claimers silently write off other users' accrued rewards (only <code>payout = claimable.min(vault_tok.amount)</code> stands in the way).</li>
+<li><strong>M-2</strong> UserProfile is optional on ClaimSkrYield — the no-profile branch earns on cached stake (the enabler of C-1).</li>
+<li><strong>M-3</strong> P2PExpressView banners fabricate "protocol fee dividends" on escrowed collateral and "Liquid Staking APY" — escrowed SKR earns nothing; no LST exists in the program (allowlist rejects those mints; only a stale comment mentions JitoSOL/Sanctum).</li>
+<li><strong>M-4</strong> Free-text collateral parsing: "2 JitoSOL" silently escrows 1.0 native SOL; bare "SKR" escrows 1000 SKR; SOL detection inconsistent across three code paths.</li>
+<li><strong>M-5</strong> Order-cache network namespacing half-applied — App.tsx:343/427/513 still call <code>setCachedOrders</code> without the network arg (cross-network loan leakage when the toggle is used).</li>
+<li><strong>M-6</strong> Claim builder assumes the reward ATA exists — intermittent InvalidAccountData exactly when there is something to claim.</li>
+<li><strong>M-7</strong> <code>NoYieldToClaim</code> error is never returned (dead code); runbook has NO yield section; test count stale (88 vs 96); BorrowFromPool doc comment omits the two new optional accounts.</li>
+<li><strong>M-8</strong> InitializeSkrYieldVault unauthenticated (folded into C-2; the <code>authority</code> field it records is currently unread — a trap for future handlers).</li>
+</ul>
+
+<h2>Lows</h2>
+<ul>
+<li>Five <code>checked_mul(...).unwrap_or(0)</code> sites silently zero reward math instead of erroring — inconsistent with the deposit path's <code>ok_or(AmountOverflow)</code>.</li>
+<li>Init skips validation of a pre-existing vault token account (defence-in-depth only).</li>
+<li>Stale JitoSOL/Sanctum comments contradict the allowlist; "LST" exists only in a test filename — <code>test_skr_collateral_allowlist</code> asserts a Rust constant and executes nothing.</li>
+<li>Fuzz suite has zero yield coverage (no accumulator invariants).</li>
+<li><code>calculateTokenUsd</code> lost its price-parameter type (<code>prices: any</code>).</li>
+<li>Android: release-keystore guard narrowed to <code>assemble/bundle</code> task prefixes; FLAG_SECURE skipped on DEBUG builds.</li>
+</ul>
+
+<h2>Clean areas (verified)</h2>
+<ul>
+<li>Reward_debt ordering on the claim path is correct (pending computed before the re-snapshot; accrued preserved across capped payouts).</li>
+<li>Rounding floors conservatively; division-by-zero guarded; u128 overflow structurally unreachable today.</li>
+<li>AccountKind dispatch unaffected by the two new variants; all match sites remain explicit; length constants arithmetically correct.</li>
+<li>PDA seeds collision-free; user positions bind user+mint; every PDA re-derived before use.</li>
+<li>User-position has no reinit hole; escrow front-run authority defenses intact; no AccountBorrowFailed hazard in the new code.</li>
+<li>No new dependencies; Cargo.lock tracked; no secrets; keypairs mode 600.</li>
+<li>Claim builder's tag (17), account order/flags, and seeds all byte-match the program — the encoding is right; the plumbing around it is what's missing.</li>
+</ul>
+
+<h2>Proposed fix rounds</h2>
+<p><strong>P0:</strong> C-1 escrow-derived stake (or decrement on unstake) · C-2 reinit guard + admin gate · C-3 build-sbf/freshness preflight · H-7 unallocated-rewards carry · H-2/H-3 deposit auth + time-weighting decision.<br>
+<strong>P1:</strong> H-1 wire the feature or cut it · H-4 live price · H-5 verify recipe · H-6 deterministic test · M-1..M-8.<br>
+<strong>P2:</strong> lows + runbook yield section + doc comments.<br>
+<em>Product decisions needed from the user: ship the yield feature or cut it for now; rebuild the artifact before any deploy.</em></p>
+
+<h2>Round-9 fix round — APPLIED (2026-09-24)</h2>
+<p>All P0/P1/P2 fixes from this report are implemented and verified. C-1: claim stake is now escrow-authoritative (skr_escrow account required, accrual bounded by the real balance, UnstakeSKR syncs positions down). C-2: vault init is admin-gated and reinit-rejected. C-3: the deploy script builds the ELF itself and hard-fails on a stale artifact (fresh build: 339,928 bytes, md5 <code>308dbba1</code>, not yet deployed). H-2/H-3/H-7: 1h claim cooldown (error 40), authority-gated deposits, <code>unallocated_rewards</code> folding so pre-stake dividends are never stranded. Mobile: yield client fully wired (init/deposit/claim builders, borrow fee-split append, unstake sync, on-chain-gated yield card), live prices replace the hardcoded $150, honest banners, strict collateral parsing, cache namespacing. Tests: 97/97, yield suite 6/6 consecutive runs green (flakiness root-caused: identical-(blockhash,message) memoization — every submission now advances a slot). Details: <code>.superstack/build-context.md</code>.</p>
+
+<h2>Round-10 fix round — APPLIED & VERIFIED (2026-09-25)</h2>
+<p>All P0 and P1 fixes implemented and verified across program, client, and scripts (101/101 tests green):</p>
+<ul>
+  <li><strong>Critical pinned:</strong> <code>StakeSKR</code> immediately registers yield shares and initializes <code>UserYieldPosition</code> if new, harvesting pre-stake pending and moving <code>vault.total_staked_skr</code> & <code>position.staked_skr</code> up synchronously. Attacker dividend capture test pinned.</li>
+  <li><strong>Highs pinned:</strong> <code>UnstakeSKR</code> gates optional pool account strictly by discriminator/LEN to eliminate account 5/6 slot collisions. Clamps effective stake and post-unstake stake to escrow to eliminate ghost shares. <code>ClaimDefault</code> immediately syncs borrower yield position and vault total down on slash.</li>
+  <li><strong>Price provenance & Hermes compatibility:</strong> Replaced unsupported <code>AbortSignal.timeout</code> with robust <code>fetchWithTimeout</code> (Hermes safe). Client tracks <code>PriceSource</code> and strictly disables borrowing when only <code>fallback-baseline</code> is available, showing "Awaiting Live Price Feed...".</li>
+  <li><strong>Crank & deploy hardening:</strong> Stripped hardcoded Jupiter API keys and stale mock prices from <code>crank_oracles.mjs</code>; dynamic rent exemption computed via <code>getMinimumBalanceForRentExemption(soStat.size + 45) + 0.1 SOL</code> in <code>deploy-mainnet.mjs</code>; build freshness narrowed to <code>src/</code>.</li>
+  <li><strong>P1 items:</strong> <code>InitializeAdmin</code> rotates yield vault authority; SGT detection supports both devnet mint and mainnet group mint <code>GT22s89nU4iWFkNXj1Bw6uYhJJWDRPpShHt4Bk8f99Te</code>; loan scan RPC queries filter via <code>B58_CLK_LOAN</code> / dataSize.</li>
+</ul>
+
+<h2>Round-11 zero-day hunt (2026-09-25) — 6 highs, all PoC-verified</h2>
+<p>Adversarial cross-instruction hunt on the full contract + client. Invariant verdicts: <strong>conservation HOLDS</strong> (every lamport/token flow sums exactly, error paths included), <strong>auth matrix HOLDS</strong> (no aliasing/role-confusion path found), <strong>state machine violated in 2 places</strong>, <strong>oracle violated in 3</strong>. New highs: a borrower-supplied Pyth account overrides the pool's mandatory custom feed (2 independent PoCs — borrow ~77x the configured limit); the 1h cooldown is a payout-delay only (unstake harvests and frees capital in the same slot — the zero-risk snipe survives); the Pyth attach signs before the body instructions are appended (invalid signature once Hermes is enabled); the borrow UI hardcodes 7 days while offering 3/7/14/30; the devnet-smoke script inherits the MAINNET RPC from .env; and the Wormhole anchor is wrong (receiver Config.wormhole = 4uQeVzbXX…, proven via the SDK struct layout — HDwc and worm2 are both wrong, and the atomic posting path is unviable on mainnet). Fuzzer permanently extended with yield ops + 3 share/dividend invariants (9 seeds green). Full list + fixes: <code>.superstack/build-context.md</code> (round-11 section).</p>
+
+<h2>Round-13 reaudit (2026-09-26) — critical ABI regression found &amp; fixed</h2>
+<p>Post-round-12 verification found a critical introduced by the rescue instruction: inserting <code>WithdrawUnusedYield</code> before <code>ClaimSkrYield</code> shifted the borsh discriminants (Withdraw=17, Claim=18) while the mobile client still sends tag 17 — every dividend claim dispatched to the rescue handler and reverted. Fixed by reordering (Claim=17, Withdraw=18) and pinned forever by <code>test_wire_tags_are_pinned</code> (asserts the byte encoding of all 19 variants). Also fixed: Pyth receiver removed from the signing allowlist, the local order's 7-day hardcode, the missing stake-builder yield appends (round-10's share registration now fires from the app), builder network params, modal live prices, cooldown error 38, the rescue builder, and full runbook alignment incl. a 10-minute keeper workflow. 100/100 tests. One deployment caveat: the tag-fixed build (d7e03802) is built but the devnet upgrade hit a CLI transport failure — the deployed build (a2986fde) still carries the tag bug until the redeploy lands.</p>
+
+<div class="sub">Full per-round history and verification evidence: <code>.superstack/build-context.md</code>.</div>
+</div>
+</body>
+</html>

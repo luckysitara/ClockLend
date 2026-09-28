@@ -25,8 +25,8 @@
       <ul class="nav-links">
         <li><a href="#features">Features</a></li>
         <li><a href="#how-it-works">How It Works</a></li>
-        <li><a href="#economics">SKR Staking</a></li>
-        <li><a href="#security">Security</a></li>
+        <li><a href="#economics">Economics</a></li>
+        <li><a href="security.html">Security & Audits</a></li>
         <li><a href="#faq">FAQ</a></li>
       </ul>
 
@@ -43,8 +43,8 @@
     <button class="close-btn" id="menuClose" aria-label="Close Navigation">✕</button>
     <a href="#features" class="mobile-link">Features</a>
     <a href="#how-it-works" class="mobile-link">How It Works</a>
-    <a href="#economics" class="mobile-link">SKR Staking</a>
-    <a href="#security" class="mobile-link">Security</a>
+    <a href="#economics" class="mobile-link">Economics</a>
+    <a href="security.html" class="mobile-link" style="color: var(--accent);">Security & Audits</a>
     <a href="#faq" class="mobile-link">FAQ</a>
     <a href="terms.html" class="mobile-link">Terms & Conditions</a>
     <a href="privacy.html" class="mobile-link">Privacy Policy</a>
@@ -195,26 +195,26 @@
     <div class="container">
       <div class="economics-box">
         <div class="economics-content">
-          <span class="section-tag">Token Utility & Staking</span>
-          <h3>SKR Reputation Bond & Real Yield Dividends</h3>
-          <p>SKR is not a speculative vanity token—it is the foundational reputation and governance currency of ClockLend. Stake SKR to unlock institutional perks and earn protocol revenue.</p>
+          <span class="section-tag">Token Utility & Revenue Model</span>
+          <h3>SKR Real Yield Dividends & 30% Buyback-and-Burn</h3>
+          <p>ClockLend aligns protocol growth with token value accrual. Stakers earn direct USDC dividends, while 30% of all protocol revenue is committed to buying and burning $SKR.</p>
           
           <ul class="perks-list">
             <li>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span><strong>90% Maximum LTV:</strong> Elevate your borrowing power from the standard 65% up to 90% across all desks.</span>
+              <span><strong>50% Staker Dividend Stream:</strong> 50% of all loan origination fees stream directly on-chain to the SKR Yield Vault as instant USDC dividends for stakers.</span>
             </li>
             <li>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span><strong>50% APR Discounts:</strong> Slashed borrowing interest rates based on your verified on-chain tier.</span>
+              <span><strong>🔥 30% Protocol Revenue Buy & Burn:</strong> 30% of all protocol revenue is dedicated to buying and burning $SKR (via Jupiter DEX spot buys and direct SPL burns), permanently destroying circulating supply.</span>
             </li>
             <li>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span><strong>50% Protocol Fee Split:</strong> Origination fees stream directly to the SKR Yield Vault as USDC dividends.</span>
+              <span><strong>85% Interest to Desk Owners:</strong> Liquidity providers earn 85% of all borrower interest with 100% principal protection in isolated PDA vaults.</span>
             </li>
             <li>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span><strong>Verified Merchant Status:</strong> Back your liquidity desk with a slashable reputation bond for top algorithmic routing.</span>
+              <span><strong>90% Maximum LTV & 50% APR Discounts:</strong> Tiered borrowing perks and verified merchant badges for active SKR stakers.</span>
             </li>
           </ul>
         </div>
@@ -226,8 +226,16 @@
             <span style="font-weight: 700; color: #fff;">USDC (SPL Native)</span>
           </div>
           <div class="vault-stat-row">
-            <span style="color: var(--text-muted);">Origination Fee Share</span>
+            <span style="color: var(--text-muted);">Staker Origination Fee Share</span>
             <span style="font-weight: 700; color: var(--accent);">50% Automatic Split</span>
+          </div>
+          <div class="vault-stat-row">
+            <span style="color: var(--text-muted);">Protocol Revenue Buy & Burn</span>
+            <span style="font-weight: 700; color: #06b6d4;">30% Dedicated to $SKR</span>
+          </div>
+          <div class="vault-stat-row">
+            <span style="color: var(--text-muted);">Desk Owner Interest Share</span>
+            <span style="font-weight: 700; color: #fff;">85% (100% Principal Protected)</span>
           </div>
           <div class="vault-stat-row">
             <span style="color: var(--text-muted);">Claim Cooldown</span>
@@ -286,6 +294,21 @@
             Fail-Closed Oracle Staleness Guard
           </h4>
           <p>Feeds older than 600 seconds automatically halt new borrow transactions, protecting both liquidity providers and borrowers from flash market dislocations.</p>
+        </div>
+      </div>
+
+      <!-- Security Audit & Bug Reporting Callout Banner -->
+      <div style="margin-top: 40px; background: rgba(20, 241, 149, 0.06); border: 1px solid rgba(20, 241, 149, 0.3); border-radius: var(--radius-lg); padding: 32px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
+        <div style="max-width: 680px;">
+          <h3 style="font-size: 1.35rem; font-weight: 800; color: #fff; margin-bottom: 8px;">10-Round Security Audits & Vulnerability Disclosure</h3>
+          <p style="color: #cbd5e1; font-size: 0.95rem; margin-bottom: 0;">ClockLend's native SBF Rust contract has passed 10 audit passes with 103 test invariants. If you discover any vulnerability, bug, or unexpected behavior, please report it directly to our official X account for prompt review.</p>
+        </div>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+          <a href="security.html" class="btn btn-primary btn-sm">View Security & Audits →</a>
+          <a href="https://x.com/bughacker140823" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+            Report Bug on X
+          </a>
         </div>
       </div>
     </div>
@@ -389,14 +412,16 @@
           <h5>Resources</h5>
           <ul>
             <li><a href="#how-it-works">How It Works</a></li>
-            <li><a href="#security">Security Model</a></li>
+            <li><a href="security.html">Security Architecture</a></li>
+            <li><a href="audit-report.html" target="_blank">Technical Audit Report</a></li>
             <li><a href="#faq">Frequently Asked Questions</a></li>
           </ul>
         </div>
 
         <div class="footer-col">
-          <h5>Legal & Policy</h5>
+          <h5>Legal & Security</h5>
           <ul>
+            <li><a href="security.html">Security & Audits</a></li>
             <li><a href="terms.html">Terms & Conditions</a></li>
             <li><a href="privacy.html">Privacy Policy</a></li>
             <li><a href="legal.html">Legal & Compliance</a></li>
@@ -407,6 +432,7 @@
       <div class="footer-bottom">
         <div>© 2026 ClockLend Protocol. All rights reserved.</div>
         <div style="display: flex; gap: 24px;">
+          <a href="https://x.com/bughacker140823" target="_blank" rel="noopener noreferrer" style="color: var(--accent);">Report Bug on X: @bughacker140823</a>
           <span>Solana Seeker Native</span>
         </div>
       </div>

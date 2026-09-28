@@ -4,6 +4,11 @@
   "cleanUrls": false,
   "rewrites": [
     { "source": "/", "destination": "/site/index.html" },
+    { "source": "/security", "destination": "/site/security.html" },
+    { "source": "/security.html", "destination": "/site/security.html" },
+    { "source": "/audit", "destination": "/site/security.html" },
+    { "source": "/audit-report", "destination": "/site/audit-report.html" },
+    { "source": "/audit-report.html", "destination": "/site/audit-report.html" },
     { "source": "/terms", "destination": "/site/terms.html" },
     { "source": "/terms.html", "destination": "/site/terms.html" },
     { "source": "/privacy", "destination": "/site/privacy.html" },
