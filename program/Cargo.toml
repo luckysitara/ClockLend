@@ -2,7 +2,7 @@
 name = "clock_lend"
 version = "0.1.0"
 edition = "2021"
-description = "ClockLend: Bybit P2P Micro-Lending & Social Pawns on Solana Seeker"
+description = "ClockLend: Peer-to-Peer Micro-Lending & Social Pawns on Solana Seeker"
 
 [lib]
 crate-type = ["cdylib", "lib"]

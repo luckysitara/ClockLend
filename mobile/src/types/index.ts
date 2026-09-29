@@ -49,7 +49,7 @@ export interface P2POffer {
   creatorAvatar?: string;
   funder?: string;
   collateralName: string;
-  collateralType: 'NFT' | 'cNFT' | 'Token';
+  collateralType: 'NFT' | 'Token';
   collateralAmount: number;
   collateralMint?: string;
   liquidityMint?: string;

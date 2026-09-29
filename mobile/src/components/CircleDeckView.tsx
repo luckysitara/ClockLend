@@ -85,7 +85,7 @@ export const CircleDeckView: React.FC<CircleDeckViewProps> = ({
 
                 <View style={styles.assetTypeBadge}>
                   <Text style={styles.assetTypeText}>
-                    {offer.collateralType === 'cNFT' ? '📱 cNFT' : offer.collateralType === 'NFT' ? '🖼️ NFT' : '🪙 Token'}
+                    {offer.collateralType === 'NFT' ? '🖼️ NFT' : '🪙 Token'}
                   </Text>
                 </View>
               </View>
@@ -93,7 +93,7 @@ export const CircleDeckView: React.FC<CircleDeckViewProps> = ({
               {/* Collateral Showcase Box */}
               <View style={styles.assetShowcase}>
                 <Text style={styles.assetIcon}>
-                  {offer.collateralType === 'cNFT' ? '📱' : offer.collateralType === 'NFT' ? '🎨' : '◎'}
+                  {offer.collateralType === 'NFT' ? '🎨' : '◎'}
                 </Text>
                 <View style={styles.assetDetails}>
                   <Text style={styles.assetName}>{offer.collateralName}</Text>

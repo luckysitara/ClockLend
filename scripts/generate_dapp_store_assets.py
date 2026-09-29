@@ -229,7 +229,7 @@ def generate_graphics_1200x1200():
 
     # Tagline
     font_tagline = get_font(FONT_BOLD, 26)
-    draw.text((310, 375), "The Bybit P2P for Micro-Lending on Solana", font=font_tagline, fill=(20, 241, 149, 255))
+    draw.text((320, 375), "Peer-to-Peer Micro-Lending on Solana", font=font_tagline, fill=(20, 241, 149, 255))
 
     font_sub = get_font(FONT_REGULAR, 20)
     draw.text((270, 420), "Algorithmic P2P Credit  •  Merchant Liquidity Desks  •  Social Pawns", font=font_sub, fill=(148, 163, 184, 255))
