@@ -893,57 +893,6 @@ export async function fetchLiveLeaderboard(
       e.rank = idx + 1;
     });
 
-    // If early genesis phase has few registered profiles, ensure top community anchor pillars are visible for judges
-    if (entries.length < 3) {
-      const genesisPillars: LeaderboardEntry[] = [
-        {
-          rank: 1,
-          pubkey: '8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds',
-          skrHandle: 'skr_genesis_anchor',
-          reputationScore: 9850,
-          tier: 'Diamond',
-          stakedSkr: 25000,
-          totalLoansCompleted: 42,
-          totalLoansDefaulted: 0,
-          isCurrentUser: currentUserPubkey?.toBase58() === '8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds',
-        },
-        {
-          rank: 2,
-          pubkey: 'HtiDpTkcWDDaQeRLSBvYDdw2sRJb5VvkD7EMvr5JWVzJ',
-          skrHandle: 'skr_oracle_crank',
-          reputationScore: 9400,
-          tier: 'Diamond',
-          stakedSkr: 10000,
-          totalLoansCompleted: 28,
-          totalLoansDefaulted: 0,
-          isCurrentUser: currentUserPubkey?.toBase58() === 'HtiDpTkcWDDaQeRLSBvYDdw2sRJb5VvkD7EMvr5JWVzJ',
-        },
-        {
-          rank: 3,
-          pubkey: '6cdFSHbgeAC2i5Kf8GQWf2xS1mwCQKspmLSNVXQBVjZ',
-          skrHandle: 'skr_seeker_og',
-          reputationScore: 8200,
-          tier: 'Gold',
-          stakedSkr: 3500,
-          totalLoansCompleted: 15,
-          totalLoansDefaulted: 0,
-          isCurrentUser: currentUserPubkey?.toBase58() === '6cdFSHbgeAC2i5Kf8GQWf2xS1mwCQKspmLSNVXQBVjZ',
-        },
-      ];
-
-      const seen = new Set(entries.map((e) => e.pubkey));
-      for (const p of genesisPillars) {
-        if (!seen.has(p.pubkey)) {
-          entries.push(p);
-        }
-      }
-
-      entries.sort((a, b) => b.reputationScore - a.reputationScore);
-      entries.forEach((e, idx) => {
-        e.rank = idx + 1;
-      });
-    }
-
     return entries;
   } catch (err) {
     console.warn('Leaderboard query error:', err);

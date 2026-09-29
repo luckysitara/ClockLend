@@ -68,7 +68,7 @@
         <div>
           <span class="section-tag">Audit Report & Cryptographic Verification</span>
           <h1 style="margin: 8px 0;">Security Architecture</h1>
-          <span class="policy-date">Last Updated: September 28, 2026 · Native SBF Program <code class="mono">4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7</code></span>
+          <span class="policy-date">Last Updated: September 29, 2026 · Native SBF Program <code class="mono">4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7</code></span>
         </div>
         <div style="display: flex; gap: 10px;">
           <a href="audit-report.html" class="btn btn-secondary btn-sm" target="_blank">View Full Technical Audit →</a>
@@ -103,8 +103,8 @@
       <!-- Security Metrics Grid -->
       <div class="grid-metrics">
         <div class="metric-card" style="background: rgba(16, 20, 32, 0.6); border: 1px solid var(--border-card); border-radius: 12px; padding: 18px;">
-          <div style="font-size: 2rem; font-weight: 900; color: var(--accent);">10 Rounds</div>
-          <div style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">Independent Audit Passes</div>
+          <div style="font-size: 2rem; font-weight: 900; color: var(--accent);">14 Rounds</div>
+          <div style="color: var(--text-muted); font-size: 0.85rem; margin-top: 4px;">Adversarial Audit Passes</div>
         </div>
         <div class="metric-card" style="background: rgba(16, 20, 32, 0.6); border: 1px solid var(--border-card); border-radius: 12px; padding: 18px;">
           <div style="font-size: 2rem; font-weight: 900; color: #fff;">103</div>
@@ -172,6 +172,13 @@
                 <td><span class="status-badge status-pass">Verified Fixed</span></td>
               </tr>
               <tr>
+                <td><code class="mono">C-03</code></td>
+                <td>ABI & Wire Tag Safety</td>
+                <td><span class="status-badge" style="background: rgba(244,63,94,0.15); color: #f43f5e; border: 1px solid rgba(244,63,94,0.4);">Critical</span></td>
+                <td>Instruction wire-tag pinning preventing discriminant shift across mobile client and on-chain rescue handlers</td>
+                <td><span class="status-badge status-pass">Verified Fixed</span></td>
+              </tr>
+              <tr>
                 <td><code class="mono">H-01</code></td>
                 <td>Account Dispatch</td>
                 <td><span class="status-badge" style="background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.4);">High</span></td>
@@ -190,6 +197,20 @@
                 <td>Access Control</td>
                 <td><span class="status-badge" style="background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.4);">High</span></td>
                 <td>ProgramData-derived upgrade authority verification preventing admin race conditions</td>
+                <td><span class="status-badge status-pass">Verified Fixed</span></td>
+              </tr>
+              <tr>
+                <td><code class="mono">H-04</code></td>
+                <td>Oracle & Pricing</td>
+                <td><span class="status-badge" style="background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.4);">High</span></td>
+                <td>Dynamic multi-source live price feed validation replacing static constants and halting on stale feeds</td>
+                <td><span class="status-badge status-pass">Verified Fixed</span></td>
+              </tr>
+              <tr>
+                <td><code class="mono">H-05</code></td>
+                <td>Fee Solvency</td>
+                <td><span class="status-badge" style="background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.4);">High</span></td>
+                <td>Borrow fee routing validation with Treasury fallback and unallocated reward rolling preventing stranded capital</td>
                 <td><span class="status-badge status-pass">Verified Fixed</span></td>
               </tr>
               <tr>

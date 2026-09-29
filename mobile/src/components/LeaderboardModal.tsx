@@ -180,7 +180,16 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                 <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
               }
             >
-              {filteredEntries.map((entry) => {
+              {filteredEntries.length === 0 ? (
+                <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                  <Text style={styles.emptyIcon}>🏆</Text>
+                  <Text style={[styles.emptyTitle, { color: colors.text }]}>No On-Chain Profiles Found</Text>
+                  <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+                    No registered borrower or staker profiles found on Solana Mainnet for this tier yet. Complete your first loan or stake an SKR reputation bond to rank on the Hall of Fame!
+                  </Text>
+                </View>
+              ) : (
+                filteredEntries.map((entry) => {
                 const rankBadge = getRankBadge(entry.rank);
                 const tierColor = getTierColor(entry.tier);
 
@@ -226,7 +235,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                     </View>
                   </View>
                 );
-              })}
+              }))}
 
               <View style={styles.footerNote}>
                 <Text style={[styles.footerText, { color: colors.textMuted }]}>
@@ -428,5 +437,29 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 16,
     paddingHorizontal: 20,
+  },
+  emptyCard: {
+    padding: 32,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 24,
+    marginHorizontal: 8,
+  },
+  emptyIcon: {
+    fontSize: 40,
+    marginBottom: 12,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptySub: {
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
   },
 });
