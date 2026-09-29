@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView, ActivityIndicator, Image } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { LendingPool, UserProfile, WalletAssets } from '../types';
 import { livePrices, fetchLivePrices, subscribeToPriceUpdates, getPriceSource } from '../solana/onChainService';
@@ -101,6 +102,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
       return;
     }
 
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsSubmitting(true);
     try {
       const collUnits = collateralType === 'SOL'
@@ -159,7 +161,10 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
                 { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder },
                 amountStr === val && { backgroundColor: colors.primary, borderColor: colors.primary },
               ]}
-              onPress={() => setAmountStr(val)}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setAmountStr(val);
+              }}
               activeOpacity={0.7}
             >
               <Text
@@ -184,6 +189,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
             <TouchableOpacity
               style={[styles.maxBadge, { backgroundColor: colors.badgeBg }]}
               onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 const maxUsdc = Math.max(10, Math.floor(userBalance * 0.9 * collateralPrice * ltv));
                 setAmountStr(maxUsdc.toString());
               }}
@@ -216,7 +222,10 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
                 { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder },
                 collateralType === item.id && { borderColor: colors.primary, backgroundColor: colors.badgeBg },
               ]}
-              onPress={() => setCollateralType(item.id)}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setCollateralType(item.id);
+              }}
               activeOpacity={0.7}
             >
               <Image source={item.logo} style={styles.collateralLogo} resizeMode="contain" />
@@ -317,7 +326,10 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
                 { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder },
                 durationDays === days && { borderColor: colors.primary, backgroundColor: colors.badgeBg },
               ]}
-              onPress={() => setDurationDays(days)}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setDurationDays(days);
+              }}
               activeOpacity={0.7}
             >
               <Text

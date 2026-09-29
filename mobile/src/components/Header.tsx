@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { SolanaNetwork } from '../types';
 
@@ -15,6 +16,8 @@ interface HeaderProps {
   onPressBalance?: () => void;
   onToggleNetwork?: () => void;
   onDisconnectWallet?: () => void;
+  onOpenLeaderboard?: () => void;
+  onOpenJudgeBriefing?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -27,6 +30,8 @@ export const Header: React.FC<HeaderProps> = ({
   onPressBalance,
   onToggleNetwork,
   onDisconnectWallet,
+  onOpenLeaderboard,
+  onOpenJudgeBriefing,
 }) => {
   const { colors, mode, toggleTheme } = useTheme();
 
@@ -54,14 +59,43 @@ export const Header: React.FC<HeaderProps> = ({
         </TouchableOpacity>
       )}
 
-      {/* Right: Theme Toggle & Wallet Button */}
+      {/* Right: Actions */}
       <View style={styles.rightActions}>
+        {onOpenJudgeBriefing && (
+          <TouchableOpacity
+            style={[styles.themeChip, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onOpenJudgeBriefing();
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="sparkles" size={16} color={colors.primary} />
+          </TouchableOpacity>
+        )}
+
+        {onOpenLeaderboard && (
+          <TouchableOpacity
+            style={[styles.themeChip, { backgroundColor: 'rgba(234, 179, 8, 0.12)', borderColor: 'rgba(234, 179, 8, 0.3)' }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onOpenLeaderboard();
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="trophy-outline" size={17} color="#eab308" />
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity
           style={[styles.themeChip, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
-          onPress={toggleTheme}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            toggleTheme();
+          }}
           activeOpacity={0.7}
         >
-          <Ionicons name={mode === 'dark' ? 'sunny-outline' : 'moon-outline'} size={18} color={colors.text} />
+          <Ionicons name={mode === 'dark' ? 'sunny-outline' : 'moon-outline'} size={17} color={colors.text} />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -69,7 +103,7 @@ export const Header: React.FC<HeaderProps> = ({
           onPress={onPressBalance || onDisconnectWallet}
           activeOpacity={0.7}
         >
-          <Ionicons name="wallet-outline" size={18} color={colors.text} />
+          <Ionicons name="wallet-outline" size={17} color={colors.text} />
         </TouchableOpacity>
       </View>
     </View>

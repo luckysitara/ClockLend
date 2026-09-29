@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Linking, TextInput, Switch, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { UserProfile, WalletAssets } from '../types';
 import { SkrYieldVaultState, UserYieldPositionState } from '../solana/onChainService';
@@ -25,6 +26,7 @@ interface CreditProfileViewProps {
   onLockApp?: () => void;
   onSetupPin?: () => void;
   onChangePin?: () => void;
+  onOpenLeaderboard?: () => void;
   // SKR yield vault (only rendered when the on-chain vault exists)
   yieldVault?: SkrYieldVaultState;
   yieldPosition?: UserYieldPositionState;
@@ -42,6 +44,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
   onLockApp,
   onSetupPin,
   onChangePin,
+  onOpenLeaderboard,
   yieldVault,
   yieldPosition,
   onClaimYield,
@@ -114,6 +117,52 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         <Text style={[styles.statsNote, { color: colors.textSecondary }]}>
           {userProfile.totalLoansCompleted} loans completed on time • {userProfile.totalLoansDefaulted} defaults
         </Text>
+
+        {/* Tier Progression Progress Bar */}
+        <View style={[styles.tierProgressContainer, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+          <View style={styles.tierProgressHeader}>
+            <Text style={[styles.tierProgressTitle, { color: colors.textSecondary }]}>Reputation Progression</Text>
+            <Text style={[styles.tierProgressNext, { color: colors.primary }]}>
+              {userProfile.tier === 'Diamond'
+                ? 'Max Diamond Tier 💎'
+                : userProfile.tier === 'Gold'
+                ? 'Next: Diamond (5,000 SKR / 90% Score)'
+                : userProfile.tier === 'Silver'
+                ? 'Next: Gold (2,000 SKR / 75% Score)'
+                : 'Next: Silver (500 SKR / 50% Score)'}
+            </Text>
+          </View>
+          <View style={[styles.tierBarTrack, { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
+            <View
+              style={[
+                styles.tierBarFill,
+                {
+                  backgroundColor: colors.primary,
+                  width: `${Math.min(100, Math.max(12, userProfile.reputationScore / 100))}%`,
+                },
+              ]}
+            />
+          </View>
+          <View style={styles.tierPerksRow}>
+            <Text style={[styles.tierPerkText, { color: colors.textMuted }]}>
+              Active Perks: {userProfile.aprDiscount}% APR Discount • 90% LTV on SOL/SKR
+            </Text>
+          </View>
+        </View>
+
+        {onOpenLeaderboard && (
+          <TouchableOpacity
+            style={[styles.hallOfFameBtn, { backgroundColor: 'rgba(234, 179, 8, 0.12)', borderColor: 'rgba(234, 179, 8, 0.3)' }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onOpenLeaderboard();
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="trophy" size={16} color="#eab308" />
+            <Text style={styles.hallOfFameBtnText}>View Global Seeker Hall of Fame →</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* SKR Staking & Reputation Desk */}
@@ -140,7 +189,10 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
             <TouchableOpacity
               key={amt}
               style={[styles.stakePresetBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
-              onPress={() => onStakeSkr(amt)}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onStakeSkr(amt);
+              }}
               activeOpacity={0.7}
             >
               <Text style={[styles.stakePresetText, { color: colors.primary }]}>+{amt} SKR</Text>

@@ -1,9 +1,11 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Linking } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { LoanOrder } from '../types';
 import { CountdownTimer } from './CountdownTimer';
 import { requestTardisGraceRescue } from '../services/tardisIntegration';
+import { livePrices } from '../solana/onChainService';
 
 interface ActiveOrdersViewProps {
   orders: LoanOrder[];
@@ -87,6 +89,43 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
 
               {/* Ticking Countdown Timer */}
               <CountdownTimer dueTime={order.dueTime} />
+
+              {/* Liquidation Health Meter */}
+              {(() => {
+                const isSol = order.collateralName.toUpperCase().includes('SOL');
+                const price = isSol ? livePrices.sol : livePrices.skr;
+                const collVal = (order.collateralAmount || 1) * price;
+                const debt = order.principalAmount + order.interestDue;
+                const ltvPct = collVal > 0 ? Math.min(100, Math.round((debt / collVal) * 100)) : 75;
+                const isSafe = ltvPct < 75;
+                const isWarn = ltvPct >= 75 && ltvPct < 85;
+                const healthColor = isSafe ? '#22c55e' : isWarn ? '#f59e0b' : '#ef4444';
+                const healthLabel = isSafe ? 'Healthy / Safe' : isWarn ? 'Moderate LTV' : 'Liquidation Warning';
+
+                return (
+                  <View style={[styles.healthCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+                    <View style={styles.healthHeader}>
+                      <View style={styles.healthLabelRow}>
+                        <View style={[styles.healthDot, { backgroundColor: healthColor }]} />
+                        <Text style={[styles.healthTitle, { color: colors.text }]}>{healthLabel}</Text>
+                      </View>
+                      <Text style={[styles.healthLtv, { color: healthColor }]}>{ltvPct}% LTV</Text>
+                    </View>
+                    <View style={[styles.healthBarTrack, { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
+                      <View style={[styles.healthBarFill, { width: `${ltvPct}%`, backgroundColor: healthColor }]} />
+                      <View style={[styles.liquidationMarker, { left: '90%' }]} />
+                    </View>
+                    <View style={styles.healthFooter}>
+                      <Text style={[styles.healthFooterText, { color: colors.textMuted }]}>
+                        Collateral: ${collVal.toFixed(2)} USDC
+                      </Text>
+                      <Text style={[styles.healthFooterText, { color: colors.textMuted }]}>
+                        Liquidation: 90%
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })()}
 
               {/* Loan Details */}
               <View style={[styles.detailsBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
@@ -181,7 +220,10 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
               <View style={styles.actions}>
                 <TouchableOpacity
                   style={[styles.repayBtn, { backgroundColor: colors.primary }]}
-                  onPress={() => onRepay(order)}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    onRepay(order);
+                  }}
                   activeOpacity={0.85}
                 >
                   <Text style={[styles.repayBtnText, { color: colors.primaryText }]}>
@@ -193,6 +235,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                   <TouchableOpacity
                     style={[styles.graceBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
                     onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       onTriggerGrace(order.id);
                     }}
                     activeOpacity={0.7}
@@ -202,7 +245,10 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                 ) : (
                   <TouchableOpacity
                     style={[styles.rescueBtn, { backgroundColor: '#ef4444' }]}
-                    onPress={() => requestTardisGraceRescue(order)}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                      requestTardisGraceRescue(order);
+                    }}
                     activeOpacity={0.85}
                   >
                     <Text style={styles.rescueBtnText}>🚨 TARDIS Rescue</Text>
@@ -430,5 +476,61 @@ const styles = StyleSheet.create({
   solscanChipText: {
     fontSize: 10,
     fontWeight: '800',
+  },
+  healthCard: {
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 8,
+    marginBottom: 6,
+  },
+  healthHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  healthLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  healthDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  healthTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  healthLtv: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  healthBarTrack: {
+    height: 6,
+    borderRadius: 3,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  healthBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  liquidationMarker: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 2,
+    backgroundColor: '#ef4444',
+  },
+  healthFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  healthFooterText: {
+    fontSize: 10,
   },
 });
