@@ -296,16 +296,20 @@ async function main() {
           `  local ELF:                 ${soStat.size} bytes`
       );
 
-      // agave caps a single extend at 10,240 bytes, so loop until it fits.
+      // BPFLoaderUpgradeable requires each ExtendProgram to add at least
+      // 10,240 bytes (or extend to max size), so round the growth up to a
+      // whole number of 10,240-byte steps and loop.
       if (soStat.size > allocated) {
-        const needed = soStat.size - allocated;
+        const MIN_EXTEND = 10240;
+        const rawNeeded = soStat.size - allocated;
+        const total = Math.ceil(rawNeeded / MIN_EXTEND) * MIN_EXTEND;
         console.log(
-          `Local ELF is larger than the current allocation — extending ProgramData by ${needed} bytes ` +
-            '(in <=10,240-byte steps)...'
+          `Local ELF is larger than the current allocation by ${rawNeeded} bytes — ` +
+            `extending ProgramData by ${total} bytes (rounded up to whole ${MIN_EXTEND}-byte steps)...`
         );
-        let remaining = needed;
+        let remaining = total;
         while (remaining > 0) {
-          const chunk = Math.min(10240, remaining);
+          const chunk = Math.min(MIN_EXTEND, remaining);
           console.log(`  solana program extend +${chunk}`);
           execSync(
             `solana program extend --url "${CLI_NETWORK}" --keypair ${keypairPath} ${PROGRAM_ID.toBase58()} ${chunk}`,
