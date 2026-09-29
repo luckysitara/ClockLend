@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { PublicKey } from '@solana/web3.js';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { Header } from './src/components/Header';
+import { QuickStartBar } from './src/components/QuickStartBar';
 import { P2PExpressView } from './src/components/P2PExpressView';
 import { MerchantDesksView } from './src/components/MerchantDesksView';
 import { ActiveOrdersView } from './src/components/ActiveOrdersView';
@@ -28,6 +29,7 @@ import { SplashScreenView } from './src/components/SplashScreenView';
 import { SecurityLockScreen, LockScreenMode } from './src/components/SecurityLockScreen';
 import { SecurityLockdownView } from './src/components/SecurityLockdownView';
 import { isLockEnabled, checkDeviceIntegrity, DeviceIntegrityResult } from './src/services/securityService';
+import * as SecureStore from 'expo-secure-store';
 import {
   fetchLivePools,
   fetchLiveUserOrders,
@@ -75,8 +77,12 @@ function MainApp() {
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [lockScreenMode, setLockScreenMode] = useState<LockScreenMode>('unlock');
   const [session, setSession] = useState<SeekerSession | null>(null);
-  const [selectedNetwork, setSelectedNetwork] = useState<SolanaNetwork>('mainnet-beta');
+  // Mainnet-only app: the devnet toggle was removed (round-14 audit M-7).
+  const selectedNetwork: SolanaNetwork = 'mainnet-beta';
   const [activeTab, setActiveTab] = useState<Tab>('BORROW');
+  // First-time Quick-Start guided bar (post-auth feature discovery, shown once per device)
+  const [showQuickStart, setShowQuickStart] = useState<boolean>(false);
+  const [borrowPreset, setBorrowPreset] = useState<string | null>(null);
   const [transactionNotice, setTransactionNotice] = useState<TransactionNoticeData | null>(null);
   const [showLeaderboard, setShowLeaderboard] = useState<boolean>(false);
   const [showJudgeBriefing, setShowJudgeBriefing] = useState<boolean>(false);
@@ -84,6 +90,34 @@ function MainApp() {
   // Suppresses the auto-relock that otherwise fires when the MWA wallet
   // authorization backgrounds and re-foregrounds the app right after unlock.
   const lastUnlockAtRef = useRef<number>(0);
+
+  // Show the Quick-Start bar once per device after the first wallet connect, unless dismissed.
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    SecureStore.getItemAsync('clocklend_quickstart_dismissed_v1')
+      .then((val) => {
+        if (!cancelled) setShowQuickStart(val !== '1');
+      })
+      .catch(() => {
+        if (!cancelled) setShowQuickStart(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.publicKey]);
+
+  const handleQuickStartDismiss = async () => {
+    setShowQuickStart(false);
+    try {
+      await SecureStore.setItemAsync('clocklend_quickstart_dismissed_v1', '1');
+    } catch {}
+  };
+
+  const handleQuickStartPreset = (amt: string) => {
+    setBorrowPreset(amt);
+    setActiveTab('BORROW');
+  };
 
   // Auto-lock and hardware integrity check on app launch and background resume
   useEffect(() => {
@@ -1159,12 +1193,8 @@ function MainApp() {
       <Header
         skrHandle={session.skrHandle}
         solBalance={solBalance}
-        network={selectedNetwork}
         onPressProfile={() => setActiveTab('PROFILE')}
         onPressBalance={() => setShowAssetsModal(true)}
-        onToggleNetwork={() =>
-          setSelectedNetwork((prev) => (prev === 'devnet' ? 'mainnet-beta' : 'devnet'))
-        }
         onDisconnectWallet={handleDisconnect}
         hasSeekerGenesisToken={walletAssets.hasSeekerGenesisToken}
         isProfileActive={activeTab === 'PROFILE'}
@@ -1172,10 +1202,22 @@ function MainApp() {
         onOpenJudgeBriefing={() => setShowJudgeBriefing(true)}
       />
 
+      {/* First-time Quick-Start guided bar (dismissible, once per device) */}
+      {session && showQuickStart && (activeTab === 'BORROW' || activeTab === 'MARKET') && (
+        <QuickStartBar
+          onPresetAmount={handleQuickStartPreset}
+          onNavigateBorrow={() => setActiveTab('BORROW')}
+          onNavigateMarket={() => setActiveTab('MARKET')}
+          onDismiss={handleQuickStartDismiss}
+        />
+      )}
+
       {/* Main Content Area */}
       <View style={styles.body}>
         {activeTab === 'BORROW' && (
           <P2PExpressView
+            key={`borrow-${borrowPreset ?? 'default'}`}
+            initialAmount={borrowPreset ?? undefined}
             pools={pools}
             userProfile={currentProfile}
             walletAssets={walletAssets}

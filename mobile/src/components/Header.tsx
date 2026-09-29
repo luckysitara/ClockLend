@@ -4,17 +4,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
-import { SolanaNetwork } from '../types';
 
 interface HeaderProps {
   skrHandle: string;
   solBalance: number;
-  network?: SolanaNetwork;
   hasSeekerGenesisToken?: boolean;
   isProfileActive?: boolean;
   onPressProfile: () => void;
   onPressBalance?: () => void;
-  onToggleNetwork?: () => void;
   onDisconnectWallet?: () => void;
   onOpenLeaderboard?: () => void;
   onOpenJudgeBriefing?: () => void;
@@ -23,12 +20,10 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   skrHandle,
   solBalance,
-  network = 'mainnet-beta',
   hasSeekerGenesisToken = false,
   isProfileActive = false,
   onPressProfile,
   onPressBalance,
-  onToggleNetwork,
   onDisconnectWallet,
   onOpenLeaderboard,
   onOpenJudgeBriefing,

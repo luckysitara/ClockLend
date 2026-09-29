@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -17,6 +17,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { connectSeekerWallet, SeekerSession } from '../solana/seekerWallet';
+import { fetchLivePools, calculateExactInterestDue } from '../solana/onChainService';
 
 const LOGO_IMG = require('../../assets/logo.png');
 const { width } = Dimensions.get('window');
@@ -33,6 +34,7 @@ interface OnboardingSlide {
   badge: string;
   title: string;
   description: string;
+  chips: string[];
 }
 
 const ONBOARDING_SLIDES: OnboardingSlide[] = [
@@ -40,33 +42,86 @@ const ONBOARDING_SLIDES: OnboardingSlide[] = [
     id: '1',
     icon: 'flash-outline',
     iconColor: '#6366F1',
-    badge: 'INSTANT BORROW',
+    badge: '1-TAP MICRO-CREDIT',
     title: 'Micro-Credit in Seconds',
-    description: 'Draw instant USDC against your SOL or SKR at up to 85% LTV. Zero paperwork, sub-second atomic settlement.',
+    description: 'Draw instant USDC against your SOL or SKR at up to 90% LTV. Zero paperwork, atomic on-chain settlement.',
+    chips: ['⚡ Instant Settlement', '📈 Up to 90% LTV', '🪙 Real USDC'],
   },
   {
     id: '2',
-    icon: 'people-outline',
+    icon: 'shield-outline',
     iconColor: '#10B981',
-    badge: 'PEER-TO-PEER',
-    title: 'Community Desks & Grace',
-    description: 'Borrow from decentralized desks with an autonomous 24-hour social grace period that protects your collateral.',
+    badge: 'ZERO INSTANT LIQUIDATION',
+    title: '24-Hour Social Grace',
+    description: 'Borrow with peace of mind. When your term ends, ClockLend grants an automatic 24h grace window to repay before any collateral action.',
+    chips: ['🛡️ 24h Grace Shield', '🤝 Peer-Funded Desks', '🚫 No Instant Liquidation'],
   },
   {
     id: '3',
-    icon: 'shield-checkmark-outline',
+    icon: 'hardware-chip-outline',
     iconColor: '#38BDF8',
     badge: 'SEEKER ENCLAVE',
     title: 'Hardware Seed Vault',
     description: 'Private keys remain permanently sealed within your Seeker SPU hardware enclave. 100% non-custodial.',
+    chips: ['🔐 SPU Hardware Enclave', '📱 Solana Seeker Native', '🔒 100% Non-Custodial'],
+  },
+  {
+    id: '4',
+    icon: 'calculator-outline',
+    iconColor: '#F59E0B',
+    badge: 'TRY BEFORE YOU CONNECT',
+    title: 'Preview Your Borrow',
+    description: 'Simulate a loan at the live mainnet pool rate. No wallet needed — just tap.',
+    chips: [],
   },
 ];
+
+const CALC_PRESET_AMOUNTS = [10, 25, 50, 100];
+const CALC_PRESET_TERMS = [7, 14, 30];
 
 export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnected }) => {
   const { colors, mode, toggleTheme } = useTheme();
   const [isConnecting, setIsConnecting] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
   const flatListRef = useRef<FlatList<OnboardingSlide>>(null);
+
+  // Pre-auth borrow calculator: live mainnet pool rate, exact on-chain interest math.
+  const [calcAmount, setCalcAmount] = useState(25);
+  const [calcDays, setCalcDays] = useState(14);
+  const [liveRateBps, setLiveRateBps] = useState<number | null>(null);
+  const [rateStatus, setRateStatus] = useState<'loading' | 'live' | 'unavailable'>('loading');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchLivePools('mainnet-beta')
+      .then((pools) => {
+        if (cancelled) return;
+        const pool = pools.find((p) => p.totalLiquidity > 0) ?? pools[0];
+        if (pool) {
+          setLiveRateBps(pool.interestRateBps);
+          setRateStatus('live');
+        } else {
+          setRateStatus('unavailable');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setRateStatus('unavailable');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const calcInterestMicro =
+    rateStatus === 'live' && liveRateBps !== null
+      ? calculateExactInterestDue(
+          BigInt(calcAmount) * 1_000_000n,
+          liveRateBps,
+          calcDays * 86400
+        )
+      : null;
+  const calcInterestUsd = calcInterestMicro === null ? null : Number(calcInterestMicro) / 1e6;
+  const calcRepayUsd = calcInterestUsd === null ? null : calcAmount + calcInterestUsd;
 
   const handleMwaConnect = async () => {
     try {
@@ -116,6 +171,100 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
 
         <Text style={[styles.slideTitle, { color: colors.text }]}>{item.title}</Text>
         <Text style={[styles.slideDesc, { color: colors.textSecondary }]}>{item.description}</Text>
+
+        {item.id === '4' ? (
+          <View style={[styles.calcCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+            <Text style={[styles.calcSectionLabel, { color: colors.textMuted }]}>BORROW AMOUNT</Text>
+            <View style={styles.calcRow}>
+              {CALC_PRESET_AMOUNTS.map((amt) => {
+                const isActive = calcAmount === amt;
+                return (
+                  <TouchableOpacity
+                    key={amt}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      try { Haptics.selectionAsync(); } catch {}
+                      setCalcAmount(amt);
+                    }}
+                    style={[
+                      styles.calcChip,
+                      isActive
+                        ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                        : { backgroundColor: colors.card, borderColor: colors.cardBorder },
+                    ]}
+                  >
+                    <Text style={[styles.calcChipText, { color: isActive ? colors.primaryText : colors.textSecondary }]}>
+                      ${amt}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={[styles.calcSectionLabel, { color: colors.textMuted }]}>LOAN TERM</Text>
+            <View style={styles.calcRow}>
+              {CALC_PRESET_TERMS.map((days) => {
+                const isActive = calcDays === days;
+                return (
+                  <TouchableOpacity
+                    key={days}
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      try { Haptics.selectionAsync(); } catch {}
+                      setCalcDays(days);
+                    }}
+                    style={[
+                      styles.calcChip,
+                      isActive
+                        ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                        : { backgroundColor: colors.card, borderColor: colors.cardBorder },
+                    ]}
+                  >
+                    <Text style={[styles.calcChipText, { color: isActive ? colors.primaryText : colors.textSecondary }]}>
+                      {days}d
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={[styles.calcDivider, { backgroundColor: colors.divider }]} />
+
+            {rateStatus === 'live' && calcInterestUsd !== null && calcRepayUsd !== null ? (
+              <>
+                <Text style={[styles.calcEstimateLabel, { color: colors.textMuted }]}>
+                  AT {(liveRateBps! / 100).toFixed(2)}% APR — LIVE MAINNET RATE
+                </Text>
+                <Text style={[styles.calcEstimateValue, { color: colors.text }]}>
+                  Repay ${calcRepayUsd.toFixed(2)} <Text style={{ color: colors.textMuted, fontSize: 13, fontWeight: '600' }}>in {calcDays} days</Text>
+                </Text>
+                <Text style={[styles.calcNote, { color: colors.textMuted }]}>
+                  Interest ${calcInterestUsd.toFixed(2)} · up to 50% lower with 1,000+ SKR staked
+                </Text>
+              </>
+            ) : (
+              <Text style={[styles.calcNote, { color: colors.textMuted }]}>
+                {rateStatus === 'loading'
+                  ? 'Fetching live mainnet rate…'
+                  : 'Live rate unavailable — connect to see your exact offer.'}
+              </Text>
+            )}
+          </View>
+        ) : (
+          <View style={styles.slideChipsRow}>
+            {item.chips.map((chip, idx) => (
+              <View
+                key={idx}
+                style={[
+                  styles.slideChip,
+                  { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder },
+                ]}
+              >
+                <Text style={[styles.slideChipText, { color: colors.textSecondary }]}>{chip}</Text>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
     );
   };
@@ -304,6 +453,77 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     textAlign: 'center',
     maxWidth: 300,
+  },
+  slideChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 18,
+  },
+  slideChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  slideChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.1,
+  },
+  calcCard: {
+    width: '100%',
+    maxWidth: 320,
+    marginTop: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  calcSectionLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  calcRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  calcChip: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calcChipText: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  calcDivider: {
+    height: 1,
+    marginBottom: 12,
+  },
+  calcEstimateLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  calcEstimateValue: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: -0.4,
+  },
+  calcNote: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 4,
+    lineHeight: 16,
   },
   paginationRow: {
     flexDirection: 'row',

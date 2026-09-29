@@ -15,6 +15,8 @@ interface P2PExpressViewProps {
   onBorrow: (borrowAmount: number, collateralUnits: number, collateralName: string, pool: LendingPool, durationDays: number) => void;
   onRequestAirdrop?: () => void;
   isLoadingPools?: boolean;
+  /** Prefills the borrow amount when the Quick-Start bar presets are tapped. */
+  initialAmount?: string;
 }
 
 export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
@@ -24,9 +26,10 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
   onBorrow,
   onRequestAirdrop,
   isLoadingPools = false,
+  initialAmount,
 }) => {
   const { colors, mode } = useTheme();
-  const [amountStr, setAmountStr] = useState<string>('50');
+  const [amountStr, setAmountStr] = useState<string>(initialAmount ?? '50');
   const [collateralType, setCollateralType] = useState<'SKR' | 'SOL'>('SKR');
   const [durationDays, setDurationDays] = useState<number>(7);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
