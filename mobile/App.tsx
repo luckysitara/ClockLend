@@ -22,6 +22,8 @@ import { CreditProfileView } from './src/components/CreditProfileView';
 import { ConnectWalletView } from './src/components/ConnectWalletView';
 import { WalletAssetsModal } from './src/components/WalletAssetsModal';
 import { TransactionNoticeModal, TransactionNoticeData } from './src/components/TransactionNoticeModal';
+import { LeaderboardModal } from './src/components/LeaderboardModal';
+import { JudgeBriefingModal } from './src/components/JudgeBriefingModal';
 import { SplashScreenView } from './src/components/SplashScreenView';
 import { SecurityLockScreen, LockScreenMode } from './src/components/SecurityLockScreen';
 import { SecurityLockdownView } from './src/components/SecurityLockdownView';
@@ -76,6 +78,8 @@ function MainApp() {
   const [selectedNetwork, setSelectedNetwork] = useState<SolanaNetwork>('mainnet-beta');
   const [activeTab, setActiveTab] = useState<Tab>('BORROW');
   const [transactionNotice, setTransactionNotice] = useState<TransactionNoticeData | null>(null);
+  const [showLeaderboard, setShowLeaderboard] = useState<boolean>(false);
+  const [showJudgeBriefing, setShowJudgeBriefing] = useState<boolean>(false);
   const [integrity, setIntegrity] = useState<DeviceIntegrityResult | null>(null);
   // Suppresses the auto-relock that otherwise fires when the MWA wallet
   // authorization backgrounds and re-foregrounds the app right after unlock.
@@ -1164,6 +1168,8 @@ function MainApp() {
         onDisconnectWallet={handleDisconnect}
         hasSeekerGenesisToken={walletAssets.hasSeekerGenesisToken}
         isProfileActive={activeTab === 'PROFILE'}
+        onOpenLeaderboard={() => setShowLeaderboard(true)}
+        onOpenJudgeBriefing={() => setShowJudgeBriefing(true)}
       />
 
       {/* Main Content Area */}
@@ -1231,6 +1237,7 @@ function MainApp() {
               setLockScreenMode('change_pin');
               setIsLocked(true);
             }}
+            onOpenLeaderboard={() => setShowLeaderboard(true)}
           />
         )}
       </View>
@@ -1347,6 +1354,20 @@ function MainApp() {
         visible={!!transactionNotice}
         data={transactionNotice}
         onClose={() => setTransactionNotice(null)}
+      />
+
+      {/* On-Chain Seeker Hall of Fame / Leaderboard Modal */}
+      <LeaderboardModal
+        visible={showLeaderboard}
+        onClose={() => setShowLeaderboard(false)}
+        network={selectedNetwork}
+        currentUserPubkey={session?.publicKey}
+      />
+
+      {/* Solana Mobile Hackathon Judge Briefing Hub */}
+      <JudgeBriefingModal
+        visible={showJudgeBriefing}
+        onClose={() => setShowJudgeBriefing(false)}
       />
 
       {/* Floating In-App Toast Notification */}

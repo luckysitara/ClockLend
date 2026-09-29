@@ -208,7 +208,10 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
               userProfile.stakedSkr === 0 && { opacity: 0.45 },
             ]}
             onPress={() => {
-              if (userProfile.stakedSkr > 0) onUnstakeSkr(userProfile.stakedSkr);
+              if (userProfile.stakedSkr > 0) {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                onUnstakeSkr(userProfile.stakedSkr);
+              }
             }}
             disabled={userProfile.stakedSkr === 0}
             activeOpacity={0.7}
@@ -385,7 +388,10 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
             </View>
             <TouchableOpacity
               style={[styles.claimYieldBtn, { backgroundColor: colors.primary, borderColor: colors.primary }]}
-              onPress={onClaimYield}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                if (onClaimYield) onClaimYield();
+              }}
               disabled={!onClaimYield}
               activeOpacity={0.85}
             >
@@ -715,5 +721,58 @@ const styles = StyleSheet.create({
   secActionBtnText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  tierProgressContainer: {
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 12,
+    marginBottom: 10,
+  },
+  tierProgressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  tierProgressTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  tierProgressNext: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  tierBarTrack: {
+    height: 7,
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  tierBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  tierPerksRow: {
+    marginTop: 2,
+  },
+  tierPerkText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  hallOfFameBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 6,
+  },
+  hallOfFameBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#eab308',
   },
 });
