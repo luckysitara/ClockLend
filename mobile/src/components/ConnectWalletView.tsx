@@ -252,17 +252,6 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
               <Text style={[styles.assetBadgeText, { color: '#38BDF8' }]}>Payouts</Text>
             </View>
           </View>
-
-          <View style={[styles.assetCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <View style={[styles.cnftIconBox, { backgroundColor: colors.badgeBg }]}>
-              <Ionicons name="cube-outline" size={24} color={colors.primary} />
-            </View>
-            <Text style={[styles.assetSymbol, { color: colors.text }]}>cNFT</Text>
-            <Text style={[styles.assetName, { color: colors.textSecondary }]}>Compressed</Text>
-            <View style={[styles.assetBadge, { backgroundColor: 'rgba(234, 179, 8, 0.12)' }]}>
-              <Text style={[styles.assetBadgeText, { color: '#EAB308' }]}>Social Pawn</Text>
-            </View>
-          </View>
         </View>
       </View>
 
@@ -519,14 +508,6 @@ const styles = StyleSheet.create({
   assetImg: {
     width: 28,
     height: 28,
-    marginBottom: 6,
-  },
-  cnftIconBox: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: 6,
   },
   assetSymbol: {
