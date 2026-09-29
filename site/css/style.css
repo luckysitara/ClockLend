@@ -821,3 +821,166 @@ p {
   font-size: 1.5rem;
   cursor: pointer;
 }
+
+/* Seeker Device Mockup Preview in Hero */
+.hero-mockup-wrapper {
+  margin: 50px auto 0;
+  max-width: 520px;
+  position: relative;
+}
+
+.hero-mockup-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.3) 0%, rgba(20, 241, 149, 0.15) 50%, transparent 80%);
+  filter: blur(50px);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.phone-card {
+  position: relative;
+  z-index: 1;
+  background: rgba(14, 18, 30, 0.92);
+  border: 1px solid rgba(139, 92, 246, 0.4);
+  border-radius: 28px;
+  padding: 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7), 0 0 30px rgba(139, 92, 246, 0.25);
+  backdrop-filter: blur(20px);
+  text-align: left;
+}
+
+.phone-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.phone-card-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(20, 241, 149, 0.1);
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(20, 241, 149, 0.3);
+}
+
+.phone-card-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.phone-card-brand {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mockup-asset-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.mockup-asset-pill {
+  flex: 1;
+  padding: 8px 6px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: center;
+}
+
+.mockup-asset-pill.active {
+  background: rgba(139, 92, 246, 0.15);
+  border-color: rgba(139, 92, 246, 0.6);
+}
+
+.mockup-asset-symbol {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.mockup-asset-sub {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+
+.mockup-borrow-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.mockup-borrow-label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.mockup-borrow-amount {
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: #fff;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.mockup-borrow-details {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.mockup-cta-btn {
+  width: 100%;
+  padding: 14px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #14f195 0%, #00b471 100%);
+  color: #07080e;
+  font-weight: 800;
+  font-size: 0.95rem;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 20px var(--accent-glow);
+  cursor: pointer;
+}
+
+.mockup-shield-note {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
