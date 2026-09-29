@@ -1,5 +1,5 @@
 # 📱 ClockLend
-### *The Bybit P2P for Micro-Lending & Social Pawns on Solana Seeker*
+### *Next-Gen P2P Micro-Lending & Social Pawns on Solana Seeker*
 > **Built for the Solana Mobile CLOCK IN Hackathon (RadiantsDAO & Solana Mobile)**  
 > **Devnet Program ID:** [`HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3`](https://explorer.solana.com/address/HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3?cluster=devnet)  
 > **Physical Target Hardware:** Solana Seeker (Android 14+ / Seed Vault / MWA 2.0)  
@@ -45,7 +45,7 @@ Then follow [`docs/MAINNET_RUNBOOK.md`](docs/MAINNET_RUNBOOK.md) — deploy, cro
    - [Cryptographic Invariants & Program Derived Addresses (PDAs)](#3-cryptographic-invariants--pdas)
    - [Economic Engine: SKR Reputation Bond & Protocol Monetization](#4-economic-engine-skr-reputation-bond--protocol-monetization)
 3. [Core Product Modules](#-core-product-modules)
-   - [1. Bybit P2P Express Desk (1-Tap Algorithmic Match)](#1-bybit-p2p-express-desk-1-tap-algorithmic-match)
+   - [1. P2P Express Desk (1-Tap Algorithmic Match)](#1-p2p-express-desk-1-tap-algorithmic-match)
    - [2. Merchant Desks & Circle Pools](#2-merchant-desks--circle-pools)
    - [3. Circle Pawn Deck (1-on-1 Social Pawns)](#3-circle-pawn-deck-1-on-1-social-pawns)
    - [4. The Ticking Clock & 24h Social Grace Period](#4-the-ticking-clock--24h-social-grace-period)
@@ -70,7 +70,7 @@ Then follow [`docs/MAINNET_RUNBOOK.md`](docs/MAINNET_RUNBOOK.md) — deploy, cro
 
 ## 🏆 Executive Summary & Hackathon Pitch
 
-**ClockLend** reinvents peer-to-peer credit for the mobile era. By combining the liquid, familiar trading mechanics of **Bybit P2P** with the native hardware superpowers of the **Solana Seeker** (Seed Vault, Mobile Wallet Adapter, and Secure Enclave), ClockLend introduces an intuitive, human-centered micro-lending platform.
+**ClockLend** reinvents peer-to-peer credit for the mobile era. By combining frictionless, instant peer-to-peer trading mechanics with the native hardware superpowers of the **Solana Seeker** (Seed Vault, Mobile Wallet Adapter, and Secure Enclave), ClockLend introduces an intuitive, human-centered micro-lending platform.
 
 ```mermaid
 flowchart LR
@@ -112,7 +112,7 @@ Traditional DeFi lending markets (Aave, Solend, Kamino) were designed for deskto
 
 ### 2. The Solution: ClockLend Architecture
 ClockLend introduces a hybrid credit paradigm combining **algorithmic micro-pools**, **bilateral P2P pawn agreements**, and **social reputation mechanics**:
-1. **Bybit P2P UX Paradigm**: Borrowers select their preferred collateral and desired loan term; the protocol's routing algorithm scans live Merchant Desks and fills the loan at the lowest available APR within milliseconds.
+1. **P2P Express Desk Paradigm**: Borrowers select their preferred collateral and desired loan term; the protocol's routing algorithm scans live Merchant Desks and fills the loan at the lowest available APR within milliseconds.
 2. **The Ticking Clock Mechanic**: Borrowers are greeted by a prominent countdown clock for each active debt obligation. Time-to-maturity is gamified, establishing clear repayment deadlines.
 3. **The Social Safety Net (24h Grace Period)**: When a loan passes its due date without repayment, ClockLend does **not** instantly trigger an auction bot. Instead, an on-chain **24-Hour Social Grace Period** is initiated. Circle peers and friends receive high-priority alerts allowing them to fund a buyout, salvaging the borrower's credit score and acquiring the underlying asset at a discounted rate within the community.
 4. **Treasury Monetization & Sustainable Economics**:
@@ -305,13 +305,13 @@ $$\text{Treasury Allocation} = \text{Slashed Amount} \times 20\% \quad (\text{co
 
 ## 💻 Core Product Modules
 
-### 1. Bybit P2P Express Desk (1-Tap Algorithmic Match)
+### 1. P2P Express Desk (1-Tap Algorithmic Match)
 - **Zero-Friction Borrowing**: Borrowers select collateral (Default **SKR** or **SOL**), enter the desired USDC amount, and tap **"Get Instant Loan"**.
 - **Cheapest Routing Engine**: The mobile app scans live on-chain merchant desks and circle pools, sorting by lowest APR and required duration.
 - **Atomic Escrow Locking**: Collateral is transferred directly into a Program Derived Address (PDA) while principal is disbursed directly to the user's wallet in a single atomic transaction.
 
 ### 2. Merchant Desks & Circle Pools
-- **Individual Desks (Solo Lenders)**: Any user with idle USDC can deploy a dedicated Bybit-style lending desk with custom APR (8% - 30%), maximum LTV (50% - 90%), and term limits (3 - 30 days).
+- **Individual Desks (Solo Lenders)**: Any user with idle USDC can deploy a dedicated community lending desk with custom APR (8% - 30%), maximum LTV (50% - 90%), and term limits (3 - 30 days).
 - **Circle Pools (Community / Hacker Houses)**: Collective lending vaults for DAOs, hacker house cohorts, or private groups. Members deposit capital into a shared pool and earn pro-rata yield on borrower repayments.
 - **NFC Phone Bump**: Seeker users can physically tap their phones together to share, verify, and join exclusive private lending circles in real life.
 
@@ -322,7 +322,7 @@ $$\text{Treasury Allocation} = \text{Slashed Amount} \times 20\% \quad (\text{co
 - **Cancellation & Rent Recovery**: Unfunded pawn offers can be cancelled at any time by the creator with a guaranteed 100% refund of locked assets and Solana account rent.
 
 ### 4. The Ticking Clock & 24h Social Grace Period
-- **Live Bybit Countdown Widget**: Each active order features an animated visual clock counting down days, hours, minutes, and seconds until maturity.
+- **Live Countdown Widget**: Each active order features an animated visual clock counting down days, hours, minutes, and seconds until maturity.
 - **Grace Period State Machine**:
   - `Active`: Normal loan state before `due_time`.
   - `InGracePeriod`: Triggered automatically when `current_time > due_time` and `current_time <= due_time + 86400`. During this window, liquidation bots are blocked on-chain.
@@ -564,7 +564,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 
 | Evaluation Criteria | Weight | How ClockLend Meets & Exceeds |
 | :--- | :---: | :--- |
-| **Mobile-First UX** | 25% | Built natively for Solana Seeker. Features a Bybit-style ticking countdown clock, 1-tap Seed Vault MWA signing, biometric app locking, and NFC phone bumping. |
+| **Mobile-First UX** | 25% | Built natively for Solana Seeker. Features an animated ticking countdown clock, 1-tap Seed Vault MWA signing, biometric app locking, and NFC phone bumping. |
 | **$10,000 SKR Track** | 25% | SKR is the primary collateral asset and the protocol's core reputation engine. Staking SKR unlocks 90% LTV, grants 50% fee discounts, and enforces automated default slashing. |
 | **Technical Execution** | 25% | Macro-free native Rust (`solana-program`) smart contract with pure integer math, 24/24 passing tests, and a fully hardened Android release build with R8 obfuscation and anti-emulator detection. |
 | **Real-World Impact** | 25% | Addresses the $500B+ informal peer credit market (ROSCAs, community lending, pawnshops) by providing decentralized, transparent, and non-predatory micro-loans on mobile. |

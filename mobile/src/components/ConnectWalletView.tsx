@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
-import { connectSeekerWallet, createPreviewSession, SeekerSession } from '../solana/seekerWallet';
+import { connectSeekerWallet, SeekerSession } from '../solana/seekerWallet';
 
 const LOGO_IMG = require('../../assets/logo.png');
 const SKR_IMG = require('../../assets/tokens/skr.png');
@@ -39,34 +39,11 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
       const session = await connectSeekerWallet();
       onConnected(session);
     } catch (err: any) {
-      console.log('MWA Connection notice:', err);
+      console.log('MWA Connection error:', err);
       Alert.alert(
-        'Seeker Hardware Connection',
-        'Could not detect an active Seeker Seed Vault host on this environment.\n\nWould you like to continue in preview mode?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Preview Mode',
-            onPress: async () => {
-              const previewSession = await createPreviewSession();
-              onConnected(previewSession);
-            },
-          },
-        ]
+        'Seeker Hardware Wallet',
+        err?.message || 'Could not connect to Seeker Seed Vault. Please ensure your device is unlocked and authorized to proceed.'
       );
-    } finally {
-      setIsConnecting(false);
-    }
-  };
-
-  const handlePreviewConnect = async () => {
-    try {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {}
-    setIsConnecting(true);
-    try {
-      const previewSession = await createPreviewSession();
-      onConnected(previewSession);
     } finally {
       setIsConnecting(false);
     }
@@ -151,7 +128,7 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
 
         <Text style={[styles.title, { color: colors.text }]}>ClockLend</Text>
         <Text style={[styles.tagline, { color: colors.accent }]}>
-          The Bybit P2P for Micro-Credit on Solana
+          Decentralized Micro-Credit & Social Pawn Protocol
         </Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
           Instant USDC liquidity against SOL & SKR • Seed Vault SPU hardware protection • 100% on-chain escrows
@@ -183,23 +160,10 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
           </LinearGradient>
         </TouchableOpacity>
 
-        {/* Secondary Instant Preview Action */}
-        <TouchableOpacity
-          style={[styles.previewBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
-          onPress={handlePreviewConnect}
-          disabled={isConnecting}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="sparkles" size={16} color={colors.primary} style={{ marginRight: 8 }} />
-          <Text style={[styles.previewBtnText, { color: colors.text }]}>
-            Test Drive in Live Preview
-          </Text>
-        </TouchableOpacity>
-
         <View style={styles.securityRow}>
           <Ionicons name="shield-checkmark" size={13} color="#14F195" style={{ marginRight: 6 }} />
           <Text style={[styles.securityNote, { color: colors.textMuted }]}>
-            Protected by Seed Vault SPU Enclave & FLAG_SECURE
+            Protected by Seed Vault SPU Enclave • Production Mainnet
           </Text>
         </View>
       </View>
@@ -469,19 +433,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: 0.3,
-  },
-  previewBtn: {
-    height: 46,
-    borderRadius: 16,
-    borderWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
-  previewBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
   },
   securityRow: {
     flexDirection: 'row',
