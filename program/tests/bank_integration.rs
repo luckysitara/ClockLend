@@ -72,7 +72,7 @@ async fn test_bank_initialize_pool_success() {
         pool_id,
         pool_type: PoolType::Individual,
         interest_rate_bps: 600, // 6%
-        max_ltv_bps: 8500,      // 85%
+        max_ltv_bps: 7000,      // 70% (round-14 M-3 cap)
         min_duration: 86400,
         max_duration: 86400 * 30,
         name,
@@ -111,7 +111,7 @@ async fn test_bank_initialize_pool_success() {
     let pool = LendingPool::unpack_from_slice(&pool_account.data).expect("Failed to unpack pool data");
     assert_eq!(pool.is_initialized, true);
     assert_eq!(pool.interest_rate_bps, 600);
-    assert_eq!(pool.max_ltv_bps, 8500);
+    assert_eq!(pool.max_ltv_bps, 7000);
     assert_eq!(pool.authority, payer.pubkey());
     assert_eq!(pool.name, name);
 }
@@ -146,7 +146,7 @@ async fn test_bank_initialize_pool_rejects_unauthorized_signer() {
         pool_id,
         pool_type: PoolType::Individual,
         interest_rate_bps: 800,
-        max_ltv_bps: 8000,
+        max_ltv_bps: 7000,
         min_duration: 86400,
         max_duration: 86400 * 30,
         name,
@@ -1167,7 +1167,12 @@ async fn test_bank_claim_default_syncs_borrower_yield_position() {
     );
 
     let (loan_pda, _) = Pubkey::find_program_address(
-        &[LOAN_SEED, borrower.pubkey().as_ref(), &1u64.to_le_bytes()],
+        &[
+            LOAN_SEED,
+            pool_pda.as_ref(),
+            borrower.pubkey().as_ref(),
+            &1u64.to_le_bytes(),
+        ],
         &program_id,
     );
     let (escrow_pda, _) = Pubkey::find_program_address(
@@ -1620,7 +1625,7 @@ async fn test_bank_set_price_feed_and_borrow_dynamic_oracle_success() {
         total_borrowed: 0,
         staked_skr_amount: 0,
         interest_rate_bps: 800,
-        max_ltv_bps: 8000, // 80% LTV
+        max_ltv_bps: 7000, // 80% LTV
         min_duration: 86400,
         max_duration: 86400 * 30,
         loans_originated: 0,
@@ -1764,11 +1769,10 @@ async fn test_bank_set_price_feed_and_borrow_dynamic_oracle_success() {
     assert_eq!(feed.mint, SKR_MINT);
     assert_eq!(feed.authority, oracle_authority.pubkey());
 
-    // 2. Borrower borrows $35 USDC against 1,000 SKR collateral
-    // Under baseline ($0.02), 1,000 SKR = $20 -> max borrow at 80% LTV was $16.
-    // Under dynamic oracle ($0.05), 1,000 SKR = $50 -> max borrow at 80% LTV is $40.
-    // So $35 USDC borrow is valid only thanks to the dynamic price feed!
-    let borrow_ix = Instruction {
+    // 2. Round-14 M-1: this pool is oracle-free, so collateral is valued at
+    // min(baseline, live). Baseline $0.02 -> 1,000 SKR = $20 -> max borrow at
+    // 70% LTV = $14. The live $0.05 feed may NOT inflate the valuation.
+    let mk_borrow = |amount: u64| Instruction {
         program_id,
         accounts: vec![
             AccountMeta::new(borrower.pubkey(), true),
@@ -1786,23 +1790,30 @@ async fn test_bank_set_price_feed_and_borrow_dynamic_oracle_success() {
         ],
         data: borsh::to_vec(&ClockLendInstruction::BorrowFromPool {
             loan_id,
-            borrow_amount: 35_000_000, // $35 USDC
+            borrow_amount: amount,
             collateral_amount: 1_000_000_000, // 1000 SKR
             duration_seconds: 86400 * 7,
         })
         .unwrap(),
     };
 
-    let mut tx2 = Transaction::new_with_payer(&[borrow_ix], Some(&payer.pubkey()));
+    // $35 at the live $0.05 feed must be REJECTED (baseline caps the value).
+    let mut tx2 = Transaction::new_with_payer(&[mk_borrow(35_000_000)], Some(&payer.pubkey()));
     tx2.sign(&[&payer, &borrower], recent_blockhash);
     let res2 = banks_client.process_transaction(tx2).await;
-    assert!(res2.is_ok(), "Borrow with dynamic price feed MUST succeed! Result: {:?}", res2);
+    expect_custom_error(&res2, 10, "hot feed must NOT inflate an oracle-free pool above baseline!");
+
+    // $14 at the baseline cap (70% of $20) must succeed even with the feed passed.
+    let mut tx3 = Transaction::new_with_payer(&[mk_borrow(14_000_000)], Some(&payer.pubkey()));
+    tx3.sign(&[&payer, &borrower], recent_blockhash);
+    let res3 = banks_client.process_transaction(tx3).await;
+    assert!(res3.is_ok(), "baseline-capped borrow with live feed MUST succeed! Result: {:?}", res3);
 
     // Verify loan order is active on-chain
     let loan_acc = banks_client.get_account(loan_pda).await.unwrap().unwrap();
     let loan = LoanOrder::unpack_from_slice(&loan_acc.data).unwrap();
     assert_eq!(loan.is_active, true);
-    assert_eq!(loan.principal_amount, 35_000_000);
+    assert_eq!(loan.principal_amount, 14_000_000);
 }
 
 #[tokio::test]
@@ -1850,7 +1861,7 @@ async fn test_bank_borrow_rejects_stale_oracle_price() {
         total_borrowed: 0,
         staked_skr_amount: 0,
         interest_rate_bps: 800,
-        max_ltv_bps: 8000,
+        max_ltv_bps: 7000,
         min_duration: 86400,
         max_duration: 86400 * 30,
         loans_originated: 0,
@@ -2084,7 +2095,7 @@ async fn test_bank_skr_bond_cannot_be_withdrawn_while_loan_is_active() {
         total_borrowed: 0,
         staked_skr_amount: 0,
         interest_rate_bps: 1000, // 10%
-        max_ltv_bps: 8000,
+        max_ltv_bps: 7000,
         min_duration: 86400,
         max_duration: 86400 * 30,
         loans_originated: 0,
@@ -2378,7 +2389,7 @@ async fn test_bank_claim_default_slashes_locked_bond() {
         total_borrowed: 100_000_000,
         staked_skr_amount: 0,
         interest_rate_bps: 1000,
-        max_ltv_bps: 8000,
+        max_ltv_bps: 7000,
         min_duration: 86400,
         max_duration: 86400 * 30,
         loans_originated: 1,
@@ -4656,8 +4667,22 @@ async fn test_bank_claim_default_without_token_program_rejected() {
     let program_id = Pubkey::new_unique();
     let authority = Keypair::new();
     let borrower = Keypair::new();
-    let pool_account = Pubkey::new_unique();
-    let loan_account = Pubkey::new_unique();
+    // Round-14 L-2: program re-derives pool/loan PDAs — tests must use real ones.
+    let pool_account = Pubkey::find_program_address(
+        &[POOL_SEED, authority.pubkey().as_ref(), &1u64.to_le_bytes()],
+        &program_id,
+    )
+    .0;
+    let loan_account = Pubkey::find_program_address(
+        &[
+            LOAN_SEED,
+            pool_account.as_ref(),
+            borrower.pubkey().as_ref(),
+            &1u64.to_le_bytes(),
+        ],
+        &program_id,
+    )
+    .0;
     let (escrow_pda, _) = Pubkey::find_program_address(
         &[ESCROW_SEED, loan_account.as_ref()],
         &program_id,
@@ -5100,6 +5125,7 @@ async fn test_bank_p2p_grace_trigger_transitions_and_gates() {
         &program_id,
     );
     let offer_b = P2POffer {
+        offer_id: offer_id_b,
         due_time: 4_000_000_000, // far future
         ..offer_a.clone()
     };
@@ -5593,7 +5619,7 @@ async fn test_bank_initialize_pool_rejects_invalid_bounds() {
         (812, 800, 8500, 86400 * 30, 86400, 32, "max < min"),
         (813, 800, 0, 86400, 86400 * 30, 10, "ltv 0"),
         (814, 800, 9501, 86400, 86400 * 30, 10, "ltv > 9500"),
-        (815, 10001, 8500, 86400, 86400 * 30, 33, "interest > 10000"),
+        (815, 10001, 7000, 86400, 86400 * 30, 33, "interest > 10000"),
     ];
     for (pool_id, interest, ltv, min_d, max_d, code, label) in cases {
         let blockhash = banks_client.get_latest_blockhash().await.unwrap();
@@ -5605,12 +5631,12 @@ async fn test_bank_initialize_pool_rejects_invalid_bounds() {
 
     // PoolAlreadyInitialized: same pool id twice (use different params to ensure distinct tx signature).
     let blockhash = banks_client.get_latest_blockhash().await.unwrap();
-    let mut tx = Transaction::new_with_payer(&[init(816, 800, 8500, 86400, 86400 * 30)], Some(&payer.pubkey()));
+    let mut tx = Transaction::new_with_payer(&[init(816, 800, 7000, 86400, 86400 * 30)], Some(&payer.pubkey()));
     tx.sign(&[&payer, &authority], blockhash);
     let res = banks_client.process_transaction(tx).await;
     assert!(res.is_ok(), "first init of pool 816 MUST succeed: {:?}", res);
     let blockhash = banks_client.get_latest_blockhash().await.unwrap();
-    let mut tx = Transaction::new_with_payer(&[init(816, 801, 8500, 86400, 86400 * 30)], Some(&payer.pubkey()));
+    let mut tx = Transaction::new_with_payer(&[init(816, 801, 7000, 86400, 86400 * 30)], Some(&payer.pubkey()));
     tx.sign(&[&payer, &authority], blockhash);
     let res = banks_client.process_transaction(tx).await;
     expect_custom_error(&res, 25, "re-initializing the same pool MUST fail");
@@ -5658,7 +5684,7 @@ async fn test_bank_deposit_liquidity_moves_tokens_and_updates_pool() {
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
         data: borsh::to_vec(&ClockLendInstruction::InitializePool {
-            pool_id, pool_type: PoolType::Individual, interest_rate_bps: 800, max_ltv_bps: 8500,
+            pool_id, pool_type: PoolType::Individual, interest_rate_bps: 800, max_ltv_bps: 7000,
             min_duration: 86400, max_duration: 86400 * 30,
             name: [0u8; 32], is_oracle_free: false,
         }).unwrap(),

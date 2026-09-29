@@ -1,14 +1,15 @@
-// Round-14 fresh-eyes audit PoCs (temporary; added by the auditor, not part of the suite).
+// Round-14 regression tests: the fresh-eyes audit PoCs were inverted into
+// assertions of the SAFE behavior after the round-14 program fixes.
 //
-// POC-1: BorrowFromPool origination-fee "fail open to the treasury" is not what
-//        the code does: when the yield-vault accounts are present but the yield
-//        token account is unusable (mismatched/uninitialized), only HALF the
-//        origination fee reaches the treasury; the other half is stranded in the
-//        pool vault and is no longer backed by pool.total_liquidity.
+// REG-1: when the yield-vault leg cannot pay (accounts present but unusable),
+//        the FULL origination fee routes to the treasury and the vault /
+//        total_liquidity accounting identity holds (no stranded half).
 //
-// POC-2: CreateP2POffer silently defaults the loan asset to the DEVNET USDC mint
-//        when no mint account is appended, which on mainnet yields an offer that
-//        can never be funded (any funder's mint check fails).
+// REG-2: CreateP2POffer defaults the loan asset to the MAINNET USDC mint when
+//        no mint account is appended, so a mainnet funder can always fund it.
+//
+// REG-3: on oracle-free pools the borrower can never price collateral ABOVE
+//        the hardcoded baseline: a live feed is taken at min(baseline, live).
 //
 // Run: cargo test --test zz_round14_poc -- --nocapture
 use clock_lend::{
@@ -83,10 +84,11 @@ async fn token_amount(bc: &mut BanksClient, pk: Pubkey) -> u64 {
 }
 
 // ---------------------------------------------------------------------------
-// POC-1: half the origination fee is stranded when the yield leg cannot pay out
+// REG-1: the full origination fee routes to the treasury when the yield leg
+//        cannot pay out (round-14 fix for the fee-stranding PoC)
 // ---------------------------------------------------------------------------
 #[tokio::test]
-async fn poc_fee_split_strands_half_the_fee() {
+async fn regression_fee_split_routes_full_fee_when_yield_leg_cannot_pay() {
     let pid = clock_lend::id();
     let usdc = USDC_DEVNET_MINT;
     let authority = Keypair::new();
@@ -284,9 +286,8 @@ async fn poc_fee_split_strands_half_the_fee() {
     .unwrap();
 
     let fee = borrow_amount * 25 / 10_000; // 0.25% for SOL collateral
-    let half = fee / 2;
     println!(
-        "POC-1 borrow#1 (yield PDAs appended): fee={fee} treasury_received={} vault_delta={}",
+        "REG-1 borrow#1 (yield PDAs appended): fee={fee} treasury_received={} vault_delta={}",
         treasury_after - treasury_before,
         vault_before - vault_after
     );
@@ -297,13 +298,13 @@ async fn poc_fee_split_strands_half_the_fee() {
     );
     assert_eq!(
         treasury_after - treasury_before,
-        fee - half,
-        "treasury should have received the FULL fee for a borrow whose yield leg cannot pay"
+        fee,
+        "the FULL fee must reach the treasury when the yield leg cannot pay"
     );
     assert_eq!(
         vault_after - pool_state.total_liquidity,
-        half,
-        "half the origination fee is stranded in the vault: vault > total_liquidity"
+        0,
+        "no fee may be stranded: vault balance must stay exactly total_liquidity"
     );
 
     // --- Control: same borrow without the yield PDAs -------------------------
@@ -320,7 +321,7 @@ async fn poc_fee_split_strands_half_the_fee() {
     )
     .unwrap();
     println!(
-        "POC-1 borrow#2 (no yield PDAs):         fee={fee} treasury_received={} vault_delta={} surplus={}",
+        "REG-1 borrow#2 (no yield PDAs):         fee={fee} treasury_received={} vault_delta={} surplus={}",
         treasury_a2 - treasury_b2,
         vault_b2 - vault_a2,
         vault_a2 - pool_state2.total_liquidity
@@ -330,19 +331,17 @@ async fn poc_fee_split_strands_half_the_fee() {
         fee,
         "control: the full fee reaches the treasury when the yield leg is absent"
     );
-    println!("POC-1 CONFIRMED: appending two empty PDAs halves protocol revenue and strands the rest.");
+    assert_eq!(vault_a2 - pool_state2.total_liquidity, 0);
+    println!("REG-1 PASS: appending two empty PDAs no longer halves protocol revenue or strands funds.");
 }
 
 // ---------------------------------------------------------------------------
-// POC-3: on an `is_oracle_free` pool the BORROWER chooses which price applies:
-//        passing the live feed prices the collateral honestly, omitting it
-//        falls back to the hardcoded baseline. Since the borrower takes the
-//        larger valuation, a live price BELOW the baseline is silently ignored
-//        and the 30%-LTV cap (the documented mitigation for stale baselines)
-//        is bypassed by the same factor as the divergence.
+// REG-3a: on an `is_oracle_free` pool a live feed BELOW the baseline prices
+//         collateral at the live value (min(baseline, live)) — the borrower
+//         can no longer inflate the valuation by passing the feed.
 // ---------------------------------------------------------------------------
 #[tokio::test]
-async fn poc_oracle_free_pool_borrower_picks_max_price() {
+async fn regression_oracle_free_never_prices_above_baseline() {
     let pid = clock_lend::id();
     let usdc = USDC_DEVNET_MINT;
     let skr = clock_lend::state::SKR_MINT;
@@ -484,32 +483,198 @@ async fn poc_oracle_free_pool_borrower_picks_max_price() {
     // 1000 SKR at the LIVE price ($0.002) = $2 -> 30% LTV = $0.60 max.
     let bh1 = bc.get_latest_blockhash().await.unwrap();
     let honest = send(&mut bc, mk_borrow(1, 600_000, true), &[&payer, &borrower], &payer, bh1).await;
-    println!("POC-3 honest LTV borrow ($0.60) with live feed  -> {honest:?}");
+    println!("REG-3a honest LTV borrow ($0.60) with live feed  -> {honest:?}");
     assert!(honest.is_ok(), "the honest-sized borrow should succeed");
 
     let bh2 = bc.get_latest_blockhash().await.unwrap();
     let over = send(&mut bc, mk_borrow(2, 6_000_000, true), &[&payer, &borrower], &payer, bh2).await;
-    println!("POC-3 10x-sized borrow ($6.00) WITH live feed   -> {over:?}");
-    assert!(over.is_err(), "the live feed must reject the 10x borrow");
+    println!("REG-3a 10x-sized borrow ($6.00) WITH live feed   -> {over:?}");
+    assert!(over.is_err(), "the live feed (below baseline) must cap the 10x borrow");
 
+    // Omitting the feed prices collateral at the hardcoded baseline — the
+    // oracle-free policy the pool authority explicitly chose (30% cap).
     let bh3 = bc.get_latest_blockhash().await.unwrap();
     let baseline = send(&mut bc, mk_borrow(3, 6_000_000, false), &[&payer, &borrower], &payer, bh3).await;
-    println!("POC-3 10x-sized borrow ($6.00) WITHOUT feed     -> {baseline:?}");
+    println!("REG-3a 10x-sized borrow ($6.00) WITHOUT feed     -> {baseline:?}");
     assert!(
         baseline.is_ok(),
-        "omitting the live feed prices 1000 SKR at the $0.02 baseline -> 10x the honest LTV"
+        "without a feed, the authority-chosen $0.02 baseline applies (30% cap)"
     );
     println!(
-        "POC-3 CONFIRMED: $6 borrowed against collateral the live feed values at $2 \
-         (effective LTV 300%, vs the 30% cap the pool authority chose)."
+        "REG-3a PASS: passing the live feed can no longer inflate the valuation above baseline."
     );
 }
 
 // ---------------------------------------------------------------------------
-// POC-2: P2P offer silently defaults to the DEVNET USDC mint
+// REG-3b: the inverse direction — a live feed ABOVE the baseline must be
+//         capped at the baseline as well (previously the borrower could pass
+//         a hot feed and borrow at the inflated valuation).
 // ---------------------------------------------------------------------------
 #[tokio::test]
-async fn poc_p2p_offer_defaults_to_devnet_usdc() {
+async fn regression_oracle_free_live_above_baseline_is_capped() {
+    let pid = clock_lend::id();
+    let usdc = USDC_DEVNET_MINT;
+    let skr = clock_lend::state::SKR_MINT;
+    let authority = Keypair::new();
+    let borrower = Keypair::new();
+
+    let (pool, _) = Pubkey::find_program_address(
+        &[POOL_SEED, authority.pubkey().as_ref(), &1u64.to_le_bytes()],
+        &pid,
+    );
+    let (vault, _) = Pubkey::find_program_address(&[VAULT_SEED, pool.as_ref()], &pid);
+    let (treasury_pda, _) = Pubkey::find_program_address(&[TREASURY_SEED], &pid);
+    let (skr_oracle, _) =
+        Pubkey::find_program_address(&[clock_lend::state::ORACLE_SEED, skr.as_ref()], &pid);
+
+    // Live feed: SKR is at $0.10 (5x ABOVE the $0.02 baseline).
+    let mut feed = vec![0u8; clock_lend::state::PriceFeed::LEN];
+    feed[0..8].copy_from_slice(b"CLK_FEED");
+    feed[8] = 1;
+    feed[9..41].copy_from_slice(skr.as_ref());
+    feed[41..49].copy_from_slice(&100_000u64.to_le_bytes()); // $0.10
+    feed[49] = 6;
+    feed[50..58].copy_from_slice(&2_000_000_000i64.to_le_bytes());
+    feed[58..90].copy_from_slice(authority.pubkey().as_ref());
+    feed[90..98].copy_from_slice(&3600i64.to_le_bytes());
+
+    let mut pt = ProgramTest::new("clock_lend", pid, processor!(process_instruction));
+    pt.add_account(
+        usdc,
+        Account { lamports: 100_000_000_000, data: mint_data(6), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+    );
+    pt.add_account(
+        skr,
+        Account { lamports: 100_000_000_000, data: mint_data(6), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+    );
+    pt.add_account(
+        skr_oracle,
+        Account { lamports: 100_000_000_000, data: feed, owner: pid, executable: false, rent_epoch: 0 },
+    );
+    let treasury_tok = Pubkey::new_unique();
+    pt.add_account(
+        treasury_tok,
+        Account { lamports: 100_000_000_000, data: tok(usdc, treasury_pda, 0), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+    );
+    let authority_usdc = Pubkey::new_unique();
+    pt.add_account(
+        authority_usdc,
+        Account { lamports: 100_000_000_000, data: tok(usdc, authority.pubkey(), 1_000 * USDC), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+    );
+    let borrower_usdc = Pubkey::new_unique();
+    pt.add_account(
+        borrower_usdc,
+        Account { lamports: 100_000_000_000, data: tok(usdc, borrower.pubkey(), 0), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+    );
+    let borrower_skr = Pubkey::new_unique();
+    pt.add_account(
+        borrower_skr,
+        Account { lamports: 100_000_000_000, data: tok(skr, borrower.pubkey(), 10_000 * USDC), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+    );
+
+    let (mut bc, payer, bh) = pt.start().await;
+    send(
+        &mut bc,
+        system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 30_000_000_000),
+        &[&payer], &payer, bh,
+    ).await.unwrap();
+    send(
+        &mut bc,
+        system_instruction::transfer(&payer.pubkey(), &borrower.pubkey(), 30_000_000_000),
+        &[&payer], &payer, bh,
+    ).await.unwrap();
+
+    let init_ix = Instruction {
+        program_id: pid,
+        accounts: vec![
+            AccountMeta::new(authority.pubkey(), true),
+            AccountMeta::new(pool, false),
+            AccountMeta::new_readonly(usdc, false),
+            AccountMeta::new(vault, false),
+            AccountMeta::new_readonly(SYS, false),
+            AccountMeta::new_readonly(solana_program::sysvar::rent::id(), false),
+            AccountMeta::new_readonly(spl_token::id(), false),
+        ],
+        data: borsh::to_vec(&ClockLendInstruction::InitializePool {
+            pool_id: 1, pool_type: PoolType::Individual, interest_rate_bps: 800,
+            max_ltv_bps: 3000, min_duration: 86_400, max_duration: 86_400 * 30,
+            name: [9u8; 32], is_oracle_free: true,
+        }).unwrap(),
+    };
+    send(&mut bc, init_ix, &[&payer, &authority], &payer, bh).await.expect("init pool");
+    let dep_ix = Instruction {
+        program_id: pid,
+        accounts: vec![
+            AccountMeta::new(authority.pubkey(), true),
+            AccountMeta::new(pool, false),
+            AccountMeta::new(authority_usdc, false),
+            AccountMeta::new(vault, false),
+            AccountMeta::new_readonly(spl_token::id(), false),
+        ],
+        data: borsh::to_vec(&ClockLendInstruction::DepositLiquidity { amount: 1_000 * USDC }).unwrap(),
+    };
+    send(&mut bc, dep_ix, &[&payer, &authority], &payer, bh).await.expect("deposit");
+
+    let mk_borrow = |loan_id: u64, borrow_amount: u64, pass_oracle: bool| {
+        let (loan, _) = Pubkey::find_program_address(
+            &[LOAN_SEED, pool.as_ref(), borrower.pubkey().as_ref(), &loan_id.to_le_bytes()], &pid);
+        let (escrow, _) = Pubkey::find_program_address(&[ESCROW_SEED, loan.as_ref()], &pid);
+        let (profile, _) =
+            Pubkey::find_program_address(&[PROFILE_SEED, borrower.pubkey().as_ref()], &pid);
+        let mut accounts = vec![
+            AccountMeta::new(borrower.pubkey(), true),
+            AccountMeta::new(pool, false),
+            AccountMeta::new(loan, false),
+            AccountMeta::new(vault, false),
+            AccountMeta::new(borrower_usdc, false),
+            AccountMeta::new(borrower_skr, false),
+            AccountMeta::new(escrow, false),
+            AccountMeta::new_readonly(skr, false),
+            AccountMeta::new_readonly(spl_token::id(), false),
+            AccountMeta::new_readonly(SYS, false),
+            AccountMeta::new(profile, false),
+            AccountMeta::new(treasury_tok, false),
+        ];
+        if pass_oracle {
+            accounts.push(AccountMeta::new_readonly(skr_oracle, false));
+        }
+        Instruction {
+            program_id: pid,
+            accounts,
+            data: borsh::to_vec(&ClockLendInstruction::BorrowFromPool {
+                loan_id,
+                borrow_amount,
+                collateral_amount: 1_000 * USDC, // 1000 SKR
+                duration_seconds: 86_400 * 7,
+            }).unwrap(),
+        }
+    };
+
+    // Baseline: 1000 SKR at $0.02 = $20 -> 30% LTV = $6 max. The live feed at
+    // $0.10 would value the same collateral at $100 -> $30 borrowable before
+    // the fix. min(baseline, live) must cap the borrower at $6 regardless.
+    let bh1 = bc.get_latest_blockhash().await.unwrap();
+    let at_cap = send(&mut bc, mk_borrow(1, 6_000_000, true), &[&payer, &borrower], &payer, bh1).await;
+    println!("REG-3b $6.00 borrow (baseline cap) WITH hot feed -> {at_cap:?}");
+    assert!(at_cap.is_ok(), "borrowing at the baseline cap with a live feed should succeed");
+
+    let bh2 = bc.get_latest_blockhash().await.unwrap();
+    let inflated = send(&mut bc, mk_borrow(2, 30_000_000, true), &[&payer, &borrower], &payer, bh2).await;
+    println!("REG-3b $30.00 borrow (5x) WITH hot feed       -> {inflated:?}");
+    assert!(
+        inflated.is_err(),
+        "a live feed above the baseline must NOT inflate the valuation (min(baseline, live))"
+    );
+    println!("REG-3b PASS: hot feeds above baseline are capped at the baseline.");
+}
+
+// ---------------------------------------------------------------------------
+// REG-2: P2P offers default to the MAINNET USDC mint when no mint account is
+//        appended (round-14 fix: the devnet default made mainnet offers
+//        permanently unfundable)
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn regression_p2p_offer_defaults_to_mainnet_usdc() {
     let pid = clock_lend::id();
     let creator = Keypair::new();
     let skr_mint_acc = clock_lend::state::SKR_MINT;
@@ -654,15 +819,15 @@ async fn poc_p2p_offer_defaults_to_devnet_usdc() {
     )
     .unwrap();
     println!(
-        "POC-2 offer.liquidity_mint = {} (mainnet USDC = {})",
+        "REG-2 offer.liquidity_mint = {} (mainnet USDC = {})",
         offer_state.liquidity_mint, USDC_MAINNET_MINT
     );
     assert_eq!(
-        offer_state.liquidity_mint, USDC_DEVNET_MINT,
-        "no-mint offers silently bind to the DEVNET USDC mint"
+        offer_state.liquidity_mint, USDC_MAINNET_MINT,
+        "no-mint offers must default to the MAINNET USDC mint"
     );
 
-    // A funder holding real (mainnet) USDC cannot fund it.
+    // A funder holding real (mainnet) USDC must now be able to fund it.
     let fund_ix = Instruction {
         program_id: pid,
         accounts: vec![
@@ -675,7 +840,7 @@ async fn poc_p2p_offer_defaults_to_devnet_usdc() {
         data: borsh::to_vec(&ClockLendInstruction::FundP2POffer).unwrap(),
     };
     let r = send(&mut bc, fund_ix, &[&payer, &funder], &payer, bh).await;
-    println!("POC-2 fund with mainnet USDC -> {:?}", r.as_ref().err());
-    assert!(r.is_err(), "the offer must be unfundable with mainnet USDC");
-    println!("POC-2 CONFIRMED: mainnet offer created from this client path can never be funded.");
+    println!("REG-2 fund with mainnet USDC -> {r:?}");
+    assert!(r.is_ok(), "the mainnet-defaulted offer must be fundable with mainnet USDC");
+    println!("REG-2 PASS: no-mint P2P offers bind to mainnet USDC and can be funded.");
 }

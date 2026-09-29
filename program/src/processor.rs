@@ -37,6 +37,17 @@ fn assert_owned_by(account: &AccountInfo, owner: &Pubkey) -> ProgramResult {
     Ok(())
 }
 
+// Security helper: re-derive a PDA from its seeds and verify the passed
+// account actually lives at that address (round-14 L-2 defense-in-depth).
+#[inline(always)]
+fn assert_pda(program_id: &Pubkey, account: &AccountInfo, seeds: &[&[u8]]) -> ProgramResult {
+    let (expected, _bump) = Pubkey::find_program_address(seeds, program_id);
+    if expected != *account.key {
+        return Err(ClockLendError::InvalidSeeds.into());
+    }
+    Ok(())
+}
+
 // Security helper: verify signer
 #[inline(always)]
 fn assert_signer(account: &AccountInfo) -> ProgramResult {
@@ -388,6 +399,13 @@ pub fn process_initialize_pool(
     if max_ltv_bps == 0 || max_ltv_bps > 9500 {
         return Err(ClockLendError::InvalidCollateralRatio.into());
     }
+    // Round-14 M-3: the protocol has no price-based liquidation (the only
+    // liquidation path is the post-due-time clock). Cap LTV at 7000 so a
+    // collateral drawdown cannot put the lender underwater before the
+    // borrower's term ends.
+    if max_ltv_bps > 7000 {
+        return Err(ClockLendError::InvalidCollateralRatio.into());
+    }
     // Round 11: oracle-free pools price from hardcoded baselines with no
     // update path — cap their LTV so a stale baseline cannot create
     // unrecoverable bad debt (SKR's baseline has been 3.2x off within months).
@@ -523,6 +541,18 @@ pub fn process_deposit_liquidity(
     let mut pool = LendingPool::unpack_from_slice(&pool_account.try_borrow_data()?)?;
     if !pool.is_initialized {
         return Err(ClockLendError::PoolInactive.into());
+    }
+
+    // Round-14 L-2: re-derive the pool and vault PDAs from their seeds.
+    assert_pda(
+        program_id,
+        pool_account,
+        &[POOL_SEED, pool.authority.as_ref(), &pool.pool_id.to_le_bytes()],
+    )?;
+    let (expected_vault_pda, _) =
+        Pubkey::find_program_address(&[VAULT_SEED, pool_account.key.as_ref()], program_id);
+    if expected_vault_pda != *vault_account.key {
+        return Err(ClockLendError::InvalidSeeds.into());
     }
 
     // H-7: Restrict deposits to pool authority (since there is no LP share accounting)
@@ -1230,7 +1260,18 @@ pub fn process_set_price_feed(
             if pool.authority != *authority.key {
                 return Err(ClockLendError::Unauthorized.into());
             }
-            pool.has_custom_oracle = true;
+            // Round-14 L-2: re-derive the pool PDA from its seeds.
+            assert_pda(
+                program_id,
+                pool_acc,
+                &[POOL_SEED, pool.authority.as_ref(), &pool.pool_id.to_le_bytes()],
+            )?;
+            // Round-14 L-4: only feeds that can serve as a COLLATERAL price
+            // source (native SOL or SKR) activate the pool-scoped pricing
+            // requirement. Feeds for the pool's own liquidity mint (e.g.
+            // USDC) must not flip the flag, otherwise every borrow reverts
+            // for a missing pool-scoped collateral feed.
+            pool.has_custom_oracle = *mint_account.key == spl_token::native_mint::id() || *mint_account.key == SKR_MINT;
             pool.pack_into_slice(&mut pool_acc.try_borrow_mut_data()?)?;
         } else {
             // Global oracle feed: caller MUST be AdminConfig.admin or AdminConfig.oracle_authority!
@@ -1275,6 +1316,28 @@ pub fn process_set_price_feed(
     } else {
         Clock::get()?.unix_timestamp
     };
+
+    // Round-14 H-1: bound per-update movement on existing feeds (first-time
+    // initialization has previous price 0 and is exempt) so a single
+    // compromised oracle write cannot reprice collateral protocol-wide.
+    if feed.price_micro_usd > 0 {
+        let prev = feed.price_micro_usd as u128;
+        let next = price_micro_usd as u128;
+        let dev_bps = if next > prev {
+            (next - prev).saturating_mul(10_000) / prev
+        } else {
+            (prev - next).saturating_mul(10_000) / prev
+        };
+        if dev_bps > MAX_PRICE_MOVE_BPS as u128 {
+            msg!(
+                "ClockLend: rejected feed move of {} bps for mint {} (max {} bps)",
+                dev_bps,
+                mint_account.key,
+                MAX_PRICE_MOVE_BPS
+            );
+            return Err(ClockLendError::InvalidInstruction.into());
+        }
+    }
 
     feed.is_initialized = true;
     feed.mint = *mint_account.key;
@@ -1484,7 +1547,17 @@ pub fn process_borrow_from_pool(
             if feed.last_updated_at <= 0 || current_time.saturating_sub(feed.last_updated_at) > feed.max_staleness_seconds.min(ADMIN_FEED_MAX_PRICE_AGE_SECS) {
                 return Err(ClockLendError::StaleOraclePrice.into());
             }
-            (feed.price_micro_usd, feed.decimals)
+            // Round-14 POC-3: on oracle-free pools the borrower selects the
+            // account list, so they could pick whichever of the live feed and
+            // the hardcoded baseline values their collateral higher. Value
+            // collateral at min(baseline, live) so the baseline remains a
+            // strict cap on those pools.
+            if pool.is_oracle_free {
+                let baseline: u64 = if is_native_sol { 150_000_000 } else { 20_000 };
+                (feed.price_micro_usd.min(baseline), feed.decimals)
+            } else {
+                (feed.price_micro_usd, feed.decimals)
+            }
         } else if oracle_acc.owner == &solana_program::system_program::id() && oracle_acc.data_is_empty() {
             // Unprovisioned PDA: ONLY permitted if pool is explicitly oracle-free!
             if pool.is_oracle_free {
@@ -1785,12 +1858,14 @@ pub fn process_borrow_from_pool(
             // Route origination fee: if skr_yield_vault is provided, split 50/50 with SKR holders
             let (treasury_fee, yield_dividend) = if let (Some(yield_vault_acc), Some(yield_token_acc)) = (skr_yield_vault_opt, skr_yield_token_opt) {
                 let y_div = origination_fee / 2;
-                let t_fee = origination_fee.saturating_sub(y_div);
                 // The yield token account must be denominated in the POOL's
                 // liquidity mint, otherwise the transfer below would revert
                 // every borrow (e.g. a wrapped-SOL pool whose yield vault PDA
                 // can never be initialized — the reward-mint allowlist is
-                // USDC/SKR only). Fail open to the treasury instead.
+                // USDC/SKR only). Fail open to the treasury instead: when the
+                // yield leg cannot pay, route the FULL fee to the treasury —
+                // never split the fee and strand half in the pool vault
+                // (round-14 POC-1).
                 let mint_matches = spl_token::state::Account::unpack(&yield_token_acc.try_borrow_data()?)
                     .ok()
                     .map(|yt| yt.mint == pool.liquidity_mint)
@@ -1820,8 +1895,10 @@ pub fn process_borrow_from_pool(
                         accrue_yield(&mut vault, y_div)?;
                         vault.pack_into_slice(&mut yield_vault_acc.try_borrow_mut_data()?)?;
                     }
+                    (origination_fee.saturating_sub(y_div), y_div)
+                } else {
+                    (origination_fee, 0)
                 }
-                (t_fee, y_div)
             } else {
                 (origination_fee, 0)
             };
@@ -2038,8 +2115,11 @@ pub fn process_create_p2p_offer(
     let (expected_oracle_pda, _) = Pubkey::find_program_address(&[ORACLE_SEED, canonical_mint.as_ref()], program_id);
 
     // Optional accounts: oracle feed account and/or liquidity mint account
+    // Round-14 POC-2: default to the canonical MAINNET USDC mint — the
+    // previous devnet default produced offers no mainnet funder could ever
+    // fund (mint mismatch), locking the creator's collateral until cancel.
     let mut oracle_feed_opt: Option<&AccountInfo> = None;
-    let mut liquidity_mint = USDC_DEVNET_MINT;
+    let mut liquidity_mint = USDC_MAINNET_MINT;
 
     while let Ok(acc) = next_account_info(account_info_iter) {
         if *acc.key == expected_oracle_pda {
@@ -2381,6 +2461,23 @@ pub fn process_repay_loan(
                 return Err(ClockLendError::InvalidRepaymentDestination.into());
             }
 
+            // Round-14 L-2: re-derive the pool and loan PDAs from their seeds.
+            assert_pda(
+                program_id,
+                pool_account,
+                &[POOL_SEED, pool.authority.as_ref(), &pool.pool_id.to_le_bytes()],
+            )?;
+            assert_pda(
+                program_id,
+                loan_account,
+                &[
+                    LOAN_SEED,
+                    pool_account.key.as_ref(),
+                    loan.borrower.as_ref(),
+                    &loan.loan_id.to_le_bytes(),
+                ],
+            )?;
+
             // Security check: Verify Escrow PDA
             let (expected_escrow_pda, escrow_bump) = Pubkey::find_program_address(
                 &[ESCROW_SEED, loan_account.key.as_ref()],
@@ -2574,6 +2671,17 @@ pub fn process_repay_loan(
                 return Err(ClockLendError::Unauthorized.into());
             }
 
+            // Round-14 L-2: re-derive the P2P offer PDA from its seeds.
+            assert_pda(
+                program_id,
+                loan_account,
+                &[
+                    P2P_SEED,
+                    offer.creator.as_ref(),
+                    &offer.offer_id.to_le_bytes(),
+                ],
+            )?;
+
             // H-1: Accept Funded OR InGracePeriod (borrower can remediate before grace expiration)
             if !offer.is_initialized || (offer.status != OfferStatus::Funded && offer.status != OfferStatus::InGracePeriod) {
                 return Err(ClockLendError::InvalidInstruction.into());
@@ -2714,12 +2822,29 @@ pub fn process_trigger_grace_period(
     match account_kind {
         AccountKind::LoanOrder => {
             let mut loan = LoanOrder::unpack_from_slice(&loan_account.try_borrow_data()?)?;
+            // Round-14 L-2: re-derive the loan PDA from its seeds.
+            assert_pda(
+                program_id,
+                loan_account,
+                &[
+                    LOAN_SEED,
+                    loan.pool.as_ref(),
+                    loan.borrower.as_ref(),
+                    &loan.loan_id.to_le_bytes(),
+                ],
+            )?;
             let is_authorized = if *caller.key == loan.borrower {
                 true
             } else if let Some(pool_acc) = pool_account_opt {
                 if pool_acc.owner == program_id && *pool_acc.key == loan.pool {
                     if let Ok(pool) = LendingPool::unpack_from_slice(&pool_acc.try_borrow_data()?) {
-                        pool.authority == *caller.key
+                        assert_pda(
+                            program_id,
+                            pool_acc,
+                            &[POOL_SEED, pool.authority.as_ref(), &pool.pool_id.to_le_bytes()],
+                        )
+                        .is_ok()
+                            && pool.authority == *caller.key
                     } else {
                         false
                     }
@@ -2756,6 +2881,17 @@ pub fn process_trigger_grace_period(
             if !offer.is_initialized || offer.status != OfferStatus::Funded {
                 return Err(ClockLendError::InvalidInstruction.into());
             }
+
+            // Round-14 L-2: re-derive the P2P offer PDA from its seeds.
+            assert_pda(
+                program_id,
+                loan_account,
+                &[
+                    P2P_SEED,
+                    offer.creator.as_ref(),
+                    &offer.offer_id.to_le_bytes(),
+                ],
+            )?;
 
             // Security check: Only creator or funder can trigger grace period
             if *caller.key != offer.creator && *caller.key != offer.funder {
@@ -2842,6 +2978,23 @@ pub fn process_claim_default(
             if *caller.key != pool.authority {
                 return Err(ClockLendError::UnauthorizedCaller.into());
             }
+
+            // Round-14 L-2: re-derive the pool and loan PDAs from their seeds.
+            assert_pda(
+                program_id,
+                pool_account,
+                &[POOL_SEED, pool.authority.as_ref(), &pool.pool_id.to_le_bytes()],
+            )?;
+            assert_pda(
+                program_id,
+                loan_account,
+                &[
+                    LOAN_SEED,
+                    pool_account.key.as_ref(),
+                    loan.borrower.as_ref(),
+                    &loan.loan_id.to_le_bytes(),
+                ],
+            )?;
 
             let (expected_borrower_skr_escrow, skr_bump) =
                 Pubkey::find_program_address(&[b"skr_escrow", loan.borrower.as_ref()], program_id);
@@ -3250,6 +3403,17 @@ pub fn process_claim_default(
                 return Err(ClockLendError::UnauthorizedCaller.into());
             }
 
+            // Round-14 L-2: re-derive the P2P offer PDA from its seeds.
+            assert_pda(
+                program_id,
+                loan_account,
+                &[
+                    P2P_SEED,
+                    offer.creator.as_ref(),
+                    &offer.offer_id.to_le_bytes(),
+                ],
+            )?;
+
             if offer.status != OfferStatus::InGracePeriod {
                 return Err(ClockLendError::GracePeriodActive.into());
             }
@@ -3357,6 +3521,13 @@ pub fn process_withdraw_liquidity(
     if *vault_account.key != pool.vault_pda {
         return Err(ClockLendError::InvalidVaultAccount.into());
     }
+
+    // Round-14 L-2: re-derive the pool PDA from its seeds.
+    assert_pda(
+        program_id,
+        pool_account,
+        &[POOL_SEED, pool.authority.as_ref(), &pool.pool_id.to_le_bytes()],
+    )?;
 
     if pool.total_liquidity < amount {
         return Err(ClockLendError::InsufficientLiquidity.into());
@@ -3644,6 +3815,10 @@ const MIN_STAKE_AGE_SECS: i64 = 3600;
 /// Admin feeds older than this cannot price loans (the stored 3600s window is
 /// for monitoring only). Kept fresh by the keeper crank (Jupiter/CoinGecko).
 const ADMIN_FEED_MAX_PRICE_AGE_SECS: i64 = 600;
+/// Round-14 H-1: maximum per-update deviation for an existing price feed
+/// (25%). Bounds the blast radius of a compromised oracle authority so a
+/// single write cannot reprice the entire protocol.
+const MAX_PRICE_MOVE_BPS: u64 = 2500;
 
 /// Fold `amount` into acc_reward_per_share. Rewards deposited while no staker
 /// is synced are parked in `unallocated_rewards` and folded into the next
