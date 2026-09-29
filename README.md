@@ -1,39 +1,51 @@
 # 📱 ClockLend
 ### *Next-Gen P2P Micro-Lending & Social Pawns on Solana Seeker*
 > **Built for the Solana Mobile CLOCK IN Hackathon (RadiantsDAO & Solana Mobile)**  
-> **Devnet Program ID:** [`HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3`](https://explorer.solana.com/address/HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3?cluster=devnet)  
+> **Mainnet Program ID:** [`4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7`](https://solscan.io/account/4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7) — deployed and bytecode-hash-verified  
+> **Devnet Program ID:** [`HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3`](https://explorer.solana.com/address/HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3?cluster=devnet) (exists on devnet only)  
 > **Physical Target Hardware:** Solana Seeker (Android 14+ / Seed Vault / MWA 2.0)  
-> **Security Audit Status:** 24/24 Tests Passing • Zero Float Math • R8 Minified • Anti-Emulator Hardened
+> **Security Audit Status:** 14 internal AI-assisted rounds • 103 on-chain test functions • **no third-party audit** • round-14 fixes in source, awaiting redeploy
 
 ---
 
-## 🏭 Production Status & Mainnet Path (2026-09-21)
+## 🏭 Production Status (verified 2026-09-29)
 
-The app is now **mainnet-only**: every money flow executes on mainnet-beta, all devnet
+The app is **mainnet-only**: every money flow executes on mainnet-beta, all devnet
 faucet/switch UI has been removed, and the data layer is fully network-aware.
 
-**Program (v5)** — deployed and verified on devnet (on-chain hash-checked):
-- 15 instructions, 8-byte account discriminators with fail-closed dispatch, upgrade-authority
-  admin root (no hardcoded keys), PDA-verified escrows with front-run authority defense
-- 74/74 tests, including P2P lifecycle, liquidation, treasury, and type-confusion regression suites
-- Prior audit classes closed: type confusion, offer re-init, admin race, treasury burn,
-  P2P mint injection, SKR liquidation, dust-bricked cancel
+**Program** — **deployed on Solana Mainnet-beta**, bytecode hash-verified:
+- Program `4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7`, ProgramData
+  `9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG` (357,517 B allocated / 357,472 B ELF),
+  deploy slot `451589196`, upgrade authority `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds`
+- On-chain bytecode sha256 `019da88bc97498b127ddbaa76468ff8ad86c5094ae46045f7f9a9127b3c1dbdb`
+  — this equals `sha256sum program/target/deploy/clock_lend.so`, so the deployed program is
+  provably the build in this repo. Recipe: [`docs/MAINNET_RUNBOOK.md`](docs/MAINNET_RUNBOOK.md) §1.1
+- 103 on-chain test functions across six suites (`grep -c '#\[test\]\|#\[tokio::test\]' program/tests/*.rs`)
+- 8-byte account discriminators with fail-closed dispatch, ProgramData-derived admin root,
+  PDA-verified escrows with front-run authority defense
+- **Upgradeable**, not immutable: the deployer key can replace the program
+
+**Deployed but not yet used.** The only program-owned accounts on mainnet are the two price
+feeds, the AdminConfig PDA, one lending pool (zero liquidity, zero loans) and the SKR yield
+vault. The treasury PDA has never been initialized, so no fee has ever been collected.
+
+**Open items — see [`docs/MAINNET_RUNBOOK.md`](docs/MAINNET_RUNBOOK.md) §5:**
+1. The keeper is not running reliably; both mainnet feeds were observed ~3.9 h stale, so
+   borrows that read them currently revert
+2. The round-14 POC fixes are **in source but not yet redeployed**
+3. No third-party audit has been performed
+4. A Helius RPC API key is committed in `serverless/wrangler.toml` (now a comment) and should
+   be rotated
 
 **Infrastructure**
 - RPC: Helius gatekeeper → configured RPC → PublicNode → official fallback (env-driven,
   `mobile/.env` `EXPO_PUBLIC_*` vars, gitignored)
-- Pricing: Jupiter Price API v3 for SOL **and SKR** (SKR is listed — ~$0.021, ~$766K liquidity)
-  with CoinGecko fallback; the keeper refreshes both on-chain feeds from the same source
-- Keeper: `mobile/scripts/keeper.mjs` (cron every 15 min, 3600s staleness window)
-- Deploy: `mobile/scripts/deploy-mainnet.mjs` — program, admin init (ProgramData proof),
-  treasury ATA, SOL/SKR feeds, first desk
-
-**Remaining mainnet blockers (user-side only)**
-1. Fund the deployer wallet ~3.5 SOL on mainnet-beta
-2. Generate a fresh mainnet deploy keypair (the devnet key is embedded in app source as a
-   legacy fallback)
-
-Then follow [`docs/MAINNET_RUNBOOK.md`](docs/MAINNET_RUNBOOK.md) — deploy, cron the keeper, verify.
+- Pricing: Jupiter Price API v3 for SOL **and SKR** with CoinGecko fallback; the keeper
+  refreshes both on-chain feeds from the same source
+- Keeper: `mobile/scripts/keeper.mjs` (per-feed failure tracking, exits non-zero on failure)
+  plus `.github/workflows/keeper.yml` as failover and a Cloudflare Workers cron in `serverless/`
+- Deploy: `mobile/scripts/deploy-mainnet.mjs` — program (with `--upgrade` for real upgrades),
+  admin init (ProgramData proof), treasury ATA, SOL/SKR feeds, first desk
 
 ---
 
@@ -78,7 +90,7 @@ flowchart LR
     B --> C["P2P Express Match<br>(Instant Lowest-APR Routing)"]
     B --> D["Merchant Desks<br>(Solo & Circle Credit Pools)"]
     B --> E["Circle Pawn Deck<br>(1-on-1 NFT / cNFT Escrow)"]
-    C & D & E --> F["Native Rust SBF Program<br>(HAjGxuih...jsH3)"]
+    C & D & E --> F["Native Rust SBF Program<br>(4Dp2A6SH...NHgv7, Mainnet)"]
     F --> G["SKR Reputation Bond<br>(90% LTV & Slashing Engine)"]
     F --> H["24h Social Grace Period<br>(Peer Rescue Over Bot Liquidation)"]
 ```
@@ -468,48 +480,30 @@ flowchart TD
 
 ## 🧪 Smart Contract Verification & Test Suite
 
-The Solana program features 24 automated unit, functional, and security tests running directly against the Solana runtime:
+The Solana program has **103 test functions** across six suites, running against the
+`solana-program-test` runtime. Count them yourself rather than trusting this number:
 
 ```bash
+# Run the suite (from the repo root):
 cd program && cargo test
+
+# Reproducible count, no build required (from the repo root):
+grep -c '#\[test\]\|#\[tokio::test\]' program/tests/*.rs
 ```
 
-### Complete Test Execution Log:
-```text
-running 1 test
-test test_id ... ok
+| Suite | Test functions |
+| :--- | :---: |
+| `bank_integration.rs` | 46 |
+| `security_tests.rs` | 23 |
+| `functional.rs` | 16 |
+| `skr_yield_and_lst_tests.rs` | 11 |
+| `zz_round14_poc.rs` | 4 |
+| `fuzz_invariants.rs` | 3 |
+| **Total** | **103** |
 
-running 2 tests
-test test_bank_initialize_pool_rejects_unauthorized_signer ... ok
-test test_bank_initialize_pool_success ... ok
-
-running 8 tests
-test test_cancel_p2p_offer_instruction_serialization ... ok
-test test_institutional_pool_type_serialization ... ok
-test test_instruction_serialization ... ok
-test test_lending_pool_serialization ... ok
-test test_loan_order_serialization ... ok
-test test_p2p_offer_serialization ... ok
-test test_user_profile_serialization ... ok
-test test_withdraw_liquidity_instruction_serialization ... ok
-
-running 13 tests
-test test_security_cancel_p2p_offer_invariant ... ok
-test test_security_default_liquidation_margin_capture ... ok
-test test_security_funder_destination_verification ... ok
-test test_security_grace_period_timing ... ok
-test test_security_interest_calculation ... ok
-test test_security_interest_take_rate_split ... ok
-test test_security_ltv_enforcement ... ok
-test test_security_merchant_pool_staking_authority_enforced ... ok
-test test_security_origination_fee_skr_vs_sol ... ok
-test test_security_pda_seeds_tamper_resistance ... ok
-test test_security_rent_refund_invariant ... ok
-test test_security_slashing_deterministic_math ... ok
-test test_security_token_program_verification ... ok
-
-test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured
-```
+A green suite is a regression signal, **not** a security proof: the round-14 audit found
+three executable proof-of-concept bugs while the suite was green. Treat `cargo test` as a
+floor, not a guarantee.
 
 ---
 
@@ -566,7 +560,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 | :--- | :---: | :--- |
 | **Mobile-First UX** | 25% | Built natively for Solana Seeker. Features an animated ticking countdown clock, 1-tap Seed Vault MWA signing, biometric app locking, and NFC phone bumping. |
 | **$10,000 SKR Track** | 25% | SKR is the primary collateral asset and the protocol's core reputation engine. Staking SKR unlocks 90% LTV, grants 50% fee discounts, and enforces automated default slashing. |
-| **Technical Execution** | 25% | Macro-free native Rust (`solana-program`) smart contract with pure integer math, 24/24 passing tests, and a fully hardened Android release build with R8 obfuscation and anti-emulator detection. |
+| **Technical Execution** | 25% | Macro-free native Rust (`solana-program`) smart contract with pure integer math, 103 test functions, deployed and bytecode-hash-verified on Solana Mainnet-beta, plus an Android release build with R8 obfuscation and anti-emulator detection. |
 | **Real-World Impact** | 25% | Addresses the $500B+ informal peer credit market (ROSCAs, community lending, pawnshops) by providing decentralized, transparent, and non-predatory micro-loans on mobile. |
 
 ---

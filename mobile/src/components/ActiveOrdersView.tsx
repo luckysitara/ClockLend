@@ -1,11 +1,17 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Linking } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { LoanOrder } from '../types';
 import { CountdownTimer } from './CountdownTimer';
 import { requestTardisGraceRescue } from '../services/tardisIntegration';
-import { livePrices } from '../solana/onChainService';
+import {
+  livePrices,
+  fetchLivePrices,
+  subscribeToPriceUpdates,
+  isLivePriceUsable,
+  isNativeSolCollateralName,
+} from '../solana/onChainService';
 
 interface ActiveOrdersViewProps {
   orders: LoanOrder[];
@@ -21,6 +27,23 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
   onNavigateBorrow,
 }) => {
   const { colors } = useTheme();
+
+  // H-2: a collateral valuation is only shown when the price the program
+  // itself would accept is available (on-chain / Helius WSS source, inside the
+  // 600s window it enforces). Otherwise the USD figure is omitted entirely.
+  const [priceTrusted, setPriceTrusted] = useState<boolean>(isLivePriceUsable());
+
+  useEffect(() => {
+    fetchLivePrices()
+      .then(() => setPriceTrusted(isLivePriceUsable()))
+      .catch(() => setPriceTrusted(false));
+    const unsubscribe = subscribeToPriceUpdates(() => setPriceTrusted(isLivePriceUsable()));
+    const timer = setInterval(() => setPriceTrusted(isLivePriceUsable()), 15_000);
+    return () => {
+      unsubscribe();
+      clearInterval(timer);
+    };
+  }, []);
 
   const activeOrders = orders.filter((o) => {
     const s = o.status.toUpperCase();
@@ -87,42 +110,87 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                 </View>
               </View>
 
-              {/* Ticking Countdown Timer */}
-              <CountdownTimer dueTime={order.dueTime} />
+              {/* M-2: unconfirmed rows must never read as live on-chain state */}
+              {order.isStale && (
+                <View
+                  style={[
+                    styles.warningCard,
+                    { backgroundColor: 'rgba(245, 158, 11, 0.10)', borderColor: colors.warning },
+                  ]}
+                >
+                  <Text style={[styles.warningCardText, { color: colors.warning }]}>
+                    Last known state — not confirmed on-chain. The network could not be reached; these
+                    figures come from this device's cache.
+                  </Text>
+                </View>
+              )}
 
-              {/* Liquidation Health Meter */}
+              {/* Ticking Countdown Timer — M-3: an unset due_time is "unknown",
+                  never a fabricated date. */}
+              {order.dueTime > 0 ? (
+                <CountdownTimer dueTime={order.dueTime} />
+              ) : (
+                <View style={[styles.warningCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+                  <Text style={[styles.warningCardText, { color: colors.textSecondary }]}>
+                    Due date unknown — the loan account does not carry a due_time yet. Refresh once the
+                    network is reachable.
+                  </Text>
+                </View>
+              )}
+
+              {/* H-1: the program has NO LTV liquidation. ClaimDefault is
+                  time-triggered only: due_time + 24h social grace
+                  (processor.rs:2739-2744). So this is a static
+                  borrowed-vs-collateralized ratio, not a health meter — and no
+                  price-derived figure is shown unless the feed is one the
+                  program would accept (H-2). */}
               {(() => {
-                const isSol = order.collateralName.toUpperCase().includes('SOL');
-                const price = isSol ? livePrices.sol : livePrices.skr;
-                const collVal = (order.collateralAmount || 1) * price;
+                const isSol = isNativeSolCollateralName(order.collateralName);
                 const debt = order.principalAmount + order.interestDue;
-                const ltvPct = collVal > 0 ? Math.min(100, Math.round((debt / collVal) * 100)) : 75;
-                const isSafe = ltvPct < 75;
-                const isWarn = ltvPct >= 75 && ltvPct < 85;
-                const healthColor = isSafe ? '#22c55e' : isWarn ? '#f59e0b' : '#ef4444';
-                const healthLabel = isSafe ? 'Healthy / Safe' : isWarn ? 'Moderate LTV' : 'Liquidation Warning';
+                const price = isSol ? livePrices.sol : livePrices.skr;
+                const priceUsable = priceTrusted && price > 0;
+                const collVal = priceUsable ? order.collateralAmount * price : null;
+                const ratio =
+                  collVal && collVal > 0 ? Math.min(999, Math.round((debt / collVal) * 100)) : null;
+                const barPct = ratio === null ? 0 : Math.min(100, ratio);
 
                 return (
                   <View style={[styles.healthCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
                     <View style={styles.healthHeader}>
                       <View style={styles.healthLabelRow}>
-                        <View style={[styles.healthDot, { backgroundColor: healthColor }]} />
-                        <Text style={[styles.healthTitle, { color: colors.text }]}>{healthLabel}</Text>
+                        <View style={[styles.healthDot, { backgroundColor: colors.primary }]} />
+                        <Text style={[styles.healthTitle, { color: colors.text }]}>
+                          Borrowed vs Collateralized
+                        </Text>
                       </View>
-                      <Text style={[styles.healthLtv, { color: healthColor }]}>{ltvPct}% LTV</Text>
+                      <Text style={[styles.healthLtv, { color: colors.text }]}>
+                        {ratio === null ? '—' : `${ratio}%`}
+                      </Text>
                     </View>
                     <View style={[styles.healthBarTrack, { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
-                      <View style={[styles.healthBarFill, { width: `${ltvPct}%`, backgroundColor: healthColor }]} />
-                      <View style={[styles.liquidationMarker, { left: '90%' }]} />
+                      <View style={[styles.healthBarFill, { width: `${barPct}%`, backgroundColor: colors.primary }]} />
                     </View>
                     <View style={styles.healthFooter}>
                       <Text style={[styles.healthFooterText, { color: colors.textMuted }]}>
-                        Collateral: ${collVal.toFixed(2)} USDC
+                        {collVal === null
+                          ? `${order.collateralName} locked (USD value unavailable)`
+                          : `${order.collateralName} ≈ $${collVal.toFixed(2)}`}
                       </Text>
                       <Text style={[styles.healthFooterText, { color: colors.textMuted }]}>
-                        Liquidation: 90%
+                        Debt ${debt.toFixed(2)}
                       </Text>
                     </View>
+                    <Text style={[styles.healthFootnote, { color: colors.textMuted }]}>
+                      Liquidation is time-triggered, not price-based: the loan can be claimed by the
+                      desk only after the due date plus a 24h social grace period. Collateral value is
+                      informational.
+                    </Text>
+                    {!priceTrusted && (
+                      <Text style={[styles.healthFootnote, { color: colors.warning }]}>
+                        No verified on-chain price right now — USD figures are hidden rather than
+                        estimated.
+                      </Text>
+                    )}
                   </View>
                 );
               })()}
@@ -518,17 +586,26 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 3,
   },
-  liquidationMarker: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    width: 2,
-    backgroundColor: '#ef4444',
-  },
   healthFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 6,
+  },
+  healthFootnote: {
+    fontSize: 10,
+    lineHeight: 14,
+    marginTop: 6,
+  },
+  warningCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 10,
+    marginTop: 8,
+  },
+  warningCardText: {
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 15,
   },
   healthFooterText: {
     fontSize: 10,

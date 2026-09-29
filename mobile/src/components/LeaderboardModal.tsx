@@ -13,7 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { LeaderboardEntry, fetchLiveLeaderboard } from '../solana/onChainService';
-import { SolanaNetwork } from '../types';
+import { CreditTier, SolanaNetwork } from '../types';
 import { PublicKey } from '@solana/web3.js';
 import * as Haptics from 'expo-haptics';
 
@@ -34,7 +34,8 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [tierFilter, setTierFilter] = useState<'ALL' | 'Diamond' | 'Gold' | 'Silver'>('ALL');
+  // C-2: filters mirror the program's bond tiers (the only tiers it grants).
+  const [tierFilter, setTierFilter] = useState<'ALL' | CreditTier>('ALL');
 
   useEffect(() => {
     if (visible) {
@@ -74,12 +75,10 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
 
   const getTierColor = (tier: string) => {
     switch (tier) {
-      case 'Diamond':
+      case 'Tier 2':
         return '#38bdf8';
-      case 'Gold':
+      case 'Tier 1':
         return '#f59e0b';
-      case 'Silver':
-        return '#94a3b8';
       default:
         return colors.textMuted;
     }
@@ -136,7 +135,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
 
           {/* Tier Filter Chips */}
           <View style={styles.filterRow}>
-            {(['ALL', 'Diamond', 'Gold', 'Silver'] as const).map((tier) => (
+            {(['ALL', 'Tier 2', 'Tier 1', 'Standard'] as const).map((tier) => (
               <TouchableOpacity
                 key={tier}
                 style={[

@@ -204,7 +204,7 @@
   <div class="grid-3 animate-in" style="margin-top: 12px;">
     <div class="card-glow">
       <h3 class="h3 text-primary">⚡ Express</h3>
-      <p class="small" style="margin-top: 8px;">1-tap borrowing. Collateral priced live by Pyth. Routed to the cheapest desk automatically.</p>
+      <p class="small" style="margin-top: 8px;">1-tap borrowing. Collateral priced from a live on-chain feed. Routed to the cheapest desk automatically.</p>
     </div>
     <div class="card">
       <h3 class="h3">🏪 Desks & Circles</h3>
@@ -266,7 +266,7 @@
         <h3 class="h3" style="margin-bottom: 8px;">Demo-video storyboard</h3>
         <ul class="bullet-list">
           <li>0:00 — Seeker in hand, Seed Vault connect</li>
-          <li>0:20 — 1-tap Express borrow, Pyth-priced</li>
+          <li>0:20 — 1-tap Express borrow, priced from the on-chain feed</li>
           <li>0:45 — the ticking settlement clock</li>
           <li>1:05 — repay in one swipe, collateral home</li>
           <li>1:20 — stake SKR, unlock the 90% tier</li>
@@ -292,7 +292,7 @@
       <h3 class="h3" style="margin-bottom: 8px;">What the chain makes possible</h3>
       <ul class="bullet-list">
         <li>Collateral locked atomically in PDA escrow</li>
-        <li>Pyth pull oracles price SOL & SKR — no keeper, no admin key</li>
+        <li>On-chain feeds price SOL &amp; SKR, refreshed by a keeper (admin-fed — disclosed, not trustless)</li>
         <li>Permissionless lending without a bank account</li>
         <li>On-chain credit history that follows the user</li>
       </ul>
@@ -321,38 +321,43 @@
 <!-- 6 · SECURITY / PROOF -->
 <div class="slide bg-alt">
   <span class="caption animate-in">Proof · Security</span>
-  <h1 class="h1 animate-in" style="margin-top: 16px;">Six audit rounds. 81 tests.<br>Zero shortcuts.</h1>
+  <h1 class="h1 animate-in" style="margin-top: 16px;">14 internal audit rounds. 103 tests.<br>No third-party audit.</h1>
   <div class="divider animate-in"></div>
   <div class="grid-4 animate-in" style="margin-top: 12px;">
     <div class="metric-card">
-      <div class="metric-value">6</div>
-      <div class="metric-label">Independent audit rounds</div>
+      <div class="metric-value">14</div>
+      <div class="metric-label">Internal, AI-assisted rounds (not an audit firm)</div>
     </div>
     <div class="metric-card">
-      <div class="metric-value">81/81</div>
-      <div class="metric-label">Tests, incl. fuzz invariants</div>
+      <div class="metric-value">103</div>
+      <div class="metric-label">Test functions, incl. fuzz invariants</div>
     </div>
     <div class="metric-card">
-      <div class="metric-value">2</div>
-      <div class="metric-label">Adversarial PoC exploit hunts</div>
+      <div class="metric-value">3</div>
+      <div class="metric-label">Executable PoC bugs found in round 14</div>
     </div>
     <div class="metric-card">
-      <div class="metric-value">0</div>
-      <div class="metric-label">Trusted keys in pricing</div>
+      <div class="metric-value">OPEN</div>
+      <div class="metric-label">Ops readiness — keeper unreliable</div>
     </div>
   </div>
   <p class="small animate-in" style="margin-top: 24px; max-width: 1000px;">
-    Every critical class found by auditors — type confusion, offer re-initialization, admin races,
-    treasury burns, liquidation gaps, oracle mispricing — was fixed, regression-tested, and
-    re-deployed. Program <span class="mono text-primary">HAjGxuih…jsH3</span> is live and
-    hash-verified on-chain.
+    Earlier rounds' findings — type confusion, offer re-initialization, admin races, treasury burns,
+    liquidation gaps — were fixed and regression-tested. To be clear about what is <em>not</em> done:
+    no third-party firm has audited this code, round 14 found three further executable PoC bugs whose
+    fixes are in source but <em>not yet redeployed</em>, pricing is admin-fed (not trustless), and the
+    program stays upgradeable by one team key. Program
+    <span class="mono text-primary">4Dp2A6SH…NHgv7</span> is live on Solana Mainnet-beta with its
+    bytecode hash-verified on-chain.
   </p>
   <div class="notes">
     <div class="notes-label">Speaker notes</div>
-    Two of this panel's judges are security researchers, so let me be precise: the program went
-    through six independent audit passes, including PoC-driven exploit hunts and a property-based
-    fuzz suite that checks solvency and escrow invariants after every simulated step. Everything
-    found was fixed. The deployed binary is hash-verified on-chain.
+    Two of this panel's judges are security researchers, so let me be precise and not oversell:
+    these were 14 INTERNAL, AI-assisted audit rounds run by our own agents — no third-party firm
+    has reviewed this code. We run 103 test functions including a property-based fuzz suite over
+    solvency and escrow invariants. Round 14 found three further executable PoC bugs; the fixes are
+    committed in source but are NOT yet in the redeployed on-chain bytecode. Ops readiness was
+    graded not ready. The deployed binary IS hash-verified on-chain, and you can check that.
   </div>
 </div>
 
@@ -364,7 +369,7 @@
   <div class="grid-3 animate-in" style="margin-top: 12px;">
     <div class="card-glow">
       <h3 class="h3 text-primary">Mainnet</h3>
-      <p class="small" style="margin-top: 8px;">Program deployed and verified. First lending desk seeded. Pyth feeds live.</p>
+      <p class="small" style="margin-top: 8px;">Program deployed and bytecode-verified. Lending desk created on chain. Caveat: zero liquidity, zero loans, treasury not yet initialized.</p>
     </div>
     <div class="card">
       <h3 class="h3">Seeker app</h3>
@@ -407,7 +412,7 @@
     <div class="card">
       <h3 class="h3" style="margin-bottom: 8px;">Priced by the market, enforced by code</h3>
       <ul class="bullet-list">
-        <li>SKR/USD Pyth feed — the only SKR oracle in lending</li>
+        <li>On-chain SKR/USD feed, keeper-refreshed with a 600s fail-closed bound</li>
         <li>Live market price, guardian-verified per transaction</li>
         <li>No keeper, no admin key, no trust required</li>
         <li>Bond locked by the program — unstake whenever</li>
@@ -417,7 +422,7 @@
   <div class="notes">
     <div class="notes-label">Speaker notes</div>
     For the SKR track: SKR in ClockLend is a staking product with real economic rights — tiered
-    APR discounts, a slashable default bond, and a collateral class. And we price it from Pyth's
+    APR discounts, a slashable default bond, and a collateral class. And we price it from a live on-chain feed,
     SKR/USD feed — the market's price, verified on-chain, with no centralized keeper. That is
     staking, rewards, and access in one product.
   </div>
@@ -477,7 +482,7 @@
       <ul class="bullet-list">
         <li>New staking demand: every bond, every desk</li>
         <li>Collateral demand: SKR locks in escrow daily</li>
-        <li>Pyth SKR/USD feed — the market's price in a protocol</li>
+        <li>On-chain SKR/USD feed — market data, in a protocol</li>
         <li>A use case that survives bear markets: credit</li>
       </ul>
     </div>
@@ -494,7 +499,7 @@
   <div class="notes">
     <div class="notes-label">Speaker notes</div>
     The ecosystem case: ClockLend turns SKR from a holding into a working asset — staked for
-    discounts, locked as collateral, priced by Pyth. And it gives every Seeker wallet a portable
+    discounts, locked as collateral, priced on chain. And it gives every Seeker wallet a portable
     credit history — the missing primitive for the social graph Solana Mobile is building.
   </div>
 </div>
@@ -537,10 +542,10 @@
     <h1 class="h1 animate-in">Lend on time.</h1>
     <div class="flex gap-sm animate-in items-center">
       <span class="badge badge-primary">github.com/luckysitara/Clock-It</span>
-      <span class="badge badge-outline mono">HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3</span>
+      <span class="badge badge-outline mono">4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7</span>
     </div>
     <p class="small animate-in" style="max-width: 700px;">
-      Built for the Solana Seeker · Mobile Wallet Adapter · Seed Vault · Pyth · SKR
+      Built for the Solana Seeker · Mobile Wallet Adapter · Seed Vault · On-Chain Feeds · SKR
     </p>
     <p class="caption animate-in" style="margin-top: 12px;">CLOCK IN · October 2026 · Live on mainnet</p>
   </div>

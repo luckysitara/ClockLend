@@ -50,12 +50,22 @@ import {
   getCachedOrders,
   setCachedOrders,
   USDC_MAINNET_MINT,
+  SKR_MINT,
+  NATIVE_SOL_MINT,
   livePrices,
   fetchSkrYieldVault,
   fetchUserYieldPosition,
   buildClaimSkrYieldTx,
   SkrYieldVaultState,
   UserYieldPositionState,
+  // Round-14 audit remediation helpers (program-exact math + live reads)
+  calculateOriginationFee,
+  calculateExactInterestDue,
+  formatUsdcMicro,
+  fetchOnChainLoanByPDA,
+  describeTransactionError,
+  isNativeSolCollateralName,
+  subscribeToUserLoans,
 } from './src/solana/onChainService';
 import { getLoanPDA, getPoolPDA } from './src/solana/program';
 import {
@@ -287,11 +297,14 @@ function MainApp() {
       const pubkey = session.publicKey;
       const pubkeyStr = pubkey.toBase58();
 
-      // 1. Fast 0ms local hybrid cache hydration (strictly isolated by network)
+      // 1. Fast 0ms local hybrid cache hydration (strictly isolated by network).
+      // These rows are UNCONFIRMED until the chain read below completes, so
+      // they are flagged for the UI ("last known — not confirmed").
       getCachedOrders(pubkeyStr, selectedNetwork).then((cached) => {
         if (cached && cached.length > 0) {
-          ordersRef.current = cached;
-          setOrders(cached);
+          const staleRows = cached.map((o) => ({ ...o, isStale: true }));
+          ordersRef.current = staleRows;
+          setOrders(staleRows);
         } else {
           ordersRef.current = [];
           setOrders([]);
@@ -304,6 +317,38 @@ function MainApp() {
       loadProtocolData(pubkey, session.skrHandle, selectedNetwork);
     }
   }, [session?.publicKey, selectedNetwork]);
+
+  // M-8: watch the borrower's own loan PDAs. A program-side change (grace
+  // period triggered, repayment, default claim) pushes an account update, so
+  // the loans view re-reads the chain instead of showing a stale local row.
+  const orderWatchKey = orders
+    .filter((o) => o.poolPubkey)
+    .map((o) => `${o.id}@${o.poolPubkey}`)
+    .join(',');
+  const lastLoanPushRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!session?.publicKey || !orderWatchKey) return;
+    const borrower = session.publicKey;
+    const watched = orders
+      .filter((o) => o.poolPubkey)
+      .map((o) => ({ id: o.id, poolPubkey: o.poolPubkey }));
+    const unsubscribe = subscribeToUserLoans(borrower, watched, selectedNetwork, () => {
+      // Coalesce bursts (a single instruction can emit several notifications).
+      const now = Date.now();
+      if (now - lastLoanPushRef.current < 4_000) return;
+      lastLoanPushRef.current = now;
+      fetchLiveUserOrders(borrower, selectedNetwork)
+        .then((live) => {
+          ordersRef.current = live;
+          setOrders(live);
+        })
+        .catch((err) => console.warn('[Loans] live refresh failed:', err));
+    });
+    return unsubscribe;
+    // orderWatchKey encodes the id+pool of every watched loan; re-subscribing
+    // only happens when that set actually changes.
+  }, [session?.publicKey, orderWatchKey, selectedNetwork]);
 
   // Logout handler with sleek toast feedback (no annoying OS alert popup)
   const handleDisconnect = () => {
@@ -339,77 +384,123 @@ function MainApp() {
   ) => {
     if (!session) return;
 
-    const poolAuthority = new PublicKey(pool.authority);
-    const isSol = collateralName === 'SOL';
-    const collateralLamports = isSol
-      ? Math.round(collateralUnits * 1_000_000_000)
-      : Math.round(collateralUnits * 1_000_000);
-    const isPoolLiquid = pool.totalLiquidity >= borrowAmount;
-
-    // Clamp the selected term into the pool's on-chain duration bounds so the
-    // signed loan matches what the UI promised.
-    const clampedDays = Math.min(
-      Math.max(durationDays, pool.minDurationDays),
-      pool.maxDurationDays
-    );
-    const { tx, escrowPDA, loanId } = await buildBorrowTx(
-      session.publicKey,
-      poolAuthority,
-      pool.id,
-      borrowAmount,
-      collateralLamports,
-      clampedDays,
-      collateralName,
-      isPoolLiquid,
-      new PublicKey(pool.liquidityMint)
-    );
+    // C-3: never sign a borrow the program will reject for lack of liquidity
+    // (processor.rs:1348). The desk must cover the full principal.
+    if (pool.totalLiquidity < borrowAmount) {
+      setTransactionNotice({
+        type: 'error',
+        title: 'This Pool Has No Liquidity Yet',
+        subtitle:
+          pool.totalLiquidity > 0
+            ? `This desk currently has $${pool.totalLiquidity.toLocaleString()} USDC of liquidity, which is less than the $${borrowAmount.toLocaleString()} requested. Try a smaller amount or another desk.`
+            : 'This desk has not been funded by its authority yet, so there is nothing to borrow. Pick another desk or check back later.',
+        primaryBtnText: 'Dismiss',
+      });
+      return;
+    }
 
     try {
+      const poolAuthority = new PublicKey(pool.authority);
+      // L-7: one collateral-type test shared with the tx builder.
+      const isSol = isNativeSolCollateralName(collateralName);
+      const collateralBaseUnits = isSol
+        ? Math.round(collateralUnits * 1_000_000_000)
+        : Math.round(collateralUnits * 1_000_000);
+      const isPoolLiquid = pool.totalLiquidity >= borrowAmount;
+
+      // Clamp the selected term into the pool's on-chain duration bounds so the
+      // signed loan matches what the UI promised.
+      const clampedDays = Math.min(
+        Math.max(durationDays, pool.minDurationDays),
+        pool.maxDurationDays
+      );
+      // H-3: what the program withholds from the disbursement.
+      const grossMicro = BigInt(Math.round(borrowAmount * 1_000_000));
+      const origination = calculateOriginationFee(grossMicro, isSol);
+
+      const { tx, escrowPDA, loanId, loanPDA } = await buildBorrowTx(
+        session.publicKey,
+        poolAuthority,
+        pool.id,
+        borrowAmount,
+        collateralBaseUnits,
+        clampedDays,
+        collateralName,
+        isPoolLiquid,
+        new PublicKey(pool.liquidityMint),
+        selectedNetwork,
+        // M-6: deterministic id; H-5: carry the pool-scoped feeds when the desk
+        // pinned its own oracle PDAs.
+        { poolLoansOriginated: pool.loansOriginated, hasCustomOracle: pool.hasCustomOracle }
+      );
+
       // 1. Sign transaction with Seeker Hardware / MWA
       const sig = await signAndSendSeekerTransaction(tx, session, selectedNetwork);
       console.log('Borrow tx confirmed on-chain:', sig);
 
       const solscanUrl = `https://solscan.io/tx/${sig}`;
 
-      // 2. Create active loan order in state — same term the signed loan uses.
+      // 2. H-4/M-6: read the loan account back. The program's stored
+      // interest_due (exact u128 floor math, processor.rs:1926-1935), due_time
+      // and loan_id are the ground truth — the float estimate and the
+      // pre-signing id are only fallbacks for a failed read.
       const termDays = Math.min(Math.max(durationDays, pool.minDurationDays), pool.maxDurationDays);
-      const interestDue = parseFloat((borrowAmount * (pool.interestRateBps / 10000) * (termDays / 365)).toFixed(2));
-      const collateralMintStr = isSol
-        ? 'So11111111111111111111111111111111111111112'
-        : 'SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3';
+      const chainLoan = await fetchOnChainLoanByPDA(loanPDA, selectedNetwork);
+      const confirmedLoanId = chainLoan?.loanId ?? loanId;
+      const principalMicro = chainLoan ? chainLoan.principalMicro : grossMicro;
+      const principalAmount = Number(principalMicro) / 1_000_000;
+      const interestMicro = chainLoan
+        ? chainLoan.interestDueMicro
+        : calculateExactInterestDue(
+            grossMicro,
+            pool.interestRateBps,
+            termDays * 86400,
+            userProfile?.aprDiscount ?? 0
+          );
+      const interestDue = Number(interestMicro) / 1_000_000;
+      const nowSec = Math.floor(Date.now() / 1000);
+      const dueTime =
+        chainLoan && chainLoan.dueTime > 0 ? chainLoan.dueTime : nowSec + termDays * 86400;
+      const collateralMintStr = (isSol ? NATIVE_SOL_MINT : SKR_MINT).toBase58();
       const newOrder: LoanOrder = {
-        id: loanId,
+        id: confirmedLoanId,
         poolId: pool.id,
         poolName: pool.name,
         borrower: session.publicKey.toBase58(),
-        principalAmount: borrowAmount,
-        collateralName: `${collateralUnits.toFixed(isSol ? 2 : 0)} ${collateralName}`,
-        collateralMint: collateralMintStr,
-        collateralAmount: collateralUnits,
+        principalAmount,
+        collateralName: chainLoan?.collateralName ?? `${collateralUnits.toFixed(isSol ? 2 : 0)} ${collateralName}`,
+        collateralMint: chainLoan?.collateralMint ?? collateralMintStr,
+        collateralAmount: chainLoan?.collateralAmount ?? collateralUnits,
         interestDue,
-        originationTime: Math.floor(Date.now() / 1000),
-        dueTime: Math.floor(Date.now() / 1000) + termDays * 86400,
-        gracePeriodExpires: 0,
-        status: 'Active',
+        originationTime: chainLoan?.originationTime ?? nowSec,
+        dueTime,
+        gracePeriodExpires: chainLoan?.gracePeriodExpires ?? 0,
+        status: chainLoan?.status ?? 'Active',
         txSignature: sig,
         escrowAddress: escrowPDA.toBase58(),
+        poolPubkey: chainLoan?.poolPubkey,
         solscanUrl,
+        // The row is only "live" once the loan PDA has been read back.
+        isStale: !chainLoan,
       };
 
-      ordersRef.current = [newOrder, ...ordersRef.current.filter((o) => o.id !== loanId)];
+      ordersRef.current = [newOrder, ...ordersRef.current.filter((o) => o.id !== confirmedLoanId)];
       setOrders(ordersRef.current);
       await setCachedOrders(session.publicKey.toBase58(), ordersRef.current, selectedNetwork);
 
-      // 3. Refresh wallet assets from the chain — the chain has already moved
-      // the disbursement and collateral, so the RPC is the source of truth.
+      // 3. Refresh assets AND the profile/pools from the chain — the borrow
+      // moved the disbursement, the collateral and (for SKR-bond borrowers)
+      // the locked_skr that drives the APR discount.
       await refreshWalletAssets(session.publicKey, selectedNetwork);
+      loadProtocolData(session.publicKey, session.skrHandle, selectedNetwork).catch(() => {});
 
-      // 4. Show sleek production transaction notice
+      // 4. Show sleek production transaction notice (net of the origination fee)
+      const feePct = (origination.feeBps / 100).toFixed(2);
       setTransactionNotice({
         type: 'borrow',
         title: 'Loan Disbursed on Solana!',
-        subtitle: `Received $${borrowAmount} USDC with ${collateralUnits} ${collateralName} locked in escrow.`,
-        amount: `$${borrowAmount} USDC`,
+        subtitle: `Received $${formatUsdcMicro(origination.netMicro)} USDC (gross $${formatUsdcMicro(principalMicro)} less the ${feePct}% origination fee of $${formatUsdcMicro(origination.feeMicro)}) with ${collateralUnits} ${collateralName} locked in escrow. Interest due at maturity: $${formatUsdcMicro(interestMicro)} USDC.`,
+        amount: `$${formatUsdcMicro(origination.netMicro)} USDC`,
         collateral: `${collateralUnits} ${collateralName}`,
         txSignature: sig,
         escrowAddress: escrowPDA.toBase58(),
@@ -435,7 +526,9 @@ function MainApp() {
       setTransactionNotice({
         type: 'error',
         title: 'Transaction Notice',
-        subtitle: err?.message || 'Could not complete transaction with wallet.',
+        // C-3: explain stale feeds / empty pools in plain language instead of
+        // surfacing a raw custom-program-error dump.
+        subtitle: describeTransactionError(err),
         primaryBtnText: 'Dismiss',
       });
     }
@@ -484,10 +577,11 @@ function MainApp() {
       setOrders(ordersRef.current);
       await setCachedOrders(session.publicKey.toBase58(), ordersRef.current, selectedNetwork);
 
-      // Return collateral to wallet and deduct repaid USDC
+      // Return collateral to wallet and deduct repaid USDC (optimistic — the
+      // chain read below overwrites these figures with ground truth)
       setWalletAssets((prev) => {
-        const isSol = order.collateralName.includes('SOL');
-        const isSkr = order.collateralName.includes('SKR');
+        const isSol = isNativeSolCollateralName(order.collateralName);
+        const isSkr = !isSol;
         const currentUsdc = Math.max(0, parseFloat((prev.usdcBalance - totalDue).toFixed(2)));
         const currentSol = isSol ? parseFloat((prev.solBalance + order.collateralAmount).toFixed(3)) : prev.solBalance;
         const currentSkr = isSkr ? parseFloat((prev.skrBalance + order.collateralAmount).toFixed(0)) : prev.skrBalance;
@@ -500,15 +594,18 @@ function MainApp() {
         };
       });
 
-      // Boost credit score & reputation
-      setUserProfile((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          reputationScore: Math.min(10000, prev.reputationScore + 50),
-          aprDiscount: Math.min(2.5, parseFloat((prev.aprDiscount + 0.2).toFixed(1))),
-        };
-      });
+      // L-6/C-2: no local reputation or discount arithmetic. The program
+      // grants +50 reputation (and releases the loan's SKR bond, changing the
+      // loan tier), so the profile is re-read from its PDA instead.
+      const freshProfile = await fetchLiveUserProfile(
+        session.publicKey,
+        session.skrHandle,
+        selectedNetwork
+      );
+      setUserProfile(freshProfile);
+      // Balances and pool state are chain truth after a repayment.
+      await refreshWalletAssets(session.publicKey, selectedNetwork);
+      loadProtocolData(session.publicKey, session.skrHandle, selectedNetwork).catch(() => {});
 
       setTransactionNotice({
         type: 'repay',
@@ -516,7 +613,8 @@ function MainApp() {
         subtitle: `Successfully repaid $${totalDue} USDC. Your ${order.collateralName} has been unlocked from escrow back to your wallet.`,
         amount: `$${totalDue} USDC`,
         collateral: order.collateralName,
-        reputationGain: 5,
+        // program grants +50 (processor.rs:2546-2548)
+        reputationGain: 50,
         txSignature: sig,
         escrowAddress: order.escrowAddress,
         solscanUrl,
@@ -729,14 +827,15 @@ function MainApp() {
         };
       });
 
-      // Reward lender reputation score
-      setUserProfile((prev) => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          reputationScore: Math.min(10000, prev.reputationScore + 100),
-        };
-      });
+      // Funding a pawn offer does NOT move reputation on-chain (the program
+      // only credits +50 on a completed loan repayment, processor.rs:2546-2548),
+      // so no local score bump is applied — the profile is re-read instead.
+      const freshProfile = await fetchLiveUserProfile(
+        session.publicKey,
+        session.skrHandle,
+        selectedNetwork
+      );
+      setUserProfile(freshProfile);
 
       setTransactionNotice({
         type: 'repay',
@@ -746,7 +845,6 @@ function MainApp() {
         collateral: targetOffer.collateralName,
         txSignature: sig,
         solscanUrl,
-        reputationGain: 10,
         primaryBtnText: 'View on Solscan ↗',
         secondaryBtnText: 'Done',
       });
@@ -993,7 +1091,7 @@ function MainApp() {
       setTransactionNotice({
         type: 'borrow',
         title: '💎 SKR Reputation Bond Staked!',
-        subtitle: `Staked ${amount.toLocaleString()} SKR into Protocol Escrow (${escrowPDA.toBase58().slice(0, 8)}...). Your credit score, 90% LTV, and tier discount are now active on-chain!`,
+        subtitle: `Staked ${amount.toLocaleString()} SKR into Protocol Escrow (${escrowPDA.toBase58().slice(0, 8)}...). On-chain APR discount now ${freshProfile.aprDiscount}% (${freshProfile.availableSkr.toLocaleString()} SKR available).`,
         amount: `${amount.toLocaleString()} SKR`,
         collateral: 'Seeker Reputation Escrow',
         txSignature: sig,
@@ -1166,10 +1264,12 @@ function MainApp() {
   const currentProfile: UserProfile = userProfile || {
     pubkey: session.publicKey.toBase58(),
     stakedSkr: 0,
+    lockedSkr: 0,
+    availableSkr: 0,
     totalLoansCompleted: 0,
     totalLoansDefaulted: 0,
     reputationScore: 0,
-    tier: 'Silver',
+    tier: 'Standard',
     aprDiscount: 0,
   };
 

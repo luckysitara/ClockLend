@@ -1,235 +1,261 @@
 # ClockLend — Mainnet Runbook
 
-Status: program v13 (round-8/9 hardening + round-10/11 fixes + round-12 Pyth removal +
-round-13 tag pinning; admin-feed-only pricing, 600s staleness, oracle-free 30% LTV cap,
-yield rescue instruction).
-**Devnet runs the round-12 build** — ProgramData `76MvPRVKdsthzyBQhFnfqgd7QtjebiAGCLNTA56nCgMB`
-(366,389 B total / 357,501 B used / 8,888 B zero padding), ELF 357,456 bytes,
-md5 `a2986fde` (byte-verified; extend tx `63mmLPNK…` +10,240 B, upgrade tx `5joqBgtE…`).
-Mainnet bootstrap is prepared but **not executed** (deployer wallet has 0 mainnet SOL).
-Follow this checklist in order.
+Status: **deployed and live on Solana Mainnet-beta.** Every address and hash in this
+document was read from mainnet-beta RPC on 2026-09-29 and can be re-verified with the
+commands given. Where something is *not* done, it says so explicitly.
 
-## 0. Keypairs & Funding Pre-flight
-
-ClockLend enforces strict separation of concerns across 3 dedicated keypairs:
-
-| Role | Purpose | File Location | Public Address | Funding Required |
-|---|---|---|---|---|
-| **Deployer** | Upgrade Authority & Protocol Admin | `~/.config/solana/mainnet-deployer.json` | `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds` | **2.0 SOL** |
-| **Keeper** | Serverless Oracle Price Feeder | `~/.config/solana/mainnet-keeper.json` | `HtiDpTkcWDDaQeRLSBvYDdw2sRJb5VvkD7EMvr5JWVzJ` | **0.1 SOL** |
-| **Program ID** | Mainnet Smart Contract Address | `~/.config/solana/clock-lend-program.json` | `4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7` | *None (rent paid by deployer)* |
-
-### 0.1 Program ID Keypair Resolution
-A **first-time deploy** on Solana mainnet requires the Program ID's private keypair file (`PROGRAM_KEYPAIR`) so the Solana CLI can prove ownership and initialize the program account:
-
-* **Option A (Original Address):** If you possess the private key for `HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3`, copy it to:
-  ```bash
-  cp /path/to/keypair.json ~/.config/solana/clock-lend-program.json
-  ```
-* **Option B (Fresh Mainnet Address):** If the devnet key was not preserved, generate a fresh mainnet keypair:
-  ```bash
-  solana-keygen new --outfile ~/.config/solana/clock-lend-program.json --no-bip39-passphrase
-  NEW_PID=$(solana-keygen pubkey ~/.config/solana/clock-lend-program.json)
-  echo "New Mainnet Program ID: $NEW_PID"
-  ```
-  *(If using Option B, update `declare_id!("...")` in `program/src/lib.rs` and `mobile/src/solana/program.ts`, then recompile with `cd program && cargo build-sbf`).*
-
-### 0.2 Exact SOL Rent & Fee Breakdown
-Fund the **Deployer Wallet** (`5avuk58DjBwBsyWkhgp6efC5WbnUKTFA5iLkbS8Aqv29`) with **`2.0 SOL`**:
-* **ProgramData Account** (357,517 bytes): **1.81684 SOL** *(Locked rent exemption; 100% refundable if program is closed)*
-* **Program Account** (36 bytes): **0.00083 SOL**
-* **AdminConfig PDA** (73 bytes): **0.00102 SOL**
-* **2× PriceFeed PDAs** (SOL & SKR): **0.00230 SOL**
-* **LendingPool PDA & Token Vaults**: **~0.00243 SOL**
-* **Write-Buffer Transaction Fees**: **~0.00180 SOL** *(~360 chunk transactions × 5,000 lamports)*
-* **Priority Fee Buffer & Margin**: **~0.09500 SOL** *(Prevents dropped chunks during Solana network congestion)*
-* **Total Enforced Floor:** `deploy-mainnet.mjs` enforces `requiredRent + 0.1 SOL` (**1.91684 SOL**).
-
-Fund the **Keeper Wallet** (`HtiDpTkcWDDaQeRLSBvYDdw2sRJb5VvkD7EMvr5JWVzJ`) with **`0.1 SOL`**:
-* Pays for months of micro-transactions to update the on-chain oracle PDAs.
-
-Verify balances before proceeding:
-```bash
-solana balance 5avuk58DjBwBsyWkhgp6efC5WbnUKTFA5iLkbS8Aqv29 --url mainnet-beta
-solana balance HtiDpTkcWDDaQeRLSBvYDdw2sRJb5VvkD7EMvr5JWVzJ --url mainnet-beta
-```
+> Round-14 audit context: three executable proof-of-concept bugs were found whose fixes
+> are **in source but not yet in the deployed bytecode**, and ops readiness was graded
+> **not ready**. See `site/audit-report.html` for current status. Nothing in this runbook
+> should be read as claiming the deployed program contains those fixes.
 
 ---
 
-## 1. Deploy (One Command)
+## 0. Live deployment facts (verified)
+
+| Field | Value |
+|---|---|
+| Cluster | mainnet-beta, genesis `5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d` |
+| Program ID | `4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7` |
+| ProgramData | `9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG` |
+| Allocated bytes | `357,517` (ELF is `357,472`; the remainder is retained zero padding) |
+| Deploy slot | `451589196` |
+| Upgrade authority | `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds` |
+| Bytecode sha256 | `019da88bc97498b127ddbaa76468ff8ad86c5094ae46045f7f9a9127b3c1dbdb` |
+| AdminConfig PDA | `7tCidaB2vu5N8KfKJ2Mqfm5dxbkvSqqvxHqkznYveroi` (`CLK_ADMN`, 73 B) |
+| `admin` | `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds` |
+| `oracle_authority` | `HtiDpTkcWDDaQeRLSBvYDdw2sRJb5VvkD7EMvr5JWVzJ` |
+| SOL feed PDA | `49b74tSY5EgaTHUA3GZLJFJ3piwfkNUgXz9itachPyyH` (`CLK_FEED`, 98 B) |
+| SKR feed PDA | `Fpcvf78bzAkdeKzvB6ZqgudzmWWvs4detDpEkmz1W6X8` (`CLK_FEED`, 98 B) |
+| Lending pool | `4YC4rCNXva8ty6f1pKRC2NX7e5kufqowBYJDCMor12Wu` (`CLK_POOL`, 200 B) |
+| SKR yield vault | `6tY1CpFg9gr7nXZcgxX8WvBXGgKozd3URXzwFnChQQx4` (`CLK_SYLD`, 121 B) |
+| Treasury PDA | `5buCUcCHHDCzQpanMKCK8uruErL5D2UzSFVrbtPrKV7y` — **no account on chain yet** |
+| Treasury USDC ATA | `9UozceLNGCansqNeDcGFvirwLrnCyrTQFRSKGvmfnG63` — exists, **0 USDC** |
+
+**Only these five program-owned accounts exist on mainnet:** the two feeds, the pool, the
+AdminConfig PDA, and the SKR yield vault. There are **no loans, offers, or user profiles**,
+the pool has `total_liquidity = 0` / `loans_originated = 0`, and the treasury has never been
+initialized (so no fee has ever been collected). ClockLend has been deployed, not used.
+
+### 0.1 Two different program ids — do not mix them up
+
+| Cluster | Program ID | Exists there? |
+|---|---|---|
+| **mainnet-beta** | `4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7` | yes |
+| devnet | `HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3` | yes |
+
+Neither exists on the other cluster (verified with `getAccountInfo`). Commands in this
+runbook target mainnet; using `HAjGxuih…` against mainnet fails with "account not found".
+
+---
+
+## 1. Keypairs & identities
+
+| Role | File location | Public address | Notes |
+|---|---|---|---|
+| **Deployer / upgrade authority / admin** | `~/.config/solana/mainnet-deployer.json` | `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds` | Single key. Not a multisig, not timelocked. |
+| **Keeper (oracle authority)** | `~/.config/solana/mainnet-keeper.json` | `HtiDpTkcWDDaQeRLSBvYDdw2sRJb5VvkD7EMvr5JWVzJ` | Signs price-feed updates only. |
+| **Program ID keypair** | `~/.config/solana/clock-lend-program.json` | `4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7` | Needed only for a **first** deploy. |
+
+**Deployer identity reconciliation.** `5avuk58DjBwBsyWkhgp6efC5WbnUKTFA5iLkbS8Aqv29` appears
+in older notes as the deployer. It is the **pre-bootstrap** key (kept only as a `.bak`) and was
+**never funded on mainnet**. It is *not* the upgrade authority and holds no role on chain. The
+live identity is `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds` — confirm before trusting any
+older document:
+
+```bash
+solana program show 4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7 --url mainnet-beta
+```
+
+### 1.1 Verifying the deployed bytecode (the real recipe)
+
+ProgramData retains the *maximum historical* allocation and never shrinks on upgrade, so you
+must slice exactly the ELF's own length. Offset 45 skips the BPF upgradeable metadata header
+(4-byte enum tag + 8-byte slot + 1-byte Option flag + 32-byte authority).
+
+```bash
+cd /home/rootkit/lend
+sha256sum program/target/deploy/clock_lend.so
+# then fetch ProgramData, decode base64, and hash data[45 : 45+357472]
+```
+
+Equivalent one-liner:
+
+```bash
+curl -s https://api.mainnet-beta.solana.com -X POST -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getAccountInfo","params":["9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG",{"encoding":"base64"}]}' \
+| python3 -c "
+import sys,json,base64,hashlib
+d=base64.b64decode(json.load(sys.stdin)['result']['value']['data'][0])
+print(len(d),'bytes allocated')
+print(hashlib.sha256(d[45:45+357472]).hexdigest(),'<-- on-chain ELF')
+"
+# expect 357517 / 019da88bc97498b127ddbaa76468ff8ad86c5094ae46045f7f9a9127b3c1dbdb
+```
+
+Any bytes past `45 + local_elf_size` are historical zero padding and must **not** be hashed.
+
+---
+
+## 2. Oracle keeper (price feeds)
+
+ClockLend is **admin-feed-only** (Pyth was removed). The feeds just described are the sole
+price source, and the program caps admin-feed pricing at **600 s**
+(`processor.rs`: `feed.max_staleness_seconds.min(ADMIN_FEED_MAX_PRICE_AGE_SECS)`). The stored
+`max_staleness_seconds` on chain is **3600**, retained for monitoring only — the effective
+bound is 600 s. Past that, borrow and liquidation paths that read a feed revert with
+`StaleOraclePrice`.
+
+> **Current state: the keeper is not running reliably.** Both feeds were observed ~14,100 s
+> stale (~3.9 h). Until they are refreshed, borrows that price against them will revert. This
+> is an open ops finding, not a program bug.
+
+### 2.1 Primary runner — Cloudflare Workers
+
+`serverless/wrangler.toml` runs a cron every 3 minutes. Required secrets:
+
+```bash
+cd serverless
+npx wrangler secret put ORACLE_KEYPAIR      # JSON array from ~/.config/solana/mainnet-keeper.json
+npx wrangler secret put CRANK_AUTH_TOKEN    # POST /crank fails closed (503) without this
+npx wrangler secret put RPC_URL             # Helius mainnet endpoint
+npx wrangler deploy
+```
+
+`RPC_URL` used to sit in the committed `[vars]` block with an API key in it. It is now read
+from the environment; the previously committed value is preserved as a comment in
+`wrangler.toml` and **should be rotated** (see `serverless/README.md`).
+
+Health: `GET /health` returns both feeds' ages, the cluster it is actually talking to, and
+logs a `STALE PRICE FEEDS` alert once any feed passes 540 s. It returns **200** when healthy
+and **503** when not, so an uptime monitor on that URL pages you.
+
+### 2.2 Failover runner — GitHub Actions
+
+`.github/workflows/keeper.yml` runs every 6 minutes. Earlier revisions pinned a **devnet** RPC
+while `PROGRAM_ID` fell through to the mainnet default, so this job had never cranked a
+mainnet feed. It now sets `NETWORK=mainnet-beta`, `PROGRAM_ID` explicitly, and verifies the
+endpoint's genesis hash in-job before signing.
+
+Add repository secret **`KEEPER_KEYPAIR_JSON`** (Settings → Secrets and variables → Actions)
+containing the JSON array from `~/.config/solana/mainnet-keeper.json`, plus optional
+**`HELIUS_RPC_URL`**. The job fails with a clear message if the keypair secret is missing.
+
+### 2.3 Manual crank / status
+
+```bash
+# Read-only status
+cd serverless
+NETWORK=mainnet-beta RPC_URL=https://api.mainnet-beta.solana.com node src/cli.mjs --status
+
+# Crank with the keeper key (mobile/scripts/keeper.mjs exits 1 if any feed fails)
+cd /home/rootkit/lend
+KEEPER_KEY=~/.config/solana/mainnet-keeper.json \
+  node mobile/scripts/keeper.mjs --network mainnet-beta
+```
+
+`keeper.mjs` logs each feed's staleness age before the update, verifies the feed actually
+advanced afterwards, and exits non-zero if any feed did not update.
+
+---
+
+## 3. Upgrading the program
+
+`mobile/scripts/deploy-mainnet.mjs` refuses to touch an existing program unless you pass
+`--upgrade`; it no longer prints "COMPLETE" while silently skipping the deploy.
 
 ```bash
 cd /home/rootkit/lend
 export DEPLOYER_KEY=~/.config/solana/mainnet-deployer.json
-export ORACLE_KEY=~/.config/solana/mainnet-keeper.json
 export PROGRAM_KEYPAIR=~/.config/solana/clock-lend-program.json
-export MAINNET_RPC="https://api.mainnet-beta.solana.com" # or your Helius/Triton mainnet RPC
 
-node mobile/scripts/deploy-mainnet.mjs --create-pool --rotate-oracle
+# One explicit cluster drives both web3 and the solana CLI; genesis is asserted.
+node mobile/scripts/deploy-mainnet.mjs --upgrade --cluster mainnet-beta
 ```
 
-### What this script executes in sequence:
-1. Preflights rent exemption and wallet balances.
-2. Writes the 357 KB bytecode buffer and deploys the upgradeable program.
-3. Calls `InitializeAdmin` (tag 13) with ProgramData upgrade-authority proof (`admin = deployer key`).
-4. Rotates `oracle_authority` to the dedicated Keeper key (`HtiDpTkc...JWVzJ`).
-5. Creates the protocol Treasury USDC Associated Token Account (`EPjFWdd5...`, owner = Treasury PDA).
-6. Seeds initial live SOL and SKR price feeds from Jupiter Price API v3.
-7. Initializes the first Lending Pool Desk with on-chain parameter verification.
+What it does:
+
+1. Runs `cargo build-sbf` and hard-fails if the ELF is older than `program/src` or `Cargo.lock`.
+2. Asserts `getGenesisHash` matches `--cluster`, and that the endpoint and CLI agree.
+3. If the new ELF is larger than the current allocation, runs `solana program extend` in
+   ≤10,240-byte steps (agave caps a single extend at that).
+4. `solana program write-buffer` → `solana program deploy --program-id … --buffer …`.
+
+   Known CLI quirk: plain `solana program deploy <file>` can appear to no-op against an
+   existing upgradeable program. The write-buffer + `--buffer` form is the reliable path.
+5. **Verifies by hashing.** It fetches ProgramData, hashes `data[45 : 45 + local ELF size]`,
+   and aborts if it does not equal `sha256sum` of the local `.so`. A zero exit code from the
+   CLI is not treated as proof of deployment.
+
+An upgrade changes the bytecode hash. After any upgrade, update the recorded sha256 in this
+runbook and in `site/index.html` / `site/audit-report.html`.
 
 ---
 
-## 2. Serverless Oracle Pricing (Cloudflare Workers + GitHub Actions)
+## 4. Treasury operations
 
-ClockLend uses an **admin PriceFeed PDA** architecture with a fail-closed 600-second staleness bound. No dedicated 24/7 Linux server/VPS is required.
+The treasury PDA `5buCUcCHHDCzQpanMKCK8uruErL5D2UzSFVrbtPrKV7y` has **no account on chain**.
+Only its USDC ATA exists, with a 0 balance. Fee-bearing instructions that require the treasury
+account will fail until it is initialized, and **no protocol fee has ever been collected**.
 
-### 2.1 Primary Runner: Cloudflare Workers
-Runs serverless on Cloudflare's edge network every 3 minutes (`*/3 * * * *`):
+All money scripts now verify the cluster via `getGenesisHash` and require `--yes` to send on
+mainnet (`--dry-run` builds and simulates without sending).
 
 ```bash
-cd /home/rootkit/lend/serverless
+# Inspect (read-only)
+node scripts/burn-skr.mjs --status --network mainnet
+node scripts/withdraw-treasury.mjs --cluster mainnet-beta --status
 
-# 1. Update wrangler.toml [vars] with your Mainnet RPC (Helius/Triton)
-# 2. Add your Mainnet Keeper private key as a cloud secret:
-npx wrangler secret put ORACLE_KEYPAIR
-# (Paste the JSON array from: cat ~/.config/solana/mainnet-keeper.json)
+# Withdraw profit (mainnet requires an explicit --dest; there is no default destination)
+node scripts/withdraw-treasury.mjs --cluster mainnet-beta \
+  --amount 50 --token usdc --dest <COLD_WALLET> --dry-run
+node scripts/withdraw-treasury.mjs --cluster mainnet-beta \
+  --amount 50 --token usdc --dest <COLD_WALLET> --yes
 
-# 3. Deploy to Cloudflare
-npx wrangler deploy
+# SKR buyback & burn (burns only the measured delta acquired by the swap)
+node scripts/burn-skr.mjs --buy --token usdc --amount 100 --network mainnet --dry-run
+node scripts/burn-skr.mjs --buy --token usdc --amount 100 --network mainnet --yes
 ```
 
-Live status and health can be queried at:
-`https://clocklend-oracle-keeper.clockit.workers.dev/health`
+The **30% buyback & burn is a manual, team-run process** (`scripts/burn-skr.mjs`), not an
+autonomous on-chain mechanism. No buyback has been executed to date.
 
-### 2.2 Secondary Failover Runner: GitHub Actions
-To eliminate any single point of failure (if Cloudflare ever experiences network downtime):
-1. In your GitHub repository, navigate to **Settings** ➔ **Secrets and variables** ➔ **Actions**.
-2. Add secret **`KEEPER_KEYPAIR_JSON`** containing the JSON from `~/.config/solana/mainnet-keeper.json`.
-3. The `.github/workflows/keeper.yml` workflow automatically runs on Microsoft Azure infrastructure every 6 minutes as a secondary safety net.
+### 4.1 Rotating the oracle authority
 
-### 2.3 Manual Verification & Status Check
-Query the on-chain oracle PDAs directly from your terminal:
 ```bash
-RPC_URL="https://api.mainnet-beta.solana.com" node serverless/src/cli.mjs --status
+node scripts/rotate-oracle.mjs --cluster mainnet-beta \
+  --new-oracle <PUBKEY_OR_KEYPAIR_PATH> --dry-run
 ```
+
+`--cluster` and `--new-oracle` are both mandatory. The script has **no default new-oracle
+key** (it previously fell back to `~/.config/solana/clocklend-oracle.json`, which would
+silently hand price control to whatever key sat at that path), verifies the endpoint genesis,
+checks the signer is the on-chain upgrade authority, prints the old → new authority diff, and
+requires `--yes` on mainnet.
 
 ---
 
-## 2b. SKR yield vault (dividends)
+## 5. Open issues (as of 2026-09-29)
 
-- The deploy script initializes the vault automatically (admin-gated tag 15, reward
-  mint = USDC `EPjFWdd5…`). PDAs: vault `[skr_yield_vault, EPjFWdd5]`, vault token
-  `[skr_yield_token, EPjFWdd5]`, user positions `[skr_yield_user, user, EPjFWdd5]`.
-- Funding: the app appends the two vault PDAs to every borrow (when the vault is
-  initialized), routing **50% of the origination fee** to yield holders — no keeper job.
-  Manual alternative: the vault authority (deployer key) may call DepositSkrYield
-  (tag 16, authority-gated).
-- Claims: tag 17. The stake is read from the SKR escrow token account (the single
-  source of truth — unstaking immediately removes shares). A **1-hour cooldown**
-  applies after each payout or stake change (`YieldCooldown`, error 38). Deposits made
-  while nobody is staked are parked in `unallocated_rewards` and folded into the next
-  allocation — never stranded.
-- Rescue: tag 18 `WithdrawUnusedYield` (authority-only) recovers EXTERNALLY-DONATED
-  vault tokens beyond `pending_rewards`; program-internal stranding (forfeits,
-  phantom shares) is not reachable by it by design.
-- Note: the SKR mint does not exist on devnet, so devnet yield testing requires a
-  devnet SKR mint; mainnet has `SKRbvo6Gf…` (6 decimals).
+| # | Issue | Impact |
+|---|---|---|
+| 1 | Keeper not running reliably; both feeds stale ~3.9 h | Borrow/liquidation paths reading feeds revert |
+| 2 | Round-14 POC-1/2/3 fixes in source, **not redeployed** | On-chain program is the older build |
+| 3 | Treasury PDA never initialized | No fees collected; fee paths fail |
+| 4 | Upgrade authority is a single key, not a multisig, not timelocked | Key compromise = program replacement |
+| 5 | SKR yield vault initialized but never funded; pool has zero liquidity | Yield feature is inert in practice |
+| 6 | No third-party audit has been performed | Internal, AI-assisted rounds only |
+| 7 | Committed Helius RPC key in `serverless/wrangler.toml` (now a comment) | Should be rotated and moved to a secret |
 
-## 3. Verify (after deploy)
+---
 
-- `solana program show --url m HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3`
-  (Note on verification: ProgramData accounts on Solana retain the maximum historical
-  allocated size and do not shrink on upgrade. When comparing bytecode, fetch the ProgramData
-  account, slice exactly `data[45..45+<local .so size>]` (offset 45 skips the BPF upgradeable
-  metadata header), and compare its hash to `md5sum` or `sha256sum program/target/deploy/clock_lend.so`.
-  Any bytes beyond `45 + local_elf_size` are historical zero-padding).
-- Admin PDA `9vX4JBN…Zn7Hq` contains `CLK_ADMN` with
-  `admin = 5avuk58D…Qv29` (deployer) and `oracle_authority = HtiDpTk…JWVzJ` (keeper).
-- Global SOL feed PDA `A4hjbxYH…oBXu` (same PDA address on mainnet) is fresh.
-- Treasury ATA for `EPjFWdd5` owned by treasury PDA `6yY4P4x2…L4dq` exists.
-- The SkrYieldVault PDA (CLK_SYLD, 121 bytes, `is_initialized = 1`, `authority` =
-  deployer key) and its vault token account exist and are owned by the program / token
-  program respectively.
-- Note: `program/target/deploy/clock_lend-keypair.json` is a build artifact with a RANDOM
-  key — it is not the program-id keypair. Keep the real `HAjGxuih…` keypair (and its
-  backup) separate from the build tree, and commit `program/Cargo.lock` so the hash check
-  builds the same ELF everywhere.
-
-## 4. Risks to accept (documented design decisions)
+## 6. Risks accepted (documented design decisions)
 
 | Risk | Mitigation |
 |---|---|
-| Single admin/oracle key can move all global prices | Keep the key offline; keeper uses a **separate** `oracle_authority` (rotate via `InitializeAdmin` with the upgrade-authority key) |
-| Price manipulation / stale SOL price | Keeper cadence < 10 min (600 s pricing bound, fail-closed); bounded price (≤ $1M/token) and decimals (1–18); pool-scoped feeds exist for pools that want their own pricing |
-| P2P funders must verify the offer's on-chain `liquidity_mint` | Show mint in the UI before funding (mobile TODO) |
+| Single admin/oracle key can move all global prices | Keeper uses a **separate** `oracle_authority` (`HtiDpTk…`), rotatable via `InitializeAdmin` with the upgrade-authority key; keep the upgrade key offline |
+| Price manipulation / stale price | Keeper cadence < 10 min; 600 s fail-closed bound; bounded price (≤ $1M/token) and decimals (1–18) |
+| P2P funders must verify the offer's on-chain `liquidity_mint` | Show the mint in the UI before funding |
 | Pool authority keys are irrevocable (no rotation instruction) | Deploy desks with durable keys |
-| No LP shares — only the pool authority can deposit/withdraw | Document as single-owner desks (product decision) |
+| No LP shares — only the pool authority can deposit/withdraw | Documented as single-owner desks (product decision) |
 | Upgrade authority = deployer key | Store offline; rotate via `set-upgrade-authority` if needed — `InitializeAdmin` stays valid (ProgramData-derived) |
-
-## 5. Upgrading the program later
-
-If the new ELF is LARGER than the current ProgramData allocation, extend first
-(agave caps additional bytes at 10,240 per call — repeat as needed):
-
-```bash
-solana program extend --url mainnet-beta --keypair $DEPLOYER_KEY \
-  HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3 10240
-```
-
-Then:
-
-```bash
-cd program && cargo build-sbf
-solana program write-buffer --url mainnet-beta --keypair $DEPLOYER_KEY target/deploy/clock_lend.so
-solana program deploy --url mainnet-beta --keypair $DEPLOYER_KEY \
-  --program-id HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3 --buffer <BUFFER>
-```
-
-Note the known CLI quirk: `solana program deploy <file>` can appear to no-op; the
-write-buffer + `--buffer` flow is the reliable path.
-
-## 6. Treasury Operations: Profit Withdrawal & SKR Buyback / Burn
-
-Protocol revenue (loan origination fees, 15% interest take-rates, and 5% liquidation margins) accumulates continuously in the **ClockLend Treasury PDA** (`6yY4P4x29kpJKKkwCTFAvJp4uyPuei4NZix8Vs2xL4dq`).
-
-### Inspecting Live Treasury Balances
-```bash
-node scripts/burn-skr.mjs --status --network mainnet
-# Or check raw balances via withdraw-treasury
-node scripts/withdraw-treasury.mjs --status --network mainnet
-```
-
-### 30% Protocol Revenue Buyback & Burn
-To drive continuous deflation, **30% of all project revenue is dedicated to buying and burning $SKR tokens**:
-
-#### Direct Burn (When Treasury holds SKR)
-Defaulters with SKR collateral or borrowers paying fees in SKR deposit SKR directly into the Treasury PDA. Direct Burn atomically withdraws and destroys SKR on-chain without any DEX fees or slippage:
-```bash
-# Burn 30% of current Treasury SKR
-node scripts/burn-skr.mjs --direct --pct 30 --network mainnet
-
-# Or burn a specific amount of SKR (e.g. 10,000 SKR)
-node scripts/burn-skr.mjs --direct --amount 10000 --network mainnet
-```
-
-#### Buy & Burn (Using Treasury USDC or SOL via Jupiter DEX)
-Use accumulated USDC or SOL profits to purchase SKR on Jupiter DEX and immediately burn them:
-```bash
-# Spend 30% of all Treasury USDC to buy & burn SKR
-node scripts/burn-skr.mjs --buy --token usdc --pct 30 --network mainnet
-
-# Spend 30% of all Treasury SOL to buy & burn SKR
-node scripts/burn-skr.mjs --buy --token sol --pct 30 --network mainnet
-
-# Or specify a fixed dollar amount (e.g. 100 USDC)
-node scripts/burn-skr.mjs --buy --token usdc --amount 100 --network mainnet
-```
-
-
-### Withdrawing Developer Profit to Cold Storage
-To withdraw USDC or SOL directly to a personal wallet, operating account, or multisig:
-```bash
-node scripts/withdraw-treasury.mjs --amount 500 --token usdc --dest <YOUR_WALLET> --network mainnet
-node scripts/withdraw-treasury.mjs --amount 2.5 --token sol --dest <YOUR_WALLET> --network mainnet
-```
-

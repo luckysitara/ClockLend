@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Modal,
   View,
@@ -15,7 +15,13 @@ import {
 import { PublicKey } from '@solana/web3.js';
 import { useTheme } from '../theme/ThemeContext';
 import { WalletAssets, SolanaNetwork } from '../types';
-import { livePrices } from '../solana/onChainService';
+import {
+  livePrices,
+  fetchLivePrices,
+  subscribeToPriceUpdates,
+  isLivePriceUsable,
+  getPriceAgeSeconds,
+} from '../solana/onChainService';
 
 const SOL_LOGO = require('../../assets/tokens/sol.png');
 const SKR_LOGO = require('../../assets/tokens/skr.png');
@@ -57,6 +63,26 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
   const skrPrice = livePrices.skr;
   const solUsd = assets.solBalance * solPrice;
   const skrUsd = assets.skrBalance * skrPrice;
+
+  // H-2: every USD figure below is price-derived, so the source and its age
+  // are surfaced. A baseline/never-updated price is labelled as such instead
+  // of being presented as a live valuation.
+  const [priceTrusted, setPriceTrusted] = useState<boolean>(isLivePriceUsable());
+  const [priceAge, setPriceAge] = useState<number | null>(getPriceAgeSeconds());
+
+  useEffect(() => {
+    fetchLivePrices().catch(() => {});
+    const sync = () => {
+      setPriceTrusted(isLivePriceUsable());
+      setPriceAge(getPriceAgeSeconds());
+    };
+    const unsubscribe = subscribeToPriceUpdates(sync);
+    const timer = setInterval(sync, 15_000);
+    return () => {
+      unsubscribe();
+      clearInterval(timer);
+    };
+  }, []);
 
 
 
@@ -189,6 +215,11 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
                 </View>
                 <Text style={[styles.totalVal, { color: colors.text }]}>
                   ${assets.totalUsdValue.toFixed(2)}
+                </Text>
+                <Text style={[styles.priceSourceNote, { color: priceTrusted ? colors.textMuted : colors.warning }]}>
+                  {priceTrusted
+                    ? `Live on-chain price feed${priceAge !== null ? ` · ${priceAge}s ago` : ''}`
+                    : 'Price feed unavailable — values are last known, not live'}
                 </Text>
               </View>
               <View style={[styles.identityTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
@@ -525,6 +556,11 @@ const styles = StyleSheet.create({
   totalVal: {
     fontSize: 28,
     fontWeight: '900',
+  },
+  priceSourceNote: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 2,
   },
   identityTag: {
     paddingHorizontal: 10,

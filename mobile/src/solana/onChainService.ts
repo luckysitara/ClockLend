@@ -37,6 +37,7 @@ import {
   WalletAssets,
   SolanaNetwork,
   TokenAssetItem,
+  CreditTier,
 } from '../types';
 
 const GATEKEEPER_RPC = process.env.EXPO_PUBLIC_HELIUS_GATEKEEPER_RPC_URL;
@@ -93,10 +94,20 @@ export function cachedFetch<T>(
   if (!opts?.force && entry && Date.now() - entry.at < FETCH_CACHE_TTL_MS) {
     return Promise.resolve(entry.value as T);
   }
-  const p = fn().then((v) => {
-    fetchCache.set(key, { at: Date.now(), value: v });
-    return v;
-  });
+  // M-1: the inflight promise must be cleared when it rejects. Otherwise a
+  // single transient RPC failure stays cached and every later caller (the
+  // `entry?.inflight` short-circuit is checked before the TTL) re-rejects with
+  // the same stale error for the whole session.
+  const p = fn().then(
+    (v) => {
+      fetchCache.set(key, { at: Date.now(), value: v });
+      return v;
+    },
+    (err) => {
+      fetchCache.delete(key);
+      throw err;
+    }
+  );
   fetchCache.set(key, { at: entry?.at ?? 0, value: entry?.value, inflight: p });
   return p;
 }
@@ -143,17 +154,145 @@ export const SKR_YIELD_VAULT_SEED = Buffer.from('skr_yield_vault');
 export const SKR_YIELD_TOKEN_SEED = Buffer.from('skr_yield_token');
 export const USER_YIELD_SEED = Buffer.from('skr_yield_user');
 
+// ---------------------------------------------------------------------------
+// C-2: SKR-bond APR discount — the program's exact rule (processor.rs:1905-1916)
+//
+//   available_skr = staked_skr.saturating_sub(locked_skr)
+//   available_skr >= 1_000_000_000  -> discount = rate/2        (Tier 2, locks 1,000 SKR)
+//   available_skr >=   100_000_000  -> discount = rate*2500/1e4 (Tier 1, locks   100 SKR)
+//   otherwise                       -> no discount
+//
+// There is NO reputation-score tiering on-chain: a wallet with a perfect score
+// and no SKR bond pays the pool's full rate. Every client label must show the
+// discount these constants produce (or 0%).
+// ---------------------------------------------------------------------------
+export const SKR_TIER_2_THRESHOLD_MICRO = 1_000_000_000n; // 1,000 SKR
+export const SKR_TIER_1_THRESHOLD_MICRO = 100_000_000n; //   100 SKR
+
+// The bundled `buffer` typings type readBigUInt64LE as the boxed BigInt
+// interface rather than the primitive, so every value that crosses a helper
+// boundary is normalized through .toString().
+export function toBigInt(value: number | bigint | { toString(): string }): bigint {
+  return typeof value === 'bigint' ? value : BigInt(String(value));
+}
+
+export function deriveAprDiscountPercent(
+  stakedSkrMicro: number | bigint | { toString(): string },
+  lockedSkrMicro: number | bigint | { toString(): string }
+): 0 | 25 | 50 {
+  const staked = toBigInt(stakedSkrMicro);
+  const locked = toBigInt(lockedSkrMicro);
+  const available = staked > locked ? staked - locked : 0n;
+  if (available >= SKR_TIER_2_THRESHOLD_MICRO) return 50;
+  if (available >= SKR_TIER_1_THRESHOLD_MICRO) return 25;
+  return 0;
+}
+
+/** Tier label for the tier the program will actually honour (see CreditTier). */
+export function tierFromAprDiscount(aprDiscount: number): CreditTier {
+  if (aprDiscount >= 50) return 'Tier 2';
+  if (aprDiscount >= 25) return 'Tier 1';
+  return 'Standard';
+}
+
+/** Human label pairing a tier with the discount it earns (never a bare claim). */
+export function tierDiscountLabel(tier: CreditTier): string {
+  if (tier === 'Tier 2') return 'Tier 2 · 50% APR discount';
+  if (tier === 'Tier 1') return 'Tier 1 · 25% APR discount';
+  return 'No SKR bond · 0% APR discount';
+}
+
+/** The bond the program locks while the loan is active (processor.rs:1909/1914). */
+export function bondLockedForSkrMicro(
+  availableSkrMicro: number | bigint | { toString(): string }
+): bigint {
+  const available = toBigInt(availableSkrMicro);
+  if (available >= SKR_TIER_2_THRESHOLD_MICRO) return SKR_TIER_2_THRESHOLD_MICRO;
+  if (available >= SKR_TIER_1_THRESHOLD_MICRO) return SKR_TIER_1_THRESHOLD_MICRO;
+  return 0n;
+}
+
+/** Mirrors the program's integer discount math bit-for-bit. */
+export function applyAprDiscountBps(baseRateBps: number, aprDiscountPercent: number): number {
+  if (aprDiscountPercent >= 50) {
+    const discount = Math.floor(baseRateBps / 2);
+    return Math.max(0, baseRateBps - discount);
+  }
+  if (aprDiscountPercent >= 25) {
+    const discount = Math.floor((baseRateBps * 2500) / 10000);
+    return Math.max(0, baseRateBps - discount);
+  }
+  return baseRateBps;
+}
+
 // M-03: Integer Interest Calculation Helper matching Smart Contract exactly
+// (processor.rs:1926-1935: amount * effective_bps * duration / (10000 * 31536000)).
 export function calculateExactInterestDue(
   borrowAmountMicro: bigint,
   rateBps: number,
   durationSeconds: number,
-  hasSkrDiscount: boolean = false
+  aprDiscountPercent: number = 0
 ): bigint {
-  const effectiveBps = hasSkrDiscount ? Math.floor((rateBps * 50) / 100) : rateBps;
+  const effectiveBps = applyAprDiscountBps(rateBps, aprDiscountPercent);
   const numerator = borrowAmountMicro * BigInt(effectiveBps) * BigInt(durationSeconds);
   const denominator = BigInt(10000) * BigInt(31536000);
   return numerator / denominator;
+}
+
+// H-3: origination fee withheld from the disbursement (processor.rs:1742-1745):
+//   25 bps of the gross for native-SOL collateral, 50 bps for SKR collateral,
+//   floored in u128. The borrower receives the NET amount.
+export function originationFeeBps(isNativeSolCollateral: boolean): number {
+  return isNativeSolCollateral ? 25 : 50;
+}
+
+export function calculateOriginationFee(
+  borrowAmountMicro: bigint,
+  isNativeSolCollateral: boolean
+): { feeBps: number; feeMicro: bigint; netMicro: bigint } {
+  const feeBps = originationFeeBps(isNativeSolCollateral);
+  const feeMicro = (borrowAmountMicro * BigInt(feeBps)) / 10000n;
+  return { feeBps, feeMicro, netMicro: borrowAmountMicro - feeMicro };
+}
+
+/**
+ * Render an exact USDC base-unit amount. USDC has 6 decimals, so sub-cent
+ * values (e.g. a 0.25% fee on $50 = $0.125) are real — they are printed as
+ * they are instead of being rounded into an amount that no longer matches the
+ * program's arithmetic.
+ */
+export function formatUsdcMicro(micro: bigint | number): string {
+  const value = typeof micro === 'bigint' ? micro : BigInt(Math.round(micro));
+  const negative = value < 0n;
+  const abs = negative ? -value : value;
+  const whole = abs / 1_000_000n;
+  const fraction = (abs % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '');
+  const body = fraction ? `${whole}.${fraction}` : `${whole}`;
+  return negative ? `-${body}` : body;
+}
+
+/**
+ * L-7: single collateral-type test for every call site. Matches the bare
+ * symbol ("SOL") and quantity-prefixed labels ("1.500 SOL") while refusing
+ * lookalike assets such as "JitoSOL" that the old `includes('SOL')` accepted.
+ */
+export function isNativeSolCollateralName(collateralName: string): boolean {
+  return /(^|\s)SOL$/.test((collateralName || '').trim().toUpperCase());
+}
+
+/**
+ * M-6: deterministic loan id. The program only requires the id to be unused
+ * for (pool, borrower) — it is stored in the loan account, so the client can
+ * always read it back. Deriving it instead of using Math.random() means a
+ * SecureStore-cache loss cannot orphan a freshly created loan: the same
+ * (pool.loansOriginated, second) pair reproduces the id, and the on-chain
+ * scan recovers it regardless.
+ */
+export function deriveLoanId(poolLoansOriginated: number, nowMs: number = Date.now()): number {
+  const suffix = Math.floor(nowMs / 1000) % 100_000;
+  const originated = Math.max(0, Math.floor(poolLoansOriginated || 0)) % 100_000;
+  // 0 is a valid loan id on-chain but a poor sentinel client-side.
+  return originated * 100_000 + suffix + 1;
 }
 
 export function getAssociatedTokenAddress(mint: PublicKey, owner: PublicKey): PublicKey {
@@ -270,6 +409,9 @@ function parsePoolData(pubkey: string, data: Buffer, id: number): LendingPool | 
   const loansOriginated = data.readUInt32LE(isV2 ? 158 : 142);
   const loansRepaid = data.readUInt32LE(isV2 ? 162 : 146);
   const name = decodeName(data.subarray(isV2 ? 166 : 150, isV2 ? 198 : 182));
+  // state.rs LendingPool is 200 bytes with has_custom_oracle as the trailing
+  // byte (offset 199); the 182-byte legacy layout predates the flag.
+  const hasCustomOracle = isV2 ? data.readUInt8(199) === 1 : false;
 
   // null (rendered as '—') until the desk actually has loan history.
   const successRate: number | null = loansOriginated > 0 ? (loansRepaid / loansOriginated) * 100 : null;
@@ -291,6 +433,7 @@ function parsePoolData(pubkey: string, data: Buffer, id: number): LendingPool | 
     loansRepaid,
     successRate: successRate === null ? null : parseFloat(successRate.toFixed(1)),
     isVerifiedMerchant: stakedSkrAmount > 0,
+    hasCustomOracle,
   };
 }
 
@@ -364,42 +507,54 @@ export async function fetchLiveUserOrders(borrower: PublicKey, network: SolanaNe
 
   const ordersMap = new Map<number, LoanOrder>();
 
-  // 1. Scan on-chain PDA accounts first (for liquid pool PDA loans)
+  // 1. Scan on-chain PDA accounts first (for liquid pool PDA loans).
+  // L-3: the legacy 154-byte dataSize fallback was dead (the program's
+  // LoanOrder is 170 bytes, state.rs:224) and it skipped the discriminator
+  // check, so the whole path is gone — only CLK_LOAN accounts are parsed now.
+  let chainReadSucceeded = false;
   try {
-    const accounts = await queryRpcWithFallback(network, async (c) => {
-      const [modern, legacy] = await Promise.all([
-        c.getProgramAccounts(PROGRAM_ID, { filters: [{ memcmp: { offset: 0, bytes: B58_CLK_LOAN } }] }),
-        (c.getProgramAccounts(PROGRAM_ID, { filters: [{ dataSize: 154 }] } as any) as unknown) as Promise<
-          Awaited<ReturnType<Connection['getProgramAccounts']>>
-        >,
-      ]);
-      return [...modern, ...legacy];
-    });
+    const accounts = await queryRpcWithFallback(network, (c) =>
+      c.getProgramAccounts(PROGRAM_ID, { filters: [{ memcmp: { offset: 0, bytes: B58_CLK_LOAN } }] })
+    );
+    chainReadSucceeded = true;
     for (const acc of accounts) {
-      if (acc.account.data.length === 170 || acc.account.data.length === 154) {
+      if (acc.account.data.length === 170) {
         const data = Buffer.from(acc.account.data);
-        const isV2 = data.length === 170;
         // NEW-4: discriminator-gated parsing — never parse a non-loan account as a loan
-        if (isV2 && data.subarray(0, 8).toString() !== 'CLK_LOAN') continue;
-        const isActive = data.readUInt8(isV2 ? 8 : 0) === 1;
+        if (data.subarray(0, 8).toString() !== 'CLK_LOAN') continue;
+        const isActive = data.readUInt8(8) === 1;
         if (!isActive) continue;
 
-        const borrowerOnChain = new PublicKey(data.subarray(isV2 ? 17 : 9, isV2 ? 49 : 41));
+        const borrowerOnChain = new PublicKey(data.subarray(17, 49));
         if (!borrowerOnChain.equals(borrower)) continue;
 
-        const loanId = Number(data.readBigUInt64LE(isV2 ? 9 : 1));
-        const poolPubkey = new PublicKey(data.subarray(isV2 ? 49 : 41, isV2 ? 81 : 73));
-        const principalAmount = Number(data.readBigUInt64LE(isV2 ? 81 : 73)) / 1_000_000;
-        const collateralMint = new PublicKey(data.subarray(isV2 ? 89 : 81, isV2 ? 121 : 113)).toBase58();
-        const isSkr = collateralMint === SKR_MINT.toBase58();
-        const rawCollateral = Number(data.readBigUInt64LE(isV2 ? 121 : 113));
-        const collateralAmount = isSkr ? rawCollateral / 1_000_000 : rawCollateral / 1_000_000_000;
-        const collateralName = isSkr ? `${collateralAmount.toLocaleString()} SKR` : `${collateralAmount.toFixed(2)} SOL`;
-        const interestDue = Number(data.readBigUInt64LE(isV2 ? 129 : 121)) / 1_000_000;
-        const originationTime = Number(data.readBigInt64LE(isV2 ? 137 : 129));
-        const dueTime = Number(data.readBigInt64LE(isV2 ? 145 : 137));
-        const gracePeriodExpires = Number(data.readBigInt64LE(isV2 ? 153 : 145));
-        const statusByte = data.readUInt8(isV2 ? 161 : 153);
+        const loanId = Number(data.readBigUInt64LE(9));
+        const poolPubkey = new PublicKey(data.subarray(49, 81));
+        const principalAmount = Number(data.readBigUInt64LE(81)) / 1_000_000;
+        const collateralMint = new PublicKey(data.subarray(89, 121)).toBase58();
+        const rawCollateral = Number(data.readBigUInt64LE(121));
+
+        // M-4: decimals come from the actual mint, never a blanket 1e9. The
+        // program only allows native SOL and canonical SKR as collateral
+        // (processor.rs F-03 allowlist); anything else is not shown rather
+        // than displayed with invented units.
+        const isSolMint =
+          collateralMint === NATIVE_SOL_MINT.toBase58() ||
+          collateralMint === SystemProgram.programId.toBase58();
+        const isSkrMint = collateralMint === SKR_MINT.toBase58();
+        if (!isSolMint && !isSkrMint) {
+          console.warn(`[Orders] loan #${loanId} has unsupported collateral mint ${collateralMint} — skipped`);
+          continue;
+        }
+        const collateralAmount = isSkrMint ? rawCollateral / 1_000_000 : rawCollateral / 1_000_000_000;
+        const collateralName = isSkrMint
+          ? `${collateralAmount.toLocaleString()} SKR`
+          : `${collateralAmount.toFixed(2)} SOL`;
+        const interestDue = Number(data.readBigUInt64LE(129)) / 1_000_000;
+        const originationTime = Number(data.readBigInt64LE(137));
+        const dueTime = Number(data.readBigInt64LE(145));
+        const gracePeriodExpires = Number(data.readBigInt64LE(153));
+        const statusByte = data.readUInt8(161);
 
         let status: LoanStatus = 'Active';
         if (statusByte === 1) status = 'InGracePeriod';
@@ -421,7 +576,9 @@ export async function fetchLiveUserOrders(borrower: PublicKey, network: SolanaNe
           collateralAmount,
           interestDue,
           originationTime,
-          dueTime: dueTime > 0 ? dueTime : Math.floor(Date.now() / 1000) + 86400 * 7,
+          // M-3: an unset due_time is rendered as "unknown" — never replaced
+          // with an invented date.
+          dueTime,
           gracePeriodExpires,
           status,
         });
@@ -432,16 +589,25 @@ export async function fetchLiveUserOrders(borrower: PublicKey, network: SolanaNe
   }
 
   const finalizeOrders = async (): Promise<LoanOrder[]> => {
-    // 3. Fallback: if blockchain was temporarily unreachable or slow, keep active cached orders
-    if (ordersMap.size === 0 && cachedOrders.length > 0) {
+    let usedCache = false;
+    // 3. Fallback ONLY when the chain read itself failed. A successful read
+    // that returns no active loan means the loan really is gone (repaid or
+    // defaulted) — resurrecting a cached copy then would show a closed loan
+    // as live. Cached rows are flagged so the UI can label them
+    // "last known — not confirmed".
+    if (!chainReadSucceeded && ordersMap.size === 0 && cachedOrders.length > 0) {
       for (const co of cachedOrders) {
         if (co.status === 'Active' || co.status === 'InGracePeriod') {
-          ordersMap.set(co.id, co);
+          ordersMap.set(co.id, { ...co, isStale: true });
+          usedCache = true;
         }
       }
     }
     const finalOrders = Array.from(ordersMap.values());
-    await setCachedOrders(borrowerPubkey, finalOrders, network);
+    // M-2: never write unconfirmed cache rows back over the stored state.
+    if (!usedCache) {
+      await setCachedOrders(borrowerPubkey, finalOrders, network);
+    }
     return finalOrders;
   };
 
@@ -589,7 +755,19 @@ export async function fetchLiveUserOrders(borrower: PublicKey, network: SolanaNe
 
       const isSol = collateralMint === NATIVE_SOL_MINT.toBase58() ||
         collateralMint === SystemProgram.programId.toBase58();
+      const isSkrMint = collateralMint === SKR_MINT.toBase58();
+      // M-4: no decimal guesswork — only the two mints the program accepts.
+      if (!isSol && !isSkrMint) {
+        console.warn(`[Orders] memo candidate #${cand.id} has unsupported collateral mint ${collateralMint} — skipped`);
+        continue;
+      }
       const collUnits = isSol ? collateralAmountRaw / 1_000_000_000 : collateralAmountRaw / 1_000_000;
+      // The program rejects collateral_amount == 0 at borrow time, so a zero
+      // here means corrupt bytes — do not invent a "1.0" placeholder.
+      if (!(collUnits > 0)) {
+        console.warn(`[Orders] memo candidate #${cand.id} reports zero collateral — skipped`);
+        continue;
+      }
       let status: LoanStatus = 'Active';
       if (statusByte === 1) status = 'InGracePeriod';
       else if (statusByte === 2) status = 'Repaid';
@@ -601,9 +779,9 @@ export async function fetchLiveUserOrders(borrower: PublicKey, network: SolanaNe
         poolName: pool.name,
         borrower: borrowerPubkey,
         principalAmount: principalMicro / 1_000_000,
-        collateralName: `${collUnits > 0 ? collUnits.toFixed(2) : '1.0'} ${isSol ? 'SOL' : 'SKR'}`,
+        collateralName: `${collUnits.toFixed(2)} ${isSol ? 'SOL' : 'SKR'}`,
         collateralMint,
-        collateralAmount: collUnits > 0 ? collUnits : 1,
+        collateralAmount: collUnits,
         interestDue: interestMicro / 1_000_000,
         originationTime: cand.time,
         dueTime,
@@ -632,23 +810,16 @@ export async function fetchLiveP2POffers(
 async function fetchLiveP2POffersUncached(network: SolanaNetwork): Promise<P2POffer[]> {
   const rpcConn = getConnection(network);
   try {
-    // RPC-side discriminator filter (modern CLK_PAWN) + legacy 162-byte
-    // dataSize query — only offer accounts cross the wire.
-    const accounts = await queryRpcWithFallback(network, async (c) => {
-      const [modern, legacy] = await Promise.all([
-        c.getProgramAccounts(PROGRAM_ID, { filters: [{ memcmp: { offset: 0, bytes: B58_CLK_PAWN } }] }),
-        // same cast as the pool scan: the RPC supports dataSize, the TS type
-        // in this web3.js version does not.
-        (c.getProgramAccounts(PROGRAM_ID, { filters: [{ dataSize: 162 }] } as any) as unknown) as Promise<
-          Awaited<ReturnType<Connection['getProgramAccounts']>>
-        >,
-      ]);
-      return [...modern, ...legacy];
-    });
+    // L-3: RPC-side discriminator filter only — the program's P2POffer is
+    // 202 bytes with a 170-byte legacy form (state.rs:283/288), so the old
+    // 162-byte dataSize fallback could only ever match foreign accounts.
+    const accounts = await queryRpcWithFallback(network, (c) =>
+      c.getProgramAccounts(PROGRAM_ID, { filters: [{ memcmp: { offset: 0, bytes: B58_CLK_PAWN } }] })
+    );
     const offers: P2POffer[] = [];
 
     for (const acc of accounts) {
-      if (acc.account.data.length >= 162) {
+      if (acc.account.data.length >= 170) {
         const data = Buffer.from(acc.account.data);
         let isInitialized = false;
         let offerId = 0;
@@ -664,9 +835,12 @@ async function fetchLiveP2POffersUncached(network: SolanaNetwork): Promise<P2POf
         let dueTime = 0;
         let statusByte = 0;
 
-        // NEW-4: discriminator-gated parsing — only CLK_PAWN accounts are offers
+        // NEW-4/L-3: discriminator-gated parsing — only CLK_PAWN accounts are
+        // offers, and only the two lengths the program defines (202 current,
+        // 170 legacy) are decoded.
         const kind = data.subarray(0, 8).toString();
-        if (data.length >= 200 && kind === 'CLK_PAWN') {
+        if (kind !== 'CLK_PAWN') continue;
+        if (data.length >= 202) {
           isInitialized = data.readUInt8(8) === 1;
           offerId = Number(data.readBigUInt64LE(9));
           creator = new PublicKey(data.subarray(17, 49)).toBase58();
@@ -679,8 +853,8 @@ async function fetchLiveP2POffersUncached(network: SolanaNetwork): Promise<P2POf
           durationSeconds = Number(data.readBigInt64LE(169));
           createdAt = Number(data.readBigInt64LE(177));
           dueTime = Number(data.readBigInt64LE(185));
-          statusByte = data.readUInt8(data.length >= 202 ? 201 : data.length - 1);
-        } else if (data.length >= 168 && kind === 'CLK_PAWN') {
+          statusByte = data.readUInt8(201);
+        } else if (data.length === 170) {
           isInitialized = data.readUInt8(8) === 1;
           offerId = Number(data.readBigUInt64LE(9));
           creator = new PublicKey(data.subarray(17, 49)).toBase58();
@@ -692,20 +866,7 @@ async function fetchLiveP2POffersUncached(network: SolanaNetwork): Promise<P2POf
           durationSeconds = Number(data.readBigInt64LE(137));
           createdAt = Number(data.readBigInt64LE(145));
           dueTime = Number(data.readBigInt64LE(153));
-          statusByte = data.readUInt8(data.length === 170 ? 169 : 167);
-        } else if (data.length === 162) {
-          isInitialized = data.readUInt8(0) === 1;
-          offerId = Number(data.readBigUInt64LE(1));
-          creator = new PublicKey(data.subarray(9, 41)).toBase58();
-          funder = new PublicKey(data.subarray(41, 73)).toBase58();
-          collateralMint = new PublicKey(data.subarray(73, 105)).toBase58();
-          collateralLamports = Number(data.readBigUInt64LE(105));
-          requestedRaw = data.readBigUInt64LE(113).toString();
-          interestRaw = data.readBigUInt64LE(121).toString();
-          durationSeconds = Number(data.readBigInt64LE(129));
-          createdAt = Number(data.readBigInt64LE(137));
-          dueTime = Number(data.readBigInt64LE(145));
-          statusByte = data.readUInt8(161);
+          statusByte = data.readUInt8(169);
         } else {
           continue;
         }
@@ -717,12 +878,20 @@ async function fetchLiveP2POffersUncached(network: SolanaNetwork): Promise<P2POf
         const requestedAmount = requestedLamports / 1_000_000;
         const interestOffered = interestLamports / 1_000_000;
         const durationDays = Math.max(1, Math.round(durationSeconds / 86400));
+        // M-4: decimals from the actual mint (native SOL 9, canonical SKR 6) —
+        // unlisted collateral is skipped instead of being shown in invented units.
         const isSkr = collateralMint === SKR_MINT.toBase58();
-        const collateralDecimals = isSkr ? 1_000_000 : 1_000_000_000;
-        const collateralAmount = collateralLamports / collateralDecimals;
+        const isSolMint =
+          collateralMint === NATIVE_SOL_MINT.toBase58() ||
+          collateralMint === SystemProgram.programId.toBase58();
+        if (!isSkr && !isSolMint) {
+          console.warn(`[Offers] offer #${offerId} has unsupported collateral mint ${collateralMint} — skipped`);
+          continue;
+        }
+        const collateralAmount = collateralLamports / (isSkr ? 1_000_000 : 1_000_000_000);
         const collateralName = isSkr
           ? `${collateralAmount.toLocaleString()} SKR`
-          : `${collateralAmount > 0 ? collateralAmount.toFixed(2) : '1.0'} SOL`;
+          : `${collateralAmount.toFixed(2)} SOL`;
 
         let status: OfferStatus = 'Open';
         if (statusByte === 1) status = 'Funded';
@@ -738,14 +907,16 @@ async function fetchLiveP2POffersUncached(network: SolanaNetwork): Promise<P2POf
           funder: funder === PublicKey.default.toBase58() ? undefined : funder,
           collateralName,
           collateralType: 'Token',
-          collateralAmount: collateralAmount > 0 ? collateralAmount : 1,
+          // processor.rs:2050 rejects a zero collateral amount, so the raw
+          // value is the truth (no invented placeholder).
+          collateralAmount,
           collateralMint,
           liquidityMint,
           requestedAmount,
           interestOffered,
           requestedAmountRaw: requestedRaw,
           interestOfferedRaw: interestRaw,
-          durationDays: durationDays || 7,
+          durationDays,
           createdAt,
           dueTime: dueTime > 0 ? dueTime : undefined,
           status,
@@ -774,32 +945,33 @@ export async function fetchLiveUserProfile(userPubkey: PublicKey, skrHandle: str
       const isInitialized = data.readUInt8(isV2 ? 8 : 0) === 1;
 
       if (isInitialized) {
-        const stakedSkr = Number(data.readBigUInt64LE(isV2 ? 41 : 33)) / 1_000_000;
+        // state.rs UserProfile (67 bytes): discriminator[0..8], is_init[8],
+        // user[9..41], staked_skr u64[41..49], loans_completed u32[49..53],
+        // loans_defaulted u32[53..57], reputation u16[57..59], locked_skr u64[59..67].
+        const stakedSkrMicro = BigInt(data.readBigUInt64LE(isV2 ? 41 : 33).toString());
+        // Legacy 51-byte profiles have no locked_skr field; the program
+        // reallocs them to 67 with zero padding, so the bond is 0.
+        const lockedSkrMicro = isV2 ? BigInt(data.readBigUInt64LE(59).toString()) : 0n;
         const totalLoansCompleted = data.readUInt32LE(isV2 ? 49 : 41);
         const totalLoansDefaulted = data.readUInt32LE(isV2 ? 53 : 45);
         const reputationScore = data.readUInt16LE(isV2 ? 57 : 49);
 
-        let tier: 'Diamond' | 'Gold' | 'Silver' | 'Standard' = 'Standard';
-        let aprDiscount = 0;
-
-        if (stakedSkr >= 5000 || reputationScore >= 9000) {
-          tier = 'Diamond';
-          aprDiscount = 50;
-        } else if (stakedSkr >= 2000 || reputationScore >= 7500) {
-          tier = 'Gold';
-          aprDiscount = 25;
-        } else if (stakedSkr >= 500 || reputationScore >= 5000) {
-          tier = 'Silver';
-          aprDiscount = 10;
-        }
+        // C-2: the discount comes from the program's rule only — it reads
+        // available_skr = staked_skr - locked_skr against the 1,000 / 100 SKR
+        // thresholds (processor.rs:1905-1916). Reputation is displayed but
+        // never grants a discount.
+        const aprDiscount = deriveAprDiscountPercent(stakedSkrMicro, lockedSkrMicro);
+        const availableMicro = stakedSkrMicro > lockedSkrMicro ? stakedSkrMicro - lockedSkrMicro : 0n;
 
         return {
           pubkey: userPubkey.toBase58(),
-          stakedSkr,
+          stakedSkr: Number(stakedSkrMicro) / 1_000_000,
+          lockedSkr: Number(lockedSkrMicro) / 1_000_000,
+          availableSkr: Number(availableMicro) / 1_000_000,
           totalLoansCompleted,
           totalLoansDefaulted,
           reputationScore,
-          tier,
+          tier: tierFromAprDiscount(aprDiscount),
           aprDiscount,
         };
       }
@@ -811,6 +983,8 @@ export async function fetchLiveUserProfile(userPubkey: PublicKey, skrHandle: str
   return {
     pubkey: userPubkey.toBase58(),
     stakedSkr: 0,
+    lockedSkr: 0,
+    availableSkr: 0,
     totalLoansCompleted: 0,
     totalLoansDefaulted: 0,
     reputationScore: 0,
@@ -824,8 +998,11 @@ export interface LeaderboardEntry {
   pubkey: string;
   skrHandle: string;
   reputationScore: number;
-  tier: 'Diamond' | 'Gold' | 'Silver' | 'Standard';
+  tier: CreditTier;
   stakedSkr: number;
+  /** staked - locked: the balance the program's discount thresholds read. */
+  availableSkr: number;
+  aprDiscount: number;
   totalLoansCompleted: number;
   totalLoansDefaulted: number;
   isCurrentUser?: boolean;
@@ -852,19 +1029,15 @@ export async function fetchLiveLeaderboard(
 
         const userPk = new PublicKey(data.subarray(9, 41));
         const userPubkeyStr = userPk.toBase58();
-        const stakedSkr = Number(data.readBigUInt64LE(41)) / 1_000_000;
+        const stakedSkrMicro = BigInt(data.readBigUInt64LE(41).toString());
+        const lockedSkrMicro = BigInt(data.readBigUInt64LE(59).toString());
         const totalLoansCompleted = data.readUInt32LE(49);
         const totalLoansDefaulted = data.readUInt32LE(53);
         const reputationScore = data.readUInt16LE(57);
 
-        let tier: 'Diamond' | 'Gold' | 'Silver' | 'Standard' = 'Standard';
-        if (stakedSkr >= 5000 || reputationScore >= 9000) {
-          tier = 'Diamond';
-        } else if (stakedSkr >= 2000 || reputationScore >= 7500) {
-          tier = 'Gold';
-        } else if (stakedSkr >= 500 || reputationScore >= 5000) {
-          tier = 'Silver';
-        }
+        // C-2: same program rule as the profile — tiering reflects the SKR bond
+        // the borrower actually holds, never the reputation score.
+        const aprDiscount = deriveAprDiscountPercent(stakedSkrMicro, lockedSkrMicro);
 
         const skrHandle = `skr_${userPubkeyStr.slice(0, 4).toLowerCase()}..${userPubkeyStr.slice(-4).toLowerCase()}`;
 
@@ -873,8 +1046,11 @@ export async function fetchLiveLeaderboard(
           pubkey: userPubkeyStr,
           skrHandle,
           reputationScore,
-          tier,
-          stakedSkr,
+          tier: tierFromAprDiscount(aprDiscount),
+          stakedSkr: Number(stakedSkrMicro) / 1_000_000,
+          availableSkr:
+            Number(stakedSkrMicro > lockedSkrMicro ? stakedSkrMicro - lockedSkrMicro : 0n) / 1_000_000,
+          aprDiscount,
           totalLoansCompleted,
           totalLoansDefaulted,
           isCurrentUser: currentUserPubkey ? userPk.equals(currentUserPubkey) : false,
@@ -920,15 +1096,42 @@ export interface OnChainPriceFeed {
 }
 
 /**
- * Validates on-chain feed freshness matching smart contract processor.rs:1328:
- * feed.last_updated_at <= 0 || current_time - feed.last_updated_at > feed.max_staleness_seconds
+ * M-5: the program bounds every pricing read to
+ * min(feed.max_staleness_seconds, ADMIN_FEED_MAX_PRICE_AGE_SECS = 600)
+ * (processor.rs:1484, 1547; constant at :3646). Feeds store 3600s for
+ * monitoring, so the client must apply the same 600s clamp or it would trust
+ * a price the program rejects as StaleOraclePrice.
  */
+export const PRICE_MAX_AGE_SECS = 600;
+
 export function isFeedFresh(feed: OnChainPriceFeed | null): boolean {
   if (!feed || !feed.isInitialized || feed.priceUsd <= 0) return false;
   const nowSec = Math.floor(Date.now() / 1000);
   const diff = nowSec - feed.lastUpdatedAt;
-  const maxStale = feed.maxStalenessSeconds > 0 ? feed.maxStalenessSeconds : 3600;
+  const feedWindow = feed.maxStalenessSeconds > 0 ? feed.maxStalenessSeconds : PRICE_MAX_AGE_SECS;
+  const maxStale = Math.min(feedWindow, PRICE_MAX_AGE_SECS);
   return diff >= 0 && diff <= maxStale;
+}
+
+/**
+ * H-2: only a feed the program itself would accept may back a price-derived
+ * figure. Holds for both the RPC read and the Helius WSS push (both funnel
+ * through isFeedFresh, which clamps to 600s).
+ */
+export function isPriceSourceTrusted(source: PriceSource = currentPriceSource): boolean {
+  return source === 'on-chain-rpc' || source === 'helius-wss';
+}
+
+/** Age of the last accepted price update in seconds (null if never updated). */
+export function getPriceAgeSeconds(): number | null {
+  if (!lastPriceFetchTime) return null;
+  return Math.floor((Date.now() - lastPriceFetchTime) / 1000);
+}
+
+/** Trusted source AND within the 600s window the program enforces. */
+export function isLivePriceUsable(): boolean {
+  const age = getPriceAgeSeconds();
+  return isPriceSourceTrusted() && age !== null && age <= PRICE_MAX_AGE_SECS;
 }
 
 /**
@@ -1395,16 +1598,36 @@ export async function buildBorrowTx(
   poolAuthority: PublicKey,
   poolId: number,
   borrowAmountUsdc: number,
-  collateralAmountLamports: number,
+  collateralBaseUnits: number,
   durationDays: number,
   collateralName: string = 'SOL',
   isPoolLiquid: boolean = true,
   liquidityMint: PublicKey = USDC_MAINNET_MINT,
-  network: SolanaNetwork = 'mainnet-beta'
-): Promise<{ tx: Transaction; escrowPDA: PublicKey; loanId: number }> {
+  network: SolanaNetwork = 'mainnet-beta',
+  options: {
+    /**
+     * M-6: pool.loans_originated, used to derive a deterministic loan id
+     * (deriveLoanId). The id is read back from the loan account after the
+     * borrow, so it does not need to be unique across pools.
+     */
+    poolLoansOriginated?: number;
+    /** H-5: pool.has_custom_oracle — carry the pool-scoped feeds when set. */
+    hasCustomOracle?: boolean;
+  } = {}
+): Promise<{ tx: Transaction; escrowPDA: PublicKey; loanId: number; loanPDA: PublicKey }> {
+  // C-3: the program reverts with InsufficientLiquidity when
+  // pool.total_liquidity < borrow_amount (processor.rs:1348). Refuse to build
+  // a transaction that is guaranteed to fail rather than let the user sign it.
+  if (!isPoolLiquid) {
+    throw new Error(
+      'This desk does not have enough liquidity for that amount yet. Try a smaller amount or another desk.'
+    );
+  }
   const [poolPDA] = getPoolPDA(poolAuthority, poolId);
   const [vaultPDA] = getVaultPDA(poolPDA);
-  const loanId = Math.floor(1000 + Math.random() * 900000);
+  // M-6: deterministic id (no Math.random) — derivable again from
+  // (pool.loans_originated, second) and always read back from the chain.
+  const loanId = deriveLoanId(options.poolLoansOriginated ?? 0);
   const [loanPDA] = getLoanPDA(poolPDA, borrower, loanId);
   const [escrowPDA] = getEscrowPDA(loanPDA);
   const [profilePDA] = getProfilePDA(borrower);
@@ -1416,11 +1639,11 @@ export async function buildBorrowTx(
   data.writeUInt8(3, 0); // Instruction 3: BorrowFromPool
   writeU64LE(BigInt(loanId)).copy(data, 1);
   writeU64LE(BigInt(Math.round(borrowAmountUsdc * 1_000_000))).copy(data, 9);
-  writeU64LE(BigInt(collateralAmountLamports)).copy(data, 17);
+  writeU64LE(BigInt(collateralBaseUnits)).copy(data, 17);
   writeU64LE(BigInt(durationDays * 86400)).copy(data, 25);
 
   const borrowerUsdcAccount = getAssociatedTokenAddress(liquidityMint, borrower);
-  const isNativeSol = collateralName.toUpperCase() === 'SOL';
+  const isNativeSol = isNativeSolCollateralName(collateralName);
   const collateralMint = isNativeSol ? SystemProgram.programId : SKR_MINT;
   const borrowerCollateralAccount = isNativeSol
     ? borrower
@@ -1453,8 +1676,23 @@ export async function buildBorrowTx(
     { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     { pubkey: profilePDA, isSigner: false, isWritable: true },
     { pubkey: treasuryUsdcAccount, isSigner: false, isWritable: true },
-    { pubkey: oraclePDA, isSigner: false, isWritable: false },
   ];
+  // H-5: a desk that pinned its own feeds requires BOTH pool-scoped oracle
+  // PDAs (processor.rs:1457-1465 collateral gate, 1531-1535 liquidity gate).
+  // The global feed is deliberately NOT included in that case: the program's
+  // trailing scan assigns the first matching account to the slot, so passing
+  // the global feed ahead of the pool-scoped one would trip the gate.
+  if (options.hasCustomOracle) {
+    const poolCollateralOracle = getPoolOraclePDA(poolPDA, collateralMint)[0];
+    keys.push({ pubkey: poolCollateralOracle, isSigner: false, isWritable: false });
+    if (isNativeSol) {
+      // canonical_collateral_mint for native SOL is the native mint id.
+      keys.push({ pubkey: getPoolOraclePDA(poolPDA, NATIVE_SOL_MINT)[0], isSigner: false, isWritable: false });
+    }
+    keys.push({ pubkey: getPoolOraclePDA(poolPDA, liquidityMint)[0], isSigner: false, isWritable: false });
+  } else {
+    keys.push({ pubkey: oraclePDA, isSigner: false, isWritable: false });
+  }
   // Route 50% of the origination fee to the SKR yield vault when it exists
   // and is initialized. If the read fails or the vault is absent, the whole
   // fee goes to the treasury (program behavior) — never revert the borrow
@@ -1476,9 +1714,12 @@ export async function buildBorrowTx(
   });
   tx.add(ix);
 
+  // L-8: the memo must print human units. The argument is mint base units
+  // (lamports for SOL, micro-SKR for SKR) — the old SKR branch printed raw
+  // base units, overstating the deposit by 1e6.
   const collateralLabel = isNativeSol
-    ? `${(collateralAmountLamports / 1e9).toFixed(3)} SOL`
-    : `${collateralAmountLamports} SKR`;
+    ? `${(collateralBaseUnits / 1e9).toFixed(3)} SOL`
+    : `${(collateralBaseUnits / 1e6).toLocaleString()} SKR`;
   const memoText = `ClockLend: Borrow #${loanId} $${borrowAmountUsdc} USDC | Collateral: ${collateralLabel} | Pool #${poolId}`;
   tx.add(
     new TransactionInstruction({
@@ -1488,7 +1729,171 @@ export async function buildBorrowTx(
     })
   );
 
-  return { tx, escrowPDA, loanId };
+  return { tx, escrowPDA, loanId, loanPDA };
+}
+
+// ---------------------------------------------------------------------------
+// H-4 / M-8: ground-truth reads of a single loan account.
+//
+// LoanOrder (state.rs, 170 bytes):
+//   discriminator[0..8], is_active[8], loan_id[9..17], borrower[17..49],
+//   pool[49..81], principal_amount[81..89], collateral_mint[89..121],
+//   collateral_amount[121..129], interest_due[129..137], origination_time[137..145],
+//   due_time[145..153], grace_period_expires[153..161], status[161], locked_skr[162..170].
+// ---------------------------------------------------------------------------
+export interface OnChainLoanState {
+  loanId: number;
+  borrower: string;
+  poolPubkey: string;
+  principalMicro: bigint;
+  collateralMint: string;
+  collateralBaseUnits: bigint;
+  collateralAmount: number;
+  collateralName: string;
+  isNativeSol: boolean;
+  /** Exact on-chain interest (u128 floor math, processor.rs:1926-1935). */
+  interestDueMicro: bigint;
+  originationTime: number;
+  /** 0 means the program never set it — render as unknown, never invented. */
+  dueTime: number;
+  gracePeriodExpires: number;
+  lockedSkrMicro: bigint;
+  status: LoanStatus;
+}
+
+export function decodeLoanOrderAccount(data: Buffer | Uint8Array): OnChainLoanState | null {
+  const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+  if (buf.length < 170 || buf.subarray(0, 8).toString() !== 'CLK_LOAN') return null;
+  const collateralMint = new PublicKey(buf.subarray(89, 121)).toBase58();
+  const isNativeSol =
+    collateralMint === NATIVE_SOL_MINT.toBase58() ||
+    collateralMint === SystemProgram.programId.toBase58();
+  const isSkr = collateralMint === SKR_MINT.toBase58();
+  if (!isNativeSol && !isSkr) return null;
+  const collateralBaseUnits = BigInt(buf.readBigUInt64LE(121).toString());
+  const collateralAmount = Number(collateralBaseUnits) / (isNativeSol ? 1_000_000_000 : 1_000_000);
+
+  const statusByte = buf.readUInt8(161);
+  let status: LoanStatus = 'Active';
+  if (statusByte === 1) status = 'InGracePeriod';
+  else if (statusByte === 2) status = 'Repaid';
+  else if (statusByte === 3) status = 'Defaulted';
+
+  return {
+    loanId: Number(buf.readBigUInt64LE(9)),
+    borrower: new PublicKey(buf.subarray(17, 49)).toBase58(),
+    poolPubkey: new PublicKey(buf.subarray(49, 81)).toBase58(),
+    principalMicro: BigInt(buf.readBigUInt64LE(81).toString()),
+    collateralMint,
+    collateralBaseUnits,
+    collateralAmount,
+    collateralName: isNativeSol
+      ? `${collateralAmount.toFixed(2)} SOL`
+      : `${collateralAmount.toLocaleString()} SKR`,
+    isNativeSol,
+    interestDueMicro: BigInt(buf.readBigUInt64LE(129).toString()),
+    originationTime: Number(buf.readBigInt64LE(137)),
+    dueTime: Number(buf.readBigInt64LE(145)),
+    gracePeriodExpires: Number(buf.readBigInt64LE(153)),
+    lockedSkrMicro: BigInt(buf.readBigUInt64LE(162).toString()),
+    status,
+  };
+}
+
+/** Read a loan PDA by (pool, borrower, loan_id). Returns undefined if absent. */
+export async function fetchOnChainLoan(
+  poolPDA: PublicKey,
+  borrower: PublicKey,
+  loanId: number,
+  network: SolanaNetwork = 'mainnet-beta'
+): Promise<OnChainLoanState | undefined> {
+  const [loanPDA] = getLoanPDA(poolPDA, borrower, loanId);
+  return fetchOnChainLoanByPDA(loanPDA, network);
+}
+
+/** Read a loan PDA directly — the read-back path after a borrow confirms. */
+export async function fetchOnChainLoanByPDA(
+  loanPDA: PublicKey,
+  network: SolanaNetwork = 'mainnet-beta'
+): Promise<OnChainLoanState | undefined> {
+  try {
+    const info = await getConnection(network).getAccountInfo(loanPDA, 'confirmed');
+    if (!info?.data) return undefined;
+    return decodeLoanOrderAccount(Buffer.from(info.data)) ?? undefined;
+  } catch (err) {
+    console.warn('[Loan] on-chain read failed:', (err as any)?.message || err);
+    return undefined;
+  }
+}
+
+/**
+ * M-8: live account subscriptions for the borrower's own loan PDAs. Any
+ * program-side change (grace trigger, repayment, default) pushes into
+ * onUpdate so the affected views can re-read the chain instead of waiting for
+ * a manual refresh. Returns an unsubscribe function.
+ */
+export function subscribeToUserLoans(
+  borrower: PublicKey,
+  orders: Array<Pick<LoanOrder, 'id' | 'poolPubkey'>>,
+  network: SolanaNetwork,
+  onUpdate: () => void
+): () => void {
+  const conn = getConnection(network);
+  const subscriptionIds: number[] = [];
+  const seen = new Set<string>();
+  for (const order of orders) {
+    if (!order.poolPubkey) continue;
+    try {
+      const [loanPDA] = getLoanPDA(new PublicKey(order.poolPubkey), borrower, order.id);
+      const key = loanPDA.toBase58();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      subscriptionIds.push(conn.onAccountChange(loanPDA, () => onUpdate(), 'confirmed'));
+    } catch (err) {
+      console.warn('[Loans] subscription skipped:', (err as any)?.message || err);
+    }
+  }
+  return () => {
+    for (const id of subscriptionIds) {
+      try {
+        conn.removeAccountChangeListener(id);
+      } catch (_e) {
+        // connection may already be torn down
+      }
+    }
+  };
+}
+
+/**
+ * C-3: turn raw program/wallet failures into a message that describes what
+ * actually happened. Custom error codes mirror error.rs (ClockLendError
+ * variants are `ProgramError::Custom(index)` in declaration order).
+ */
+export function describeTransactionError(err: any): string {
+  const raw: string = `${err?.message ?? err ?? ''}`;
+  const lower = raw.toLowerCase();
+
+  const has = (needle: string) => lower.includes(needle.toLowerCase());
+
+  if (has('Cancellation') || has('User rejected') || has('declined')) {
+    return 'Transaction was cancelled in your wallet.';
+  }
+  if (has('InsufficientLiquidity') || has('custom program error: 0xb') || has('"Custom":11')) {
+    return 'This desk ran out of liquidity for that amount (InsufficientLiquidity). Try a smaller borrow or another desk.';
+  }
+  if (has('StaleOraclePrice') || has('custom program error: 0x1d') || has('"Custom":29')) {
+    return 'The desk’s price feed is stale right now, so the program refused the borrow. Try again once the keeper refreshes the feed.';
+  }
+  if (has('InvalidOracleAccount') || has('custom program error: 0x1c') || has('"Custom":28')) {
+    return 'This desk requires its own price feed, which the client could not attach. Nothing was charged — please report this desk.';
+  }
+  if (has('InsufficientCollateral') || has('custom program error: 0x1a') || has('"Custom":26')) {
+    return 'The escrowed collateral is below what the program requires for this borrow.';
+  }
+  if (has('insufficient funds') || has('insufficient lamports')) {
+    return 'Your wallet does not have enough SOL to pay the network fee and rent.';
+  }
+  return raw || 'Could not complete the transaction.';
 }
 
 // (InitializeAdmin and SetPriceFeed builders were removed as dead code —
@@ -1519,7 +1924,8 @@ export async function buildRepayTx(
   const [treasuryPDA] = getTreasuryPDA();
   const treasuryUsdcAccount = getAssociatedTokenAddress(liquidityMint, treasuryPDA);
 
-  const isNativeSol = collateralName.toUpperCase().includes('SOL');
+  // L-7: one shared collateral-type test across every builder.
+  const isNativeSol = isNativeSolCollateralName(collateralName);
   const borrowerCollateralAccount = isNativeSol
     ? borrower
     : getAssociatedTokenAddress(SKR_MINT, borrower);
@@ -1772,7 +2178,7 @@ export async function buildRepayPawnOfferTx(
   const borrowerUsdcAccount = getAssociatedTokenAddress(offerMint, borrower);
   const funderUsdcAccount = getAssociatedTokenAddress(offerMint, funder);
 
-  const isNativeSol = offer.collateralName.toUpperCase().includes('SOL');
+  const isNativeSol = isNativeSolCollateralName(offer.collateralName);
   const borrowerCollateralAccount = isNativeSol
     ? borrower
     : getAssociatedTokenAddress(SKR_MINT, borrower);
@@ -1858,7 +2264,7 @@ export async function buildCancelPawnOfferTx(
   const data = Buffer.alloc(1);
   data.writeUInt8(10, 0);
 
-  const isNativeSol = offer.collateralName.toUpperCase().includes('SOL');
+  const isNativeSol = isNativeSolCollateralName(offer.collateralName);
   const creatorCollateralAccount = isNativeSol ? creator : getAssociatedTokenAddress(SKR_MINT, creator);
 
   const keys = [

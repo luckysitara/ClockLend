@@ -214,7 +214,7 @@ def create_deck(output_path="ClockLend_Pitch_Deck.pptx"):
     ftf = foot.text_frame
     fp = ftf.paragraphs[0]
     fp.alignment = PP_ALIGN.CENTER
-    fp.text = "Native Rust Program (282 KB, Zero-Anchor) · Pyth Pull Oracles · Slashable SKR Reputation Bonds"
+    fp.text = "Native Rust Program (349 KB, Zero-Anchor) · Keeper-Refreshed Admin Price Feeds · Slashable SKR Reputation Bonds"
     fp.font.size = Pt(11.5)
     fp.font.color.rgb = RGBColor(120, 140, 175)
     fp.font.name = FONT_MONO
@@ -222,8 +222,8 @@ def create_deck(output_path="ClockLend_Pitch_Deck.pptx"):
     add_notes(s1, """PRESENTER NOTES (Slide 1):
 "ClockLend. We took how people actually lend to each other — friends, circles, marketplaces — and put it on-chain, on the Seeker. It is live on Solana mainnet. In the next seven minutes: the problem, the product, the proof, and why this deserves both prizes."
 Objection Prep:
-- Program ID: HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3
-- Cluster: Solana Mainnet-Beta (and Devnet)
+- Program ID: 4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7
+- Cluster: Solana Mainnet-Beta (the devnet program id HAjGxuih…jsH3 exists on devnet only)
 - Hardware: Solana Seeker (Android 14)""")
 
     # ==========================================
@@ -329,7 +329,7 @@ Answer: They serve institutional whale collateral with algorithmic liquidation b
 
     # 3 Mode Cards
     modes = [
-        ("⚡ Express Borrow", "1-Tap Instant Liquidity", "Collateral valued in real-time via Pyth pull oracles. The smart router automatically selects the lowest-APR available lending desk.", CYAN),
+        ("⚡ Express Borrow", "1-Tap Instant Liquidity", "Collateral valued from on-chain price feeds refreshed by a dedicated keeper. The smart router automatically selects the lowest-APR available lending desk.", CYAN),
         ("🏪 Desks & Circles", "Merchant Lending Capital", "Community leaders & merchants deploy on-chain escrowed desks with their own APR, LTV limits, and custom duration rules.", EMERALD),
         ("🃏 Pawn Deck", "1:1 Social Pawn Listings", "Direct borrower-to-lender listings. Stake SOL or SKR collateral directly. Peers fund each other transparently on-chain.", GOLD)
     ]
@@ -482,7 +482,7 @@ Objection Prep:
 
     steps = [
         ("0:00", "Seeker in Hand", "Open ClockLend, biometric Seed Vault unlock with 1 tap."),
-        ("0:20", "1-Tap Express", "Deposit 0.5 SOL collateral; Pyth values at $75; borrow $50 USDC instantly."),
+        ("0:20", "1-Tap Express", "Deposit 0.5 SOL collateral; the on-chain feed values it; borrow $50 USDC instantly."),
         ("0:45", "Countdown Clock", "Loan appears on dashboard with live settlement clock & interest ticker."),
         ("1:05", "1-Swipe Repay", "Borrower repays $51 USDC; escrow releases 0.5 SOL collateral back to wallet."),
         ("1:20", "SKR Reputation Stake", "Stake 1,000 SKR bond; instant level up to 90% LTV tier with 50% APR discount.")
@@ -533,7 +533,7 @@ Live test device on table:
 
     chain_items = [
         ("Atomic PDA Escrows", "Collateral is locked cryptographically in non-custodial Program Derived Addresses. Neither ClockLend nor lenders can steal user collateral."),
-        ("Pyth Pull Oracles", "On-chain valuation without centralized keeper bots or admin price feeds. Prices are verified on-demand inside the transaction."),
+        ("Admin Price Feeds, Fail-Closed", "Prices live in on-chain PDAs written by a separate, low-privilege oracle authority on a sub-10-minute cadence. A 600s staleness bound halts pricing rather than trading on a stale number. This is admin-fed pricing, not a trustless oracle — said plainly."),
         ("Permissionless Credit", "Anyone on earth with a phone and collateral can borrow instantly without KYC hurdles, credit checks, or bank approvals."),
         ("Sovereign Credit Identity", "Reputation and default history are recorded transparently on-chain, creating a portable credit score that follows the wallet.")
     ]
@@ -592,14 +592,14 @@ Answer: Web2 requires bank rails, central custody of collateral, and debt collec
     # ==========================================
     s6 = prs.slides.add_slide(blank_layout)
     add_background(s6, alt=True)
-    add_header(s6, "SECURITY & FORMAL VERIFICATION", "Six audit rounds. 81 tests. Zero shortcuts.", "Multi-pass security reviews with independent exploit hunts and formal invariant proofs.", "Zero shortcuts")
+    add_header(s6, "SECURITY & AUDIT STATUS", "14 internal audit rounds. 103 tests. No third-party audit.", "Internal, AI-assisted adversarial review plus a property-based fuzz suite. Be clear with judges: nobody outside the team has reviewed this code.", "No third-party audit")
 
     # 4 Stat Cards Top Row
     stat_data = [
-        ("6", "Independent Audit Passes", "EthelSec, invariant analysis & red-team exploit hunts", EMERALD),
-        ("81 / 81", "Regression Tests Passing", "Including property-based fuzz tests for solvency invariants", CYAN),
-        ("2", "Adversarial PoC Hunts", "All criticals reproduced as executable tests and proven closed", GOLD),
-        ("0", "Centralized Pricing Keys", "Zero keeper dependencies; tamper-proof on-chain Pyth feeds", TEXT_WHITE)
+        ("14", "Internal AI-Assisted Audit Rounds", "Our own agents and team — NOT an independent audit firm", EMERALD),
+        ("103", "Test Functions in the Repo", "Including property-based fuzz tests for solvency invariants", CYAN),
+        ("3", "Executable PoC Bugs Found in Round 14", "Fixed in source; NOT yet redeployed on chain", GOLD),
+        ("OPEN", "Ops Readiness", "Keeper automation unreliable; program upgradeable by one team key", TEXT_WHITE)
     ]
     for idx, (val, title, sub, col) in enumerate(stat_data):
         cx = 0.8 + idx * 3.0
@@ -662,17 +662,18 @@ Answer: Web2 requires bank rails, central custody of collateral, and debt collec
     r1.font.size = Pt(13)
     r1.font.color.rgb = CYAN
     r2 = p.add_run()
-    r2.text = "HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3  ·  Hash-Verified Live on Mainnet"
+    r2.text = "4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7  ·  Bytecode Hash-Verified on Mainnet"
     r2.font.size = Pt(12)
     r2.font.color.rgb = TEXT_WHITE
     r2.font.name = FONT_MONO
 
     add_notes(s6, """PRESENTER NOTES (Slide 6):
-"Two of this panel's judges are security researchers, so let me be precise: the program went through six independent audit passes, including PoC-driven exploit hunts and a property-based fuzz suite that checks solvency and escrow invariants after every simulated step. Everything found was fixed. The deployed binary is hash-verified on-chain."
-Key Remediation Highlights:
-- F1 SKR liquidation: Proven with new end-to-end integration tests.
-- F3/F4 ProgramData verification: Eliminates any centralized admin backdoor.
-- 81 automated tests running clean with 100% pass rate.""")
+"Two of this panel's judges are security researchers, so let me be precise and not oversell: these were 14 INTERNAL, AI-assisted audit rounds run by our own agents — no third-party firm has reviewed this code. The program is deployed on mainnet and the on-chain bytecode is hash-verified against our build artifact, so you can check that the deployed binary is exactly the source in the repo."
+Key Honest Highlights:
+- We run 103 on-chain test functions, including a property-based fuzz suite over solvency and escrow invariants.
+- Round 14 found three executable proof-of-concept bugs. The fixes are committed in source but are NOT yet in the redeployed on-chain bytecode.
+- Ops readiness was graded not ready: the keeper is unreliable and the program is upgradeable by a single team key.
+- Do not claim an independent audit. Do not claim Pyth.""")
 
     # ==========================================
     # SLIDE 7: SHIPPED & TRACTION
@@ -684,11 +685,11 @@ Key Remediation Highlights:
     # 3 Pillars
     pillars = [
         ("🚀 Solana Mainnet", "Deployed & Verified", [
-            "282 KB optimized native Rust ELF",
-            "Zero Anchor bloat, sub-millisecond execution",
-            "Treasury PDA initialized and funded",
-            "Genesis Seeker Lending Desk seeded live",
-            "Pyth pull oracles wired for SOL & SKR"
+            "349 KB native Rust ELF, bytecode hash-verified",
+            "Program 4Dp2A6SH… deployed at slot 451,589,196",
+            "Admin PDA live; SOL & SKR admin price feeds live",
+            "Genesis Seeker Lending Desk created on chain",
+            "Caveat: zero liquidity, zero loans, treasury not yet initialized"
         ], EMERALD),
         ("📱 Seeker Native App", "Installed on Hardware", [
             "Running on physical Seeker hardware",
@@ -761,7 +762,7 @@ Answer: "Correct, and deliberate. In lending, a smart contract bug costs real us
     # ==========================================
     s8 = prs.slides.add_slide(blank_layout)
     add_background(s8, alt=True)
-    add_header(s8, "THE $10,000 SKR INTEGRATION TRACK", "SKR isn't bolted on. It's the engine.", "Real economic rights, tiered fee discounts, slashable reputation bonds, and Pyth oracles.", "It's the engine")
+    add_header(s8, "THE $10,000 SKR INTEGRATION TRACK", "SKR isn't bolted on. It's the engine.", "Real economic rights, tiered fee discounts, slashable reputation bonds, and a live SKR price feed.", "It's the engine")
 
     skr_cards = [
         ("🏆 Staking Tier Rights", "Direct Economic Utility", [
@@ -776,10 +777,10 @@ Answer: "Correct, and deliberate. In lending, a smart contract bug costs real us
             "Slashed SKR compensates the desk lender, protecting pool solvency.",
             "Clean borrowers build permanent on-chain credit scores."
         ], GOLD),
-        ("🔮 Pyth SKR/USD Oracle", "First Protocol in Lending", [
-            "First lending protocol to integrate Pyth's official SKR/USD price feed.",
-            "Sub-second market valuation verified on-chain per transaction.",
-            "Zero admin override, zero centralized keeper cron jobs.",
+        ("🔮 Live SKR/USD Price Feed", "On-Chain, Keeper-Refreshed", [
+            "SKR/USD is priced on chain from Jupiter's market data, refreshed by our keeper.",
+            "A 600s fail-closed staleness bound halts borrows rather than pricing off a stale number.",
+            "Admin-fed by design — we disclose it rather than claiming a trustless oracle.",
             "SKR accepted as primary collateral alongside SOL."
         ], CYAN)
     ]
@@ -812,7 +813,7 @@ Answer: "Correct, and deliberate. In lending, a smart contract bug costs real us
             r.font.color.rgb = TEXT_SUB
 
     add_notes(s8, """PRESENTER NOTES (Slide 8):
-"For the SKR track: SKR in ClockLend is a staking product with real economic rights — tiered APR discounts, a slashable default bond, and a collateral class. And we price it from Pyth's SKR/USD feed — the market's price, verified on-chain, with no centralized keeper. That is staking, rewards, and access in one product."
+"For the SKR track: SKR in ClockLend is a staking product with real economic rights — tiered APR discounts, a slashable default bond, and a collateral class. We price it on chain from Jupiter market data via a keeper-refreshed feed with a fail-closed staleness bound. To be straight with you: that feed is admin-written, not a trustless oracle. That is staking, rewards, and access in one product."
 Key Takeaway for Judges:
 - ClockLend directly drives structural staking demand for SKR.
 - Borrowers need SKR to access 90% LTV and fee discounts.
@@ -953,7 +954,7 @@ Key Business Takeaway:
         r_d.font.color.rgb = TEXT_SUB
 
     add_notes(s10, """PRESENTER NOTES (Slide 10):
-"The ecosystem case: ClockLend turns SKR from a holding into a working asset — staked for discounts, locked as collateral, priced by Pyth. And it gives every Seeker wallet a portable credit history — the missing primitive for the social graph Solana Mobile is building."
+"The ecosystem case: ClockLend turns SKR from a holding into a working asset — staked for discounts, locked as collateral, priced on chain. And it gives every Seeker wallet a portable credit history — the missing primitive for the social graph Solana Mobile is building."
 Key Ecosystem Takeaway:
 - Seeker needs real utility dApps that can't exist on Apple/Google App Stores.
 - ClockLend leverages Seed Vault, MWA, and NFC hardware features.""")
@@ -1086,7 +1087,7 @@ Key Closing Points:
     r.font.color.rgb = EMERALD
     r.font.name = FONT_HEADING
     r_id = p.add_run()
-    r_id.text = "HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3"
+    r_id.text = "4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7"
     r_id.font.size = Pt(12)
     r_id.font.color.rgb = TEXT_WHITE
     r_id.font.name = FONT_MONO
@@ -1110,7 +1111,7 @@ Key Closing Points:
     p3.alignment = PP_ALIGN.CENTER
     p3.space_before = Pt(8)
     r_tech = p3.add_run()
-    r_tech.text = "Built for Solana Seeker · Mobile Wallet Adapter 2.0 · Seed Vault · Pyth Pull Oracles · SKR Staking"
+    r_tech.text = "Built for Solana Seeker · Mobile Wallet Adapter 2.0 · Seed Vault · On-Chain Price Feeds · SKR Staking"
     r_tech.font.size = Pt(11)
     r_tech.font.color.rgb = TEXT_SUB
 
@@ -1130,7 +1131,7 @@ Key Closing Points:
 Demo Checklist:
 1. Show Seeker home screen with ClockLend icon.
 2. Open ClockLend -> instant biometric Seed Vault unlock.
-3. Show live Genesis Desk with Pyth price updates.
+3. Show live Genesis Desk with on-chain price updates.
 4. Execute instant micro-loan.""")
 
     # Save

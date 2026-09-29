@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ClockLend — Final Production Audit Report (Round 14 Final Certification)</title>
+<title>ClockLend — Round-14 Internal Audit Report (remediation in progress)</title>
 <style>
   :root { --bg:#0C1435; --card:#141d47; --text:#e8ecff; --muted:#9aa3cc; --crit:#ff5f6d; --high:#ffb347; --med:#ffd97d; --low:#7fd8ff; --ok:#4ade80; }
   * { box-sizing: border-box; }
@@ -38,20 +38,41 @@
 </head>
 <body>
 <div class="wrap">
-<h1>ClockLend — Final Production Audit Report (Round 14 Final Certification)</h1>
-<div class="sub">2026-09-29 · Final Production Mainnet Audit & Deployment Verification · Program ID: <a href="https://solscan.io/account/4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7" target="_blank" style="color:var(--ok); text-decoration:none; font-family:ui-monospace, monospace;">4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7</a> (Solana Mainnet-beta)</div>
+<h1>ClockLend — Round-14 Internal Audit Report</h1>
+<div class="sub">2026-09-29 · Round-14 internal AI-assisted audit · Program ID: <a href="https://solscan.io/account/4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7" target="_blank" style="color:var(--ok); text-decoration:none; font-family:ui-monospace, monospace;">4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7</a> (Solana Mainnet-beta)</div>
 
 <div class="scores">
-  <div class="score"><div class="grade" style="color:var(--ok)">A+</div><div class="label">Program Security (100% Remediated)</div></div>
-  <div class="score"><div class="grade" style="color:var(--ok)">A+</div><div class="label">Program Quality (103 Tests Passing)</div></div>
-  <div class="score"><div class="grade" style="color:var(--ok)">A</div><div class="label">Mobile Security (Seed Vault / Enclave)</div></div>
-  <div class="score"><div class="grade" style="color:var(--ok)">A</div><div class="label">Mobile Quality (0% Mock / Live RPC)</div></div>
-  <div class="score"><div class="grade" style="color:var(--ok)">A</div><div class="label">Deploy Tooling (Mainnet Verified)</div></div>
-  <div class="score"><div class="grade" style="color:var(--ok)">TRUE</div><div class="label">ready_for_mainnet (DEPLOYED)</div></div>
+  <div class="score"><div class="grade" style="color:var(--ok)">STRONG</div><div class="label">Program Security — no unprivileged theft path found</div></div>
+  <div class="score"><div class="grade" style="color:var(--med)">D+</div><div class="label">Mobile Security — remediation in progress</div></div>
+  <div class="score"><div class="grade" style="color:var(--crit)">NOT READY</div><div class="label">Ops Readiness</div></div>
+  <div class="score"><div class="grade" style="color:var(--crit)">FALSE</div><div class="label">ready_for_mainnet — at audit time</div></div>
 </div>
 
-<h2>Headline</h2>
-<p>All 14 adversarial audit rounds completed with <strong>100% remediation of all critical, high, and medium findings</strong>. The native Solana SBF program is verified, rent-exempt, and actively operational on <strong>Solana Mainnet-beta</strong> (<code class="mono">4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7</code>). Every mathematical invariant (fixed-point checked math, zero-float execution, isolated PDA escrow, fail-closed discriminators, and 1-hour anti-frontrun yield harvest pacing) has been validated by 103 deterministic integration and fuzzing tests.</p>
+<div class="finding" style="border-left:3px solid var(--high)">
+  <strong>How to read this report.</strong> These are <strong>internal, AI-assisted</strong> audit rounds performed by the ClockLend team's own agents and reviewed by the team. <strong>No third-party audit firm has been engaged and no external audit has been performed.</strong> The grades above are the round-14 findings as recorded at audit time; entries marked "Fixed in source, awaiting redeploy" are <em>not yet on chain</em>. Verify every deployment claim yourself against the on-chain addresses below.
+</div>
+
+<h2>Deployment &amp; on-chain verification</h2>
+<p>The program <em>is</em> deployed and its bytecode <em>is</em> hash-verifiable. Reproduce the hash with: fetch the ProgramData account, slice <code>data[45 .. 45 + &lt;local ELF size&gt;]</code> (offset 45 skips the BPF upgradeable metadata header), and compare to <code>sha256sum program/target/deploy/clock_lend.so</code>.</p>
+<table>
+<tr><th>Field</th><th>Value</th><th>How to verify</th></tr>
+<tr><td>Program ID</td><td><code>4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7</code></td><td><a href="https://solscan.io/account/4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7" target="_blank" style="color:var(--low)">Solscan</a></td></tr>
+<tr><td>Cluster</td><td>Solana Mainnet-beta (genesis <code>5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d</code>)</td><td><code>getGenesisHash</code></td></tr>
+<tr><td>ProgramData</td><td><code>9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG</code></td><td><code>solana program show</code></td></tr>
+<tr><td>Allocated bytes</td><td>357,517 (ELF is 357,472; the remainder is retained zero padding)</td><td>ProgramData account length</td></tr>
+<tr><td>Deploy slot</td><td>451,589,196</td><td>ProgramData slot field</td></tr>
+<tr><td>Upgrade authority</td><td><code>8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds</code></td><td>ProgramData authority field</td></tr>
+<tr><td>Bytecode sha256</td><td><code>019da88bc97498b127ddbaa76468ff8ad86c5094ae46045f7f9a9127b3c1dbdb</code></td><td>Matches the local build artifact</td></tr>
+<tr><td>Upgradeable?</td><td><strong>Yes</strong> — the deployer key can replace the program</td><td>ProgramData Option flag = 1</td></tr>
+</table>
+<p class="sub" style="margin-top:.5rem">Note the last row: the program is <strong>upgradeable</strong>, not immutable. A "fully trustless, immutable contract" is not what is deployed today. The upgrade authority is a single team-held key; it is not a multisig and is not timelocked.</p>
+
+<div class="finding" style="border-left:3px solid var(--muted)">
+  <strong>Historical record.</strong> Everything from here down is the per-round log as written at the time.
+  Details describe the state <em>at that round</em>, not today — most notably the <strong>Pyth pull-oracle
+  integration, which was removed entirely in round 11</strong> in favour of admin price feeds, and the
+  per-round test counts (which differ from the current 103). Read the round-14 section above for present status.
+</div>
 
 <h2>Round-8 regression check — all present</h2>
 <table>
@@ -209,17 +230,74 @@
 <h2>Round-13 reaudit (2026-09-26) — critical ABI regression found &amp; fixed</h2>
 <p>Post-round-12 verification found a critical introduced by the rescue instruction: inserting <code>WithdrawUnusedYield</code> before <code>ClaimSkrYield</code> shifted the borsh discriminants (Withdraw=17, Claim=18) while the mobile client still sends tag 17 — every dividend claim dispatched to the rescue handler and reverted. Fixed by reordering (Claim=17, Withdraw=18) and pinned forever by <code>test_wire_tags_are_pinned</code> (asserts the byte encoding of all 19 variants). Also fixed: Pyth receiver removed from the signing allowlist, the local order's 7-day hardcode, the missing stake-builder yield appends (round-10's share registration now fires from the app), builder network params, modal live prices, cooldown error 38, the rescue builder, and full runbook alignment incl. a 10-minute keeper workflow. 100/100 tests.</p>
 
-<h2>Round-14 Final Certification &amp; Mainnet Deployment (2026-09-29) — 100% RESOLUTION</h2>
-<p>The final pre-mainnet audit round rigorously verified all remaining edge-case findings and confirmed zero security regressions:</p>
+<h2>Round-14 fresh-eyes audit (2026-09-29) — findings and current status</h2>
+<p>An independent, fresh-eyes pass over the deployed program produced the grades at the top of this page. Program security came back <strong>strong</strong>: no path was found by which an unprivileged account can steal funds. Three executable proof-of-concept bugs were found, and the ops tooling was judged not ready. <strong>Statuses below are current as of the date on this page — "Fixed in source, awaiting redeploy" means the fix is committed but is NOT yet in the on-chain bytecode.</strong></p>
+
+<table>
+<tr><th>ID</th><th>Severity</th><th>Area</th><th>Finding</th><th>Status</th></tr>
+<tr>
+  <td><code>POC-1</code></td>
+  <td><span class="badge high">High</span></td>
+  <td>Yield / fee routing</td>
+  <td>When the SKR yield-vault leg of the origination-fee split cannot pay (accounts present but unusable), the fee could be partially stranded instead of routing in full to the treasury.</td>
+  <td><span class="badge med">Fixed in source, awaiting redeploy</span></td>
+</tr>
+<tr>
+  <td><code>POC-2</code></td>
+  <td><span class="badge high">High</span></td>
+  <td>P2P pawns</td>
+  <td><code>CreateP2POffer</code> did not default the loan asset to the canonical mainnet USDC mint when no mint account was appended, letting a mainnet funder be handed an unfundable offer.</td>
+  <td><span class="badge med">Fixed in source, awaiting redeploy</span></td>
+</tr>
+<tr>
+  <td><code>POC-3</code></td>
+  <td><span class="badge high">High</span></td>
+  <td>Oracle-free pools</td>
+  <td>On oracle-free pools the borrower could price collateral <em>above</em> the hardcoded baseline using a live feed, rather than being capped at <code>min(baseline, live)</code>.</td>
+  <td><span class="badge med">Fixed in source, awaiting redeploy</span></td>
+</tr>
+<tr>
+  <td><code>OPS-1</code></td>
+  <td><span class="badge crit">Critical (ops)</span></td>
+  <td>Keeper automation</td>
+  <td>Price-feed automation was not reliable. At the time of writing both mainnet feeds are stale well past the 600s on-chain pricing limit (observed age ≈ 14,100s), so borrow and liquidation paths that read them revert. The Keeper workflow had also been pointed at a devnet RPC while using the mainnet program id, so it had never cranked a mainnet feed.</td>
+  <td><span class="badge crit">Open</span></td>
+</tr>
+<tr>
+  <td><code>OPS-2</code></td>
+  <td><span class="badge high">High (ops)</span></td>
+  <td>Key separation</td>
+  <td>Operator scripts allowed dangerous defaults: a burn path could burn more than it bought, an oracle rotation could silently fall back to a default local key path, and treasury withdrawal could default its destination to the admin hot wallet.</td>
+  <td><span class="badge med">Mitigated in tooling; keys not yet rotated</span></td>
+</tr>
+<tr>
+  <td><code>OPS-3</code></td>
+  <td><span class="badge high">High (ops)</span></td>
+  <td>Treasury state</td>
+  <td>The treasury PDA (<code>5buCUcCHHDCzQpanMKCK8uruErL5D2UzSFVrbtPrKV7y</code>) has no account on chain at audit time — only its USDC ATA exists, with a 0 balance. No protocol fee has ever been collected, and fee-bearing instructions would fail until it is initialized.</td>
+  <td><span class="badge crit">Open</span></td>
+</tr>
+<tr>
+  <td><code>MOB-1</code></td>
+  <td><span class="badge med">Medium</span></td>
+  <td>Mobile client</td>
+  <td>Mobile security graded <strong>D+</strong> at audit time (hardcoded prices, fabricated yield/LST banners, inconsistent collateral parsing, cache namespacing gaps).</td>
+  <td><span class="badge med">Remediation in progress</span></td>
+</tr>
+</table>
+
+<h3>Test suite</h3>
+<p>The on-chain test suite is counted directly from the source rather than asserted: <code>grep -c '#\[test\]\|#\[tokio::test\]' program/tests/*.rs</code> sums to <strong>103 test functions</strong> across <code>bank_integration</code>, <code>functional</code>, <code>security_tests</code>, <code>fuzz_invariants</code>, <code>skr_yield_and_lst_tests</code> and the round-14 <code>zz_round14_poc</code> regression file. A green count is a regression signal, not a security proof — the three POC items above were found <em>with</em> that suite green.</p>
+
+<h3>What has NOT been done</h3>
 <ul>
-  <li><strong>POC-1 Remediated (Borrow Fee Routing &amp; Solvency):</strong> When borrower fees are split between Treasury and the SKR Yield Vault, the fee routing asserts strict yield-vault token account ownership and mint validity before transferring. If the yield token account is uninitialized or mismatched, the entire fee safely routes to the Treasury PDA, ensuring zero stranded funds in pool vaults.</li>
-  <li><strong>POC-2 Remediated (Mainnet USDC Mint Allowlist in P2P Pawns):</strong> <code>CreateP2POffer</code> strictly defaults to and enforces the canonical Mainnet USDC mint (<code>EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v</code>), preventing accidental devnet mint cross-contamination on Mainnet.</li>
-  <li><strong>All 103 Integration &amp; Invariant Tests Passing:</strong> The complete test suite (<code>bank_integration</code>, <code>fuzz_invariants</code>, <code>security_tests</code>, <code>skr_yield_and_lst_tests</code>, <code>functional</code>) runs with 103/103 assertions green.</li>
-  <li><strong>Mainnet Program Deployment Confirmed:</strong> Deployed to Solana Mainnet-beta at slot 451589196. Program ID: <a href="https://solscan.io/account/4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7" target="_blank" style="color:var(--ok);"><code>4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7</code></a>. ELF size: 357,472 bytes. Rent paid: 1.8168 SOL.</li>
-  <li><strong>Live Oracle Feeds Active:</strong> Automated oracle keepers crank Pyth/Jupiter live feeds for SOL/USD and SKR/USD on-chain.</li>
+  <li><strong>No third-party audit.</strong> Every round referenced on this page is internal and AI-assisted. No external firm has reviewed this code.</li>
+  <li><strong>The POC fixes are not on chain.</strong> The deployed bytecode predates them. Until it is upgraded and re-verified by hash, the on-chain program is the older build.</li>
+  <li><strong>No mainnet loan activity.</strong> The pool exists with <code>total_liquidity = 0</code> and <code>loans_originated = 0</code>; nothing has been borrowed or lent on mainnet.</li>
+  <li><strong>The program is upgradeable</strong> by a single team-held deployer key.</li>
 </ul>
 
-<div class="sub">Full per-round history and verification evidence: <code>.superstack/build-context.md</code>.</div>
+<div class="sub">Per-round internal history: <code>.superstack/build-context.md</code>. Deployment facts on this page were captured live from mainnet-beta RPC on 2026-09-29.</div>
 </div>
 </body>
 </html>

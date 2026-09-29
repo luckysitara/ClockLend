@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { UserProfile, WalletAssets } from '../types';
-import { SkrYieldVaultState, UserYieldPositionState } from '../solana/onChainService';
+import { SkrYieldVaultState, UserYieldPositionState, tierDiscountLabel } from '../solana/onChainService';
 import { PROGRAM_ID } from '../solana/program';
 import {
   isLockEnabled,
@@ -110,7 +110,9 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
             </Text>
           </View>
           <View style={[styles.tierTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
-            <Text style={[styles.tierTagText, { color: colors.primary }]}>⭐ {userProfile.tier} Tier</Text>
+            <Text style={[styles.tierTagText, { color: colors.primary }]}>
+              {tierDiscountLabel(userProfile.tier)}
+            </Text>
           </View>
         </View>
 
@@ -118,18 +120,20 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
           {userProfile.totalLoansCompleted} loans completed on time • {userProfile.totalLoansDefaulted} defaults
         </Text>
 
-        {/* Tier Progression Progress Bar */}
+        {/* C-2: progression tracks the ONLY input the program reads —
+            available_skr = staked_skr - locked_skr (processor.rs:1905-1916).
+            Reputation is shown above but grants no discount. */}
         <View style={[styles.tierProgressContainer, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
           <View style={styles.tierProgressHeader}>
-            <Text style={[styles.tierProgressTitle, { color: colors.textSecondary }]}>Reputation Progression</Text>
+            <Text style={[styles.tierProgressTitle, { color: colors.textSecondary }]}>
+              SKR Bond Tier Progression
+            </Text>
             <Text style={[styles.tierProgressNext, { color: colors.primary }]}>
-              {userProfile.tier === 'Diamond'
-                ? 'Max Diamond Tier 💎'
-                : userProfile.tier === 'Gold'
-                ? 'Next: Diamond (5,000 SKR / 90% Score)'
-                : userProfile.tier === 'Silver'
-                ? 'Next: Gold (2,000 SKR / 75% Score)'
-                : 'Next: Silver (500 SKR / 50% Score)'}
+              {userProfile.tier === 'Tier 2'
+                ? 'Tier 2 — 50% APR discount active'
+                : userProfile.tier === 'Tier 1'
+                ? 'Next: Tier 2 at 1,000 SKR available (50% discount)'
+                : 'Next: Tier 1 at 100 SKR available (25% discount)'}
             </Text>
           </View>
           <View style={[styles.tierBarTrack, { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
@@ -138,14 +142,18 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
                 styles.tierBarFill,
                 {
                   backgroundColor: colors.primary,
-                  width: `${Math.min(100, Math.max(12, userProfile.reputationScore / 100))}%`,
+                  width: `${Math.min(100, Math.max(2, (userProfile.availableSkr / 1000) * 100))}%`,
                 },
               ]}
             />
           </View>
           <View style={styles.tierPerksRow}>
             <Text style={[styles.tierPerkText, { color: colors.textMuted }]}>
-              Active Perks: {userProfile.aprDiscount}% APR Discount • 90% LTV on SOL/SKR
+              {userProfile.availableSkr.toLocaleString()} SKR counts toward the tier
+              {userProfile.lockedSkr > 0
+                ? ` (${userProfile.lockedSkr.toLocaleString()} SKR bonded to active loans)`
+                : ''}{' '}
+              • Program APR discount: {userProfile.aprDiscount}%
             </Text>
           </View>
         </View>
@@ -174,13 +182,20 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
           </View>
         </View>
         <Text style={[styles.sectionDesc, { color: colors.textSecondary }]}>
-          Stake SKR into the protocol escrow to unlock 90% LTV borrowing and 50% APR fee discounts.
+          Stake SKR into the protocol escrow to earn a program APR discount: 100+ SKR available = 25%,
+          1,000+ SKR available = 50%. SKR bonded to an active loan is excluded from both tiers.
         </Text>
 
         <View style={[styles.stakedHero, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
           <Text style={[styles.stakedLabel, { color: colors.textMuted }]}>Staked in Protocol Escrow</Text>
           <Text style={[styles.stakedVal, { color: colors.text }]}>
             {userProfile.stakedSkr.toLocaleString()} SKR
+          </Text>
+          <Text style={[styles.statsNote, { color: colors.textSecondary, marginTop: 4 }]}>
+            {userProfile.availableSkr.toLocaleString()} SKR available
+            {userProfile.lockedSkr > 0
+              ? ` • ${userProfile.lockedSkr.toLocaleString()} SKR bonded to active loans`
+              : ''}
           </Text>
         </View>
 
@@ -205,20 +220,27 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
             style={[
               styles.stakePresetBtn,
               { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder, marginTop: 10 },
-              userProfile.stakedSkr === 0 && { opacity: 0.45 },
+              userProfile.availableSkr === 0 && { opacity: 0.45 },
             ]}
             onPress={() => {
-              if (userProfile.stakedSkr > 0) {
+              // The program rejects an unstake above staked_skr - locked_skr
+              // with StakeLocked (processor.rs:902), so only the available
+              // balance is offered.
+              if (userProfile.availableSkr > 0) {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                onUnstakeSkr(userProfile.stakedSkr);
+                onUnstakeSkr(userProfile.availableSkr);
               }
             }}
-            disabled={userProfile.stakedSkr === 0}
+            disabled={userProfile.availableSkr === 0}
             activeOpacity={0.7}
           >
             <Text style={[styles.stakePresetText, { color: '#ff6b6b' }]}>
-              ↩ Unstake {userProfile.stakedSkr.toLocaleString()} SKR
-              {userProfile.stakedSkr === 0 ? ' (stake first)' : ''}
+              ↩ Unstake {userProfile.availableSkr.toLocaleString()} SKR
+              {userProfile.availableSkr === 0
+                ? userProfile.stakedSkr > 0
+                  ? ' (all bonded to active loans)'
+                  : ' (stake first)'
+                : ''}
             </Text>
           </TouchableOpacity>
         )}

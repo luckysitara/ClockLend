@@ -156,9 +156,10 @@ export async function connectSeekerWallet(cluster: SolanaNetwork = 'mainnet-beta
     };
   });
 
-  // Perform address parsing and handle derivation outside the MWA session
+  // Perform address parsing and handle derivation outside the MWA session.
+  // L-1: the authorized public key is NOT logged — the wallet address is
+  // personal data and logs are visible to anything with device access.
   const pubkey = parseMwaAddress(authPayload.account.address);
-  console.log('[SeekerWallet] Authorized Public Key:', pubkey.toBase58());
   const skrHandle = await deriveSkrUsername(pubkey, authPayload.account.label);
 
   return {

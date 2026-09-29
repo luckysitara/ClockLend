@@ -21,6 +21,10 @@ export interface LendingPool {
   loansRepaid: number;
   successRate: number | null; // null = no loan history yet
   isVerifiedMerchant: boolean;
+  // Last byte of the 200-byte pool account: the desk pinned its own oracle
+  // PDAs, so the borrow tx must carry the pool-scoped feeds (processor.rs
+  // round-11 H-3 gate). Always false for legacy 182-byte pools.
+  hasCustomOracle: boolean;
 }
 
 export interface LoanOrder {
@@ -41,6 +45,12 @@ export interface LoanOrder {
   escrowAddress?: string;
   solscanUrl?: string;
   poolPubkey?: string;
+  /**
+   * True when this record came from the local SecureStore cache instead of a
+   * confirmed chain read (RPC unavailable). It must be rendered as
+   * "last known — not confirmed", never as live on-chain state.
+   */
+  isStale?: boolean;
 }
 
 export interface P2POffer {
@@ -70,14 +80,30 @@ export interface P2POffer {
   solscanUrl?: string;
 }
 
+/**
+ * The program's SKR-bond tiers (processor.rs:1905-1916). There is no
+ * reputation-based tiering on-chain — only available SKR is read:
+ *   available_skr = staked_skr - locked_skr
+ *   >= 1,000 SKR (1_000_000_000 base units) -> 50% APR discount (Tier 2)
+ *   >=   100 SKR (  100_000_000 base units) -> 25% APR discount (Tier 1)
+ *   otherwise                               ->  0% APR discount
+ */
+export type CreditTier = 'Tier 2' | 'Tier 1' | 'Standard';
+
 export interface UserProfile {
   pubkey: string;
+  /** staked_skr as human SKR (base units / 1e6). */
   stakedSkr: number;
+  /** locked_skr (loan bonds) as human SKR — bytes 59..67 of the profile PDA. */
+  lockedSkr: number;
+  /** staked_skr - locked_skr: the only balance the program thresholds read. */
+  availableSkr: number;
   totalLoansCompleted: number;
   totalLoansDefaulted: number;
   reputationScore: number; // 0 - 10000 bps
-  tier: 'Diamond' | 'Gold' | 'Silver' | 'Standard';
-  aprDiscount: number; // e.g. 50%
+  tier: CreditTier;
+  /** Exact APR discount the program will grant at borrow time: 0, 25 or 50. */
+  aprDiscount: number;
 }
 
 export type SolanaNetwork = 'devnet' | 'mainnet-beta';

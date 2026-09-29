@@ -3,7 +3,17 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView,
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { LendingPool, UserProfile, WalletAssets } from '../types';
-import { livePrices, fetchLivePrices, subscribeToPriceUpdates, getPriceSource } from '../solana/onChainService';
+import {
+  livePrices,
+  fetchLivePrices,
+  subscribeToPriceUpdates,
+  applyAprDiscountBps,
+  calculateExactInterestDue,
+  calculateOriginationFee,
+  formatUsdcMicro,
+  isLivePriceUsable,
+  tierDiscountLabel,
+} from '../solana/onChainService';
 
 const SOL_LOGO = require('../../assets/tokens/sol.png');
 const SKR_LOGO = require('../../assets/tokens/skr.png');
@@ -43,25 +53,40 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
     fetchLivePrices()
       .then((p) => {
         setPrices({ ...p });
-        const src = getPriceSource();
-        setPriceAvailable(src !== 'fallback-baseline');
+        // H-2/M-5: only a feed the program itself would accept counts as a
+        // price — an on-chain/WSS source inside the 600s window.
+        setPriceAvailable(isLivePriceUsable());
       })
       .catch(() => setPriceAvailable(false));
 
     // Real-time Helius LaserStream WebSocket subscription
-    const unsubscribe = subscribeToPriceUpdates((updated, source) => {
+    const unsubscribe = subscribeToPriceUpdates((updated) => {
       setPrices({ ...updated });
-      setPriceAvailable(source !== 'fallback-baseline');
+      setPriceAvailable(isLivePriceUsable());
     });
-    return () => unsubscribe();
+    // The trust window is time-based, so re-evaluate it while the screen is open.
+    const freshnessTimer = setInterval(() => setPriceAvailable(isLivePriceUsable()), 15_000);
+    return () => {
+      unsubscribe();
+      clearInterval(freshnessTimer);
+    };
   }, []);
 
   const numAmount = parseFloat(amountStr) || 0;
 
-  // Select lowest APR on-chain pool
-  const bestPool = pools.length > 0
-    ? pools.reduce((min, p) => (p.interestRateBps < min.interestRateBps ? p : min), pools[0])
-    : null;
+  // C-3: the route must be a desk that can actually fund the borrow. Prefer
+  // the lowest-APR desk that covers the amount; fall back to the lowest-APR
+  // funded desk (so the user sees a concrete shortfall) and only then to an
+  // unfunded desk, which renders as an empty state rather than a signable tx.
+  const fundedPools = pools.filter((p) => p.totalLiquidity > 0);
+  const affordablePools = pools.filter((p) => p.totalLiquidity >= numAmount);
+  const lowestApr = (list: typeof pools) =>
+    list.length > 0
+      ? list.reduce((min, p) => (p.interestRateBps < min.interestRateBps ? p : min), list[0])
+      : null;
+  const routeCandidates =
+    affordablePools.length > 0 ? affordablePools : fundedPools.length > 0 ? fundedPools : pools;
+  const bestPool = lowestApr(routeCandidates);
 
   const solBalance = walletAssets?.solBalance || 0;
   const skrBalance = walletAssets?.skrBalance || 0;
@@ -82,9 +107,34 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
 
   const isInsufficientCollateral = requiredCollateralUnits > userBalance;
 
-  const baseApr = bestPool ? bestPool.interestRateBps / 100 : 3.5;
-  const effectiveApr = baseApr * (1 - userProfile.aprDiscount / 100);
-  const estInterest = numAmount * (effectiveApr / 100) * (durationDays / 365);
+  // C-3: the program refuses a borrow larger than pool.total_liquidity
+  // (processor.rs:1348) — gate the CTA instead of letting the user sign a
+  // transaction that cannot succeed.
+  const poolLiquidity = bestPool ? bestPool.totalLiquidity : 0;
+  const hasNoLiquidity = fundedPools.length === 0;
+  const exceedsLiquidity = !!bestPool && numAmount > poolLiquidity;
+
+  // C-2: the effective rate is the program's own integer discount math on the
+  // on-chain rate — never a client-invented tier.
+  const baseRateBps = bestPool ? bestPool.interestRateBps : 0;
+  const effectiveRateBps = applyAprDiscountBps(baseRateBps, userProfile.aprDiscount);
+  const baseApr = baseRateBps / 100;
+  const effectiveApr = effectiveRateBps / 100;
+  // Exact program integer math (floor), not a float estimate.
+  const estInterestMicro = calculateExactInterestDue(
+    BigInt(Math.round(numAmount * 1_000_000)),
+    baseRateBps,
+    durationDays * 86400,
+    userProfile.aprDiscount
+  );
+  const estInterest = Number(estInterestMicro) / 1_000_000;
+
+  // H-3: the program withholds the origination fee from the disbursement
+  // (25 bps on SOL collateral, 50 bps on SKR) — borrower receives the net.
+  const origination = calculateOriginationFee(
+    BigInt(Math.round(numAmount * 1_000_000)),
+    collateralType === 'SOL'
+  );
 
   const handleBorrow = async () => {
     if (numAmount <= 0) {
@@ -94,6 +144,16 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
 
     if (!bestPool) {
       Alert.alert('No Pools Available', 'Loading available lending pools...');
+      return;
+    }
+
+    if (hasNoLiquidity || exceedsLiquidity) {
+      Alert.alert(
+        'This Pool Has No Liquidity Yet',
+        hasNoLiquidity
+          ? 'This lending desk has not been funded yet, so there is nothing to borrow. Pick another desk or check back later.'
+          : `This desk only has $${poolLiquidity.toLocaleString()} USDC available right now. Lower the amount to $${poolLiquidity.toLocaleString()} or less, or choose another desk.`
+      );
       return;
     }
 
@@ -349,6 +409,25 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
         </View>
       </View>
 
+      {/* C-3: an unfunded desk is an empty state, never a signable borrow */}
+      {hasNoLiquidity && !isLoadingPools && (
+        <View
+          style={[
+            styles.routeCard,
+            { backgroundColor: 'rgba(245, 158, 11, 0.08)', borderColor: colors.warning },
+          ]}
+        >
+          <Text style={[styles.routeTitle, { color: colors.warning }]}>
+            {pools.length === 0 ? 'No lending desks found yet' : 'This pool has no liquidity yet'}
+          </Text>
+          <Text style={[styles.metricLabel, { color: colors.textSecondary, marginTop: 6 }]}>
+            {pools.length === 0
+              ? 'No on-chain lending desk was found for this network. Create one from the Market tab to get started.'
+              : 'No desk is currently funded, so there is nothing to borrow. Fund a desk from the Market tab, or check back after a desk authority deposits liquidity.'}
+          </Text>
+        </View>
+      )}
+
       {/* Execution Route Card */}
       <View style={[styles.routeCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
         <View style={styles.routeHeader}>
@@ -370,8 +449,48 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
             <Text style={[styles.metricValue, { color: colors.primary }]}>+24h Social</Text>
           </View>
           <View style={styles.metricItem}>
-            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Seeker Tier</Text>
-            <Text style={[styles.metricValue, { color: colors.accentLight }]}>{userProfile.tier}</Text>
+            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Desk Liquidity</Text>
+            <Text
+              style={[
+                styles.metricValue,
+                { color: exceedsLiquidity ? colors.danger : colors.text },
+              ]}
+            >
+              {bestPool ? `$${poolLiquidity.toLocaleString()}` : '—'}
+            </Text>
+          </View>
+        </View>
+
+        {/* C-2: the discount shown is exactly what the program will grant */}
+        <View style={styles.metricItem}>
+          <Text style={[styles.metricLabel, { color: colors.textMuted }]}>SKR Bond Tier (on-chain)</Text>
+          <Text style={[styles.metricValue, { color: colors.accentLight }]}>
+            {tierDiscountLabel(userProfile.tier)}
+          </Text>
+          {userProfile.lockedSkr > 0 && (
+            <Text style={[styles.metricLabel, { color: colors.textMuted, marginTop: 2 }]}>
+              {userProfile.lockedSkr.toLocaleString()} SKR bonded to active loans:{' '}
+              {userProfile.availableSkr.toLocaleString()} SKR counts toward the tier.
+              {userProfile.aprDiscount === 0 ? '' : ` Rate ${baseApr.toFixed(2)}% → ${effectiveApr.toFixed(2)}% APR.`}
+            </Text>
+          )}
+        </View>
+
+        {/* H-3: origination fee disclosure — the program disburses the net */}
+        <View style={[styles.collateralDisplay, { backgroundColor: colors.card, marginTop: 12 }]}>
+          <View>
+            <Text style={[styles.calcLabel, { color: colors.textSecondary }]}>
+              Origination fee {(origination.feeBps / 100).toFixed(2)}% ({collateralType} collateral)
+            </Text>
+            <Text style={[styles.calcSubValue, { color: colors.danger, marginTop: 2 }]}>
+              -${formatUsdcMicro(origination.feeMicro)} USDC
+            </Text>
+          </View>
+          <View style={styles.calcRight}>
+            <Text style={[styles.calcLabel, { color: colors.textSecondary }]}>You receive</Text>
+            <Text style={[styles.calcValue, { color: colors.primary, marginTop: 2 }]}>
+              ${formatUsdcMicro(origination.netMicro)} USDC
+            </Text>
           </View>
         </View>
       </View>
@@ -381,17 +500,28 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
         style={[
           styles.borrowButton,
           { backgroundColor: colors.primary },
-          isInsufficientCollateral && { opacity: 0.6 },
+          (isInsufficientCollateral || hasNoLiquidity || exceedsLiquidity) && { opacity: 0.6 },
         ]}
         onPress={handleBorrow}
-        disabled={isSubmitting || numAmount <= 0 || isInsufficientCollateral || !priceAvailable}
+        disabled={
+          isSubmitting ||
+          numAmount <= 0 ||
+          isInsufficientCollateral ||
+          hasNoLiquidity ||
+          exceedsLiquidity ||
+          !priceAvailable
+        }
         activeOpacity={0.85}
       >
         {isSubmitting ? (
           <ActivityIndicator color={colors.primaryText} />
         ) : (
           <Text style={[styles.borrowButtonText, { color: colors.primaryText }]}>
-            {isInsufficientCollateral
+            {hasNoLiquidity
+              ? 'This Pool Has No Liquidity Yet'
+              : exceedsLiquidity
+              ? `Exceeds Desk Liquidity ($${poolLiquidity.toLocaleString()})`
+              : isInsufficientCollateral
               ? `Insufficient ${collateralType} Collateral`
               : !priceAvailable
               ? 'Awaiting Live Price Feed...'

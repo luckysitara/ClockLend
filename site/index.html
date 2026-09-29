@@ -31,7 +31,7 @@
       </ul>
 
       <div class="nav-actions">
-        <a href="#app" class="btn btn-primary btn-sm">Launch App</a>
+        <a href="#app" class="btn btn-primary btn-sm">Release Status</a>
       </div>
 
       <button class="mobile-toggle" id="menuOpen" aria-label="Open Navigation">☰</button>
@@ -49,7 +49,7 @@
     <a href="terms.html" class="mobile-link">Terms & Conditions</a>
     <a href="privacy.html" class="mobile-link">Privacy Policy</a>
     <a href="legal.html" class="mobile-link">Legal Notice</a>
-    <a href="#app" class="btn btn-primary" style="margin-top: 16px;">Launch App</a>
+    <a href="#app" class="btn btn-primary" style="margin-top: 16px;">Release Status</a>
   </div>
 
   <!-- Hero Section -->
@@ -143,12 +143,12 @@
       <!-- Metrics Grid -->
       <div class="metrics-grid" style="margin-top: 50px;">
         <div class="metric-card">
-          <div class="metric-value" style="color: var(--accent);">14 Rounds</div>
-          <div class="metric-label">Security Audited</div>
+          <div class="metric-value" style="color: var(--accent);">14</div>
+          <div class="metric-label">Internal AI-Assisted Audit Rounds</div>
         </div>
         <div class="metric-card">
-          <div class="metric-value">103 / 103</div>
-          <div class="metric-label">Passing Invariants</div>
+          <div class="metric-value">103</div>
+          <div class="metric-label">On-Chain Test Functions</div>
         </div>
         <div class="metric-card">
           <div class="metric-value">0% Float</div>
@@ -159,6 +159,12 @@
           <div class="metric-label">Atomic Settlement</div>
         </div>
       </div>
+
+      <p style="text-align: center; color: var(--text-muted); font-size: 0.85rem; margin-top: 18px; max-width: 760px; margin-left: auto; margin-right: auto;">
+        Audit rounds are <strong>internal and AI-assisted</strong>; <strong>no third-party audit has been performed</strong>.
+        Round 14 found three executable proof-of-concept bugs (fixes in source, not yet redeployed) and graded ops readiness
+        <strong>not ready</strong>. <a href="audit-report.html" style="color: var(--accent);">Read the round-14 report →</a>
+      </p>
     </div>
   </section>
 
@@ -308,7 +314,7 @@
           </div>
           <div class="vault-stat-row">
             <span style="color: var(--text-muted);">Slashing Ratio on Default</span>
-            <span style="font-weight: 700; color: #f43f5e;">20% Escrow Penalty</span>
+            <span style="font-weight: 700; color: #f43f5e;">20% Reputation-Bond Slash</span>
           </div>
         </div>
       </div>
@@ -321,7 +327,7 @@
       <div class="section-header">
         <span class="section-tag">Security & Audits</span>
         <h2 class="section-title">Institutional Rigor by Design</h2>
-        <p class="section-desc">ClockLend was audited across 14 comprehensive passes with 103 deterministic on-chain test assertions.</p>
+        <p class="section-desc">14 internal AI-assisted audit rounds over 103 on-chain test functions. No third-party audit has been performed — remediation is ongoing and round-14's three proof-of-concept fixes are not yet redeployed.</p>
       </div>
 
       <div class="security-matrix">
@@ -361,8 +367,8 @@
       <!-- Security Audit & Bug Reporting Callout Banner -->
       <div style="margin-top: 40px; background: rgba(20, 241, 149, 0.06); border: 1px solid rgba(20, 241, 149, 0.3); border-radius: var(--radius-lg); padding: 32px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
         <div style="max-width: 680px;">
-          <h3 style="font-size: 1.35rem; font-weight: 800; color: #fff; margin-bottom: 8px;">14-Round Security Audits & Vulnerability Disclosure</h3>
-          <p style="color: #cbd5e1; font-size: 0.95rem; margin-bottom: 0;">ClockLend's native SBF Rust contract has passed 14 adversarial audit passes with 103 test invariants. If you discover any vulnerability, bug, or unexpected behavior, please report it directly to our official X account for prompt review.</p>
+          <h3 style="font-size: 1.35rem; font-weight: 800; color: #fff; margin-bottom: 8px;">Internal Audits & Vulnerability Disclosure</h3>
+          <p style="color: #cbd5e1; font-size: 0.95rem; margin-bottom: 0;">ClockLend's native SBF Rust program has been through 14 internal, AI-assisted audit rounds. The program is deployed and its bytecode is hash-verified on mainnet, but remediation is ongoing: round 14 found three executable proof-of-concept bugs whose fixes are in source and awaiting redeploy, and no third-party audit has been performed. If you discover any vulnerability, bug, or unexpected behavior, please report it directly to our official X account for prompt review.</p>
         </div>
         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
           <a href="security.html" class="btn btn-primary btn-sm">View Security & Audits →</a>
@@ -420,7 +426,7 @@
             <span class="faq-icon">+</span>
           </button>
           <div class="faq-answer">
-            <p>No. ClockLend is 100% non-custodial. No team member, admin, or third party has access to your deposited collateral or liquidity. All assets are held strictly by deterministic Program Derived Addresses governed exclusively by immutable on-chain smart contract code.</p>
+            <p>Loan collateral and principal sit in deterministic Program Derived Addresses governed by the program, not in a company account — that part is genuinely non-custodial. But be precise about the team's powers, because "immutable, no admin access" would be false: <strong>the program is upgradeable by the team's deployer key</strong>, so the code itself can be replaced; and <strong>the admin key can withdraw accumulated protocol treasury reserves</strong>. What the admin <em>cannot</em> do is take a user's escrowed collateral or a loan's principal — those escrows are PDA-held and only the program's own verified instruction paths can move them.</p>
           </div>
         </div>
       </div>
@@ -430,16 +436,23 @@
   <!-- CTA Banner -->
   <section class="container" id="app">
     <div class="cta-banner">
-      <h2>Ready to Experience Mobile-First Credit?</h2>
-      <p style="max-width: 600px; margin: 0 auto 32px; color: var(--text-muted);">
-        Deploy a desk, lock an instant micro-loan, or stake SKR to begin earning real on-chain fee dividends today.
+      <h2>Live on Mainnet-beta</h2>
+      <p style="max-width: 660px; margin: 0 auto 32px; color: var(--text-muted);">
+        The ClockLend program is deployed at <code class="mono" style="font-size: 0.85em;">4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7</code>
+        and its bytecode is hash-verified against the build artifact. The Seeker app is built and running on real
+        hardware, but it is <strong>not yet published to the Solana dApp Store</strong> — so there is no store listing
+        to link to yet, and no mainnet loan activity has taken place. Follow the X account for the release, and read
+        the security status before committing any funds.
       </p>
       <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
-        <a href="#" class="btn btn-accent">
-          Launch Protocol
+        <a href="https://solscan.io/account/4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7" target="_blank" rel="noopener noreferrer" class="btn btn-accent">
+          Verify the Program on Solscan ↗
         </a>
-        <a href="#features" class="btn btn-secondary">
-          Explore Features
+        <a href="security.html" class="btn btn-secondary">
+          Security &amp; Audit Status →
+        </a>
+        <a href="https://x.com/bughacker140823" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+          Release Updates on X
         </a>
       </div>
     </div>
