@@ -26,10 +26,10 @@ export interface ThemeColors {
 
 const darkColors: ThemeColors = {
   isDark: true,
-  background: '#0B0E14',
-  card: '#131722',
-  cardAlt: '#1A202E',
-  cardBorder: 'rgba(255, 255, 255, 0.07)',
+  background: '#0A0D14',
+  card: '#121622',
+  cardAlt: '#181E2E',
+  cardBorder: 'rgba(255, 255, 255, 0.05)',
   primary: '#6366F1',
   primaryText: '#FFFFFF',
   text: '#F8FAFC',
@@ -39,11 +39,11 @@ const darkColors: ThemeColors = {
   accentLight: '#7DD3FC',
   danger: '#EF4444',
   warning: '#F59E0B',
-  badgeBg: 'rgba(99, 102, 241, 0.12)',
-  badgeBorder: 'rgba(99, 102, 241, 0.22)',
-  inputBg: '#0E121A',
-  inputBorder: 'rgba(255, 255, 255, 0.09)',
-  divider: 'rgba(255, 255, 255, 0.06)',
+  badgeBg: 'rgba(99, 102, 241, 0.10)',
+  badgeBorder: 'rgba(99, 102, 241, 0.18)',
+  inputBg: '#0D111A',
+  inputBorder: 'rgba(255, 255, 255, 0.07)',
+  divider: 'rgba(255, 255, 255, 0.05)',
 };
 
 const lightColors: ThemeColors = {

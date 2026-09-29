@@ -131,7 +131,7 @@ export const CircleDeckView: React.FC<CircleDeckViewProps> = ({
                   activeOpacity={0.8}
                 >
                   <LinearGradient
-                    colors={['#572DFD', '#23ABF4']}
+                    colors={['#6366F1', '#38BDF8']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={styles.fundGradient}
@@ -226,7 +226,7 @@ export const CircleDeckView: React.FC<CircleDeckViewProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#090D16',
+    backgroundColor: '#0A0D14',
   },
   topSection: {
     paddingHorizontal: 16,
@@ -241,7 +241,7 @@ const styles = StyleSheet.create({
   heading: {
     fontSize: 22,
     fontWeight: '900',
-    color: '#FFFFFF',
+    color: '#F8FAFC',
   },
   highlight: {
     color: '#F7A600',
@@ -270,12 +270,12 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   offerCard: {
-    backgroundColor: '#111827',
+    backgroundColor: '#121622',
     borderRadius: 14,
     padding: 16,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#1F2937',
+    borderColor: '#181E2E',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#1F2937',
+    backgroundColor: '#181E2E',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -310,12 +310,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   assetTypeBadge: {
-    backgroundColor: 'rgba(153, 69, 255, 0.15)',
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(153, 69, 255, 0.3)',
+    borderColor: 'rgba(99, 102, 241, 0.25)',
   },
   assetTypeText: {
     color: '#C084FC',
@@ -325,12 +325,12 @@ const styles = StyleSheet.create({
   assetShowcase: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0A0E1A',
+    backgroundColor: '#121622',
     padding: 12,
     borderRadius: 10,
     gap: 12,
     borderWidth: 1,
-    borderColor: '#1E293B',
+    borderColor: '#181E2E',
   },
   assetIcon: {
     fontSize: 28,
@@ -339,18 +339,18 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   assetName: {
-    color: '#FFFFFF',
+    color: '#F8FAFC',
     fontSize: 14,
     fontWeight: '800',
   },
   assetEscrowNote: {
-    color: '#23ABF4',
+    color: '#38BDF8',
     fontSize: 11,
     marginTop: 2,
   },
   divider: {
     height: 1,
-    backgroundColor: '#1E293B',
+    backgroundColor: '#181E2E',
     marginVertical: 12,
   },
   termsRow: {
@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   termValue: {
-    color: '#FFFFFF',
+    color: '#F8FAFC',
     fontSize: 14,
     fontWeight: '800',
   },
@@ -378,7 +378,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   profitValue: {
-    color: '#23ABF4',
+    color: '#38BDF8',
     fontSize: 15,
     fontWeight: '900',
   },
@@ -387,7 +387,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   openText: {
-    color: '#23ABF4',
+    color: '#38BDF8',
   },
   fundedText: {
     color: '#60A5FA',
@@ -401,12 +401,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   fundButtonText: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '900',
   },
   fundedBanner: {
-    backgroundColor: '#1E293B',
+    backgroundColor: '#181E2E',
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
@@ -423,14 +423,14 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalContent: {
-    backgroundColor: '#111827',
+    backgroundColor: '#121622',
     borderRadius: 16,
     padding: 20,
     borderWidth: 1,
     borderColor: '#374151',
   },
   modalTitle: {
-    color: '#FFFFFF',
+    color: '#F8FAFC',
     fontSize: 18,
     fontWeight: '900',
     marginBottom: 4,
@@ -455,14 +455,14 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   modalInput: {
-    backgroundColor: '#090D16',
+    backgroundColor: '#0A0D14',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#FFFFFF',
+    color: '#F8FAFC',
     fontSize: 13,
     borderWidth: 1,
-    borderColor: '#1F2937',
+    borderColor: '#181E2E',
   },
   submitBtn: {
     backgroundColor: '#F7A600',

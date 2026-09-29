@@ -228,7 +228,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
       <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         <View style={styles.sectionTitleRow}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            Wallet Holdings ({walletAssets?.network === 'mainnet-beta' ? 'Mainnet' : 'Devnet'})
+            Wallet Holdings (Solana Mainnet)
           </Text>
           {walletAssets && (
             <Text style={[styles.totalUsdText, { color: colors.primary }]}>

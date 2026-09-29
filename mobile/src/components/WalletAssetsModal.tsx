@@ -167,26 +167,23 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
               <View>
                 <View style={styles.totalRow}>
                   <Text style={[styles.totalLabel, { color: colors.textMuted }]}>
-                    {network === 'mainnet-beta' ? 'MAINNET PORTFOLIO VALUE' : 'DEVNET PORTFOLIO VALUE'}
+                    SOLANA PORTFOLIO VALUE
                   </Text>
                   <View
                     style={[
                       styles.networkPill,
                       {
-                        backgroundColor:
-                          network === 'mainnet-beta'
-                            ? 'rgba(168, 85, 247, 0.15)'
-                            : 'rgba(16, 185, 129, 0.15)',
+                        backgroundColor: 'rgba(99, 102, 241, 0.15)',
                       },
                     ]}
                   >
                     <Text
                       style={[
                         styles.networkPillText,
-                        { color: network === 'mainnet-beta' ? '#A855F7' : '#10B981' },
+                        { color: '#6366F1' },
                       ]}
                     >
-                      {network === 'mainnet-beta' ? 'MAINNET' : 'DEVNET'}
+                      SOLANA MAINNET
                     </Text>
                   </View>
                 </View>
