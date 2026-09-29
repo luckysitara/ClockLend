@@ -2432,7 +2432,10 @@ export async function buildStakeSkrTx(
   );
 
   // Memo instruction for on-chain proof & Solscan verification
-  const memoText = `ClockLend: Stake ${amountSkr.toLocaleString()} SKR Reputation Bond | User: ${user.toBase58().slice(0, 8)}... | Unlocks 90% LTV & APR Discounts`;
+  // The memo states what the program actually grants: the discount tiers are
+  // driven by available SKR only (processor.rs:1905-1916). LTV is a per-desk
+  // setting (pool.max_ltv_bps), not an SKR perk.
+  const memoText = `ClockLend: Stake ${amountSkr.toLocaleString()} SKR Reputation Bond | User: ${user.toBase58().slice(0, 8)}... | Program APR discount tiers: 100+ SKR available = 25%, 1,000+ SKR available = 50%`;
   tx.add(
     new TransactionInstruction({
       programId: MEMO_PROGRAM_ID,
