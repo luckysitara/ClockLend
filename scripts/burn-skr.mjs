@@ -1,6 +1,23 @@
+// ClockLend SKR buyback & burn.
+//
+// SAFETY MODEL (round-14 hardening):
+//   * Every run proves the RPC endpoint matches the intended cluster via
+//     getGenesisHash before it signs anything.
+//   * Mainnet sends require an explicit --yes. Without it the script only
+//     builds and simulates.
+//   * --dry-run builds + simulates + prints effects and never sends.
+//   * The Jupiter swap transaction is treated as UNTRUSTED INPUT: the fee payer
+//     is asserted to be the admin key, every program id in the message must be
+//     on an allowlist, and the transaction is simulated before signing.
+//   * The amount burned is the *measured delta* of the admin SKR balance across
+//     the swap (post - pre), not the account balance. A failed balance read is
+//     fatal — it is never coerced to 0.
 import fs from 'fs';
-import path from 'path';
+import { assertCluster, normalizeCluster } from './lib/cluster-guard.mjs';
 
+// scripts/ has no node_modules of its own: resolve @solana/web3.js from a real
+// install, else borrow the copy vendored under serverless/ or mobile/ so the
+// script still runs on a bare checkout.
 let web3;
 try {
   web3 = await import('@solana/web3.js');
@@ -19,7 +36,6 @@ const {
   TransactionInstruction,
   SystemProgram,
   VersionedTransaction,
-  sendAndConfirmTransaction,
 } = web3;
 
 const PROGRAM_ID = new PublicKey(process.env.PROGRAM_ID || '4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7');
@@ -35,11 +51,43 @@ const USDC_DEVNET_MINT = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJD
 const USDC_MAINNET_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
 const WSOL_MINT = new PublicKey('So11111111111111111111111111111111111111112');
 
+// Program ids permitted to appear in a Jupiter swap transaction.
+//
+// The aggregator routes through its own on-chain program plus a small set of
+// standard runtime programs; a route that touches anything else means the
+// "swap transaction" is not what it claims to be. Each id below was verified
+// live on mainnet-beta with getAccountInfo (executable = true) before being
+// allowlisted. Operators can extend this via JUPITER_PROGRAM_ALLOWLIST, but an
+// unknown program id always aborts the run — it is never silently skipped.
+const DEFAULT_ALLOWED_SWAP_PROGRAMS = [
+  'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4', // Jupiter Aggregator v6
+  'JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB', // Jupiter Aggregator v4
+  'JUP3c2Uh3WA4Ng34tw6kPd2G4C5BB21Xo36Je1s32Ph', // Jupiter Aggregator v3
+  'ComputeBudget111111111111111111111111111111', // priority-fee instructions
+  '11111111111111111111111111111111', // System program (SOL wrapping)
+  'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', // SPL Token
+  'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb', // Token-2022
+  'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL', // Associated Token Account
+  'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr', // SPL Memo
+];
+const ALLOWED_SWAP_PROGRAMS = new Set([
+  ...DEFAULT_ALLOWED_SWAP_PROGRAMS,
+  ...(process.env.JUPITER_PROGRAM_ALLOWLIST || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+]);
+
 const args = process.argv.slice(2);
-const network = args.includes('--network')
-  ? args[args.indexOf('--network') + 1]
-  : (process.env.NETWORK || 'devnet');
-const isMainnet = network === 'mainnet-beta' || network === 'mainnet';
+const readFlag = (name, fallback) => {
+  const i = args.indexOf(name);
+  return i !== -1 && args[i + 1] ? args[i + 1] : fallback;
+};
+
+const network = normalizeCluster(readFlag('--network', readFlag('--cluster', process.env.NETWORK || 'mainnet-beta')));
+const isMainnet = network === 'mainnet-beta';
+const dryRun = args.includes('--dry-run');
+const confirmed = args.includes('--yes');
 const RPC_URL = isMainnet
   ? (process.env.MAINNET_RPC || 'https://api.mainnet-beta.solana.com')
   : (process.env.DEVNET_RPC || 'https://api.devnet.solana.com');
@@ -107,17 +155,130 @@ function createBurnInstruction(account, mint, owner, amount) {
   });
 }
 
-async function getTokenBalanceSafe(ataPubkey) {
-  try {
-    const res = await conn.getTokenAccountBalance(ataPubkey);
-    return {
-      uiAmount: res.value.uiAmount || 0,
-      amount: BigInt(res.value.amount || '0'),
-      decimals: res.value.decimals,
-    };
-  } catch (_e) {
-    return { uiAmount: 0, amount: 0n, decimals: 6 };
+// STRICT balance read. Any failure throws — it is never coerced to 0, because a
+// silent 0 would read as "nothing to burn" (buy path) or "nothing to spend"
+// (treasury guard), both of which corrupt the amount math rather than failing.
+async function getTokenBalanceStrict(ataPubkey) {
+  const res = await conn.getTokenAccountBalance(ataPubkey);
+  if (!res || !res.value || res.value.amount === undefined || res.value.amount === null) {
+    throw new Error(`RPC returned no usable balance for ${ataPubkey.toBase58()}`);
   }
+  return {
+    uiAmount: res.value.uiAmount !== undefined && res.value.uiAmount !== null
+      ? res.value.uiAmount
+      : Number(res.value.amount) / 10 ** res.value.decimals,
+    amount: BigInt(res.value.amount),
+    decimals: res.value.decimals,
+  };
+}
+
+// Display-only read: reports "unavailable" instead of pretending the balance is 0.
+async function readBalanceForDisplay(ataPubkey) {
+  try {
+    return await getTokenBalanceStrict(ataPubkey);
+  } catch (e) {
+    return { unavailable: true, error: e.message || String(e) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Jupiter swap transaction verification
+// ---------------------------------------------------------------------------
+
+/** Resolve every account key in a (possibly v0) message, including lookup tables. */
+async function resolveAccountKeys(message) {
+  const staticKeys = message.staticAccountKeys || message.accountKeys || [];
+  if (!message.addressTableLookups || message.addressTableLookups.length === 0) {
+    return staticKeys;
+  }
+  const writable = [];
+  const readonly = [];
+  for (const lookup of message.addressTableLookups) {
+    const res = await conn.getAddressLookupTable(lookup.accountKey);
+    const table = res.value;
+    // Fail closed: an unresolvable table means we cannot prove which programs
+    // the transaction touches, so we must not sign it.
+    if (!table) {
+      throw new Error(`Cannot resolve address lookup table ${lookup.accountKey.toBase58()} — refusing to sign`);
+    }
+    for (const i of lookup.writableIndexes) writable.push(table.state.addresses[i]);
+    for (const i of lookup.readonlyIndexes) readonly.push(table.state.addresses[i]);
+  }
+  if (typeof message.getAccountKeys === 'function') {
+    return message.getAccountKeys({ accountKeysFromLookups: { writable, readonly } });
+  }
+  return [...staticKeys, ...writable, ...readonly];
+}
+
+/** Assert the swap tx pays fees from the admin key and touches only known programs. */
+async function verifyJupiterSwapTx(swapTx, expectedFeePayer) {
+  const message = swapTx.message;
+
+  const staticKeys = message.staticAccountKeys || message.accountKeys || [];
+  const feePayer = staticKeys[0];
+  if (!feePayer) throw new Error('Swap transaction has no fee payer');
+  if (!feePayer.equals(expectedFeePayer)) {
+    throw new Error(
+      `Refusing to sign: swap fee payer is ${feePayer.toBase58()}, expected the admin key ` +
+        `${expectedFeePayer.toBase58()}`
+    );
+  }
+
+  const keys = await resolveAccountKeys(message);
+  const programIds = [
+    ...new Set(message.compiledInstructions.map((ix) => keys[ix.programIdIndex].toBase58())),
+  ];
+  const unknown = programIds.filter((p) => !ALLOWED_SWAP_PROGRAMS.has(p));
+  if (unknown.length > 0) {
+    throw new Error(
+      `Refusing to sign: swap transaction invokes program id(s) not on the allowlist: ${unknown.join(', ')}.\n` +
+        `  Allowed: ${[...ALLOWED_SWAP_PROGRAMS].join(', ')}\n` +
+        `  If this is a legitimate new Jupiter program, re-run with ` +
+        `JUPITER_PROGRAM_ALLOWLIST=<id> after verifying it on-chain.`
+    );
+  }
+
+  return { feePayer: feePayer.toBase58(), programIds };
+}
+
+// ---------------------------------------------------------------------------
+// Send / simulate helpers
+// ---------------------------------------------------------------------------
+
+async function simulateVersioned(tx, label) {
+  const sim = await conn.simulateTransaction(tx, {
+    sigVerify: false,
+    replaceRecentBlockhash: true,
+    commitment: 'confirmed',
+  });
+  if (sim.value.err) {
+    throw new Error(`${label} simulation FAILED: ${JSON.stringify(sim.value.err)}\n${(sim.value.logs || []).join('\n')}`);
+  }
+  console.log(`  ${label} simulated OK (${sim.value.unitsConsumed ?? '?'} CU)`);
+  return sim.value;
+}
+
+/** Send (or, in dry-run, only simulate) a legacy transaction. Returns a signature or null. */
+async function sendLegacy(tx, label) {
+  const { blockhash } = await conn.getLatestBlockhash('confirmed');
+  tx.recentBlockhash = blockhash;
+  tx.feePayer = adminKeypair.publicKey;
+  tx.sign(adminKeypair);
+
+  if (dryRun) {
+    // NOTE: for a legacy Transaction, web3.js v1 takes (signers, config) —
+    // passing a config object as the 2nd positional arg throws "Invalid arguments".
+    const sim = await conn.simulateTransaction(tx, [adminKeypair], { commitment: 'confirmed' });
+    if (sim.value.err) {
+      throw new Error(`[dry-run] ${label} simulation FAILED: ${JSON.stringify(sim.value.err)}\n${(sim.value.logs || []).join('\n')}`);
+    }
+    console.log(`  [dry-run] ${label} simulated OK (${sim.value.unitsConsumed ?? '?'} CU) — not sent`);
+    return null;
+  }
+
+  const sig = await conn.sendRawTransaction(tx.serialize(), { skipPreflight: false, maxRetries: 3 });
+  await conn.confirmTransaction(sig, 'confirmed');
+  return sig;
 }
 
 async function main() {
@@ -135,22 +296,24 @@ async function main() {
   console.log('🔥 ClockLend SKR Buyback & Burn Portal');
   console.log('====================================================');
   console.log('Network:       ', network);
+  console.log('RPC:           ', RPC_URL);
   console.log('Admin Signer:  ', adminKeypair.publicKey.toBase58());
   console.log('Treasury PDA:  ', treasuryPda.toBase58());
+  console.log('Mode:          ', dryRun ? 'DRY RUN (nothing will be sent)' : (confirmed ? 'LIVE (--yes)' : 'build + simulate only'));
 
-  // Fetch Treasury Balances
-  const treasurySolLamports = await conn.getBalance(treasuryPda);
-  const treasurySolUi = treasurySolLamports / 1e9;
-  const treasuryUsdc = await getTokenBalanceSafe(treasuryUsdcAta);
-  const treasurySkr = await getTokenBalanceSafe(treasurySkrAta);
-
-  console.log('\n--- Treasury Balances ---');
-  console.log(`Native SOL:     ${treasurySolUi.toFixed(4)} SOL`);
-  console.log(`USDC Balance:   $${treasuryUsdc.uiAmount.toFixed(2)} USDC (${treasuryUsdcAta.toBase58()})`);
-  console.log(`SKR Balance:    ${treasurySkr.uiAmount.toLocaleString()} SKR (${treasurySkrAta.toBase58()})`);
+  const genesis = await assertCluster(conn, network);
+  console.log('Genesis:       ', genesis, `(matches ${network})`);
 
   // If status only
   if (args.includes('--status') || args.length === 0) {
+    const treasurySolLamports = await conn.getBalance(treasuryPda);
+    const treasuryUsdc = await readBalanceForDisplay(treasuryUsdcAta);
+    const treasurySkr = await readBalanceForDisplay(treasurySkrAta);
+    console.log('\n--- Treasury Balances ---');
+    console.log(`Native SOL:     ${(treasurySolLamports / 1e9).toFixed(4)} SOL`);
+    console.log(`USDC Balance:   ${treasuryUsdc.unavailable ? `unavailable (${treasuryUsdc.error})` : `$${treasuryUsdc.uiAmount.toFixed(2)} USDC (${treasuryUsdcAta.toBase58()})`}`);
+    console.log(`SKR Balance:    ${treasurySkr.unavailable ? `unavailable (${treasurySkr.error})` : `${treasurySkr.uiAmount.toLocaleString()} SKR (${treasurySkrAta.toBase58()})`}`);
+
     console.log('\n📖 Execution Modes:');
     console.log('1. DIRECT BURN (Burn SKR already in Treasury PDA):');
     console.log('   node scripts/burn-skr.mjs --direct --amount 5000 --network mainnet');
@@ -159,6 +322,7 @@ async function main() {
     console.log('   node scripts/burn-skr.mjs --buy --token usdc --amount 100 --network mainnet');
     console.log('   node scripts/burn-skr.mjs --buy --token usdc --pct 25 --network mainnet');
     console.log('   node scripts/burn-skr.mjs --buy --token sol --amount 1.5 --network mainnet');
+    console.log('\nAdd --dry-run to build and simulate without sending; add --yes to send on mainnet.');
     return;
   }
 
@@ -167,6 +331,20 @@ async function main() {
 
   if (!isDirect && !isBuy) {
     console.error('Error: Please specify either --direct (burn Treasury SKR) or --buy (buy SKR on DEX & burn).');
+    process.exit(1);
+  }
+  if (isDirect && isBuy) {
+    console.error('Error: --direct and --buy are mutually exclusive.');
+    process.exit(1);
+  }
+
+  // Mainnet sends require an explicit acknowledgement. --dry-run never sends, so
+  // it is allowed through without --yes.
+  if (isMainnet && !dryRun && !confirmed) {
+    console.error(
+      'Refusing to send on mainnet without --yes.\n' +
+        '  Re-run with --dry-run to build and simulate the transaction, or add --yes to execute for real.'
+    );
     process.exit(1);
   }
 
@@ -199,6 +377,20 @@ async function main() {
   // =========================================================================
   if (isDirect) {
     console.log('\n🔥 Initiating Direct SKR Burn from Treasury...');
+    // Amount math reads the treasury balance, so this read must be strict.
+    let treasurySkr;
+    try {
+      treasurySkr = await getTokenBalanceStrict(treasurySkrAta);
+    } catch (e) {
+      console.error(
+        `\nCannot read the Treasury SKR balance (${treasurySkrAta.toBase58()}): ${e.message || e}\n` +
+          '  The Treasury SKR token account does not exist yet, or the Treasury PDA has never been\n' +
+          '  initialized (which also means no protocol fees have been collected). Refusing to guess a\n' +
+          '  balance — check `node scripts/burn-skr.mjs --status --network ' + network + '` first.'
+      );
+      process.exit(1);
+    }
+
     let burnSkrUi = amountVal;
     if (pctVal !== null) {
       burnSkrUi = (treasurySkr.uiAmount * pctVal) / 100;
@@ -241,8 +433,15 @@ async function main() {
     // Instruction 8: Burn
     tx.add(createBurnInstruction(adminSkrAta, SKR_MINT, adminKeypair.publicKey, burnUnits));
 
-    console.log('Sending atomic withdraw-and-burn transaction...');
-    const sig = await sendAndConfirmTransaction(conn, tx, [adminKeypair]);
+    console.log('Building atomic withdraw-and-burn transaction...');
+    const sig = await sendLegacy(tx, 'direct withdraw+burn');
+
+    if (dryRun) {
+      console.log('\n[dry-run] No transaction sent. Would have burned:', burnSkrUi.toLocaleString(), 'SKR');
+      console.log('[dry-run] Treasury SKR before:', treasurySkr.uiAmount.toLocaleString(), 'SKR');
+      return;
+    }
+
     console.log('\n🎉 SUCCESS! Direct Burn Complete!');
     console.log(`Total SKR Burned: ${burnSkrUi.toLocaleString()} SKR`);
     console.log(`Transaction Signature: ${sig}`);
@@ -265,6 +464,11 @@ async function main() {
       console.warn('Devnet mock tokens do not have live Jupiter AMM liquidity pools.');
       console.warn('For Devnet testing, please use Direct Burn (`--direct`) or test against Mainnet (`--network mainnet`).\n');
     }
+
+    // Spending is gated on the treasury balance, so this read must be strict.
+    const treasurySolLamports = await conn.getBalance(treasuryPda);
+    const treasurySolUi = treasurySolLamports / 1e9;
+    const treasuryUsdc = tokenType === 'usdc' ? await getTokenBalanceStrict(treasuryUsdcAta) : null;
 
     let spendAmountUi = amountVal;
     let spendBaseUnits = 0n;
@@ -335,8 +539,9 @@ async function main() {
       );
     }
 
-    const withdrawSig = await sendAndConfirmTransaction(conn, withdrawTx, [adminKeypair]);
-    console.log(`✅ Treasury withdrawal confirmed. Tx: ${withdrawSig}`);
+    const withdrawSig = await sendLegacy(withdrawTx, 'treasury withdrawal');
+    if (withdrawSig) console.log(`✅ Treasury withdrawal confirmed. Tx: ${withdrawSig}`);
+    else console.log('  [dry-run] treasury withdrawal not sent');
 
     // Step 2: Swap via Jupiter API
     console.log('\n[Step 2/3] Fetching best DEX route via Jupiter API...');
@@ -371,8 +576,30 @@ async function main() {
 
     const swapTxBuf = Buffer.from(swapReq.swapTransaction, 'base64');
     const swapTx = VersionedTransaction.deserialize(swapTxBuf);
-    swapTx.sign([adminKeypair]);
 
+    // Treat the returned transaction as untrusted: prove it pays from our key
+    // and only invokes allowlisted programs BEFORE it is signed or simulated.
+    console.log('\n[Step 2b/3] Verifying the Jupiter swap transaction...');
+    const { feePayer, programIds } = await verifyJupiterSwapTx(swapTx, adminKeypair.publicKey);
+    console.log(`  fee payer: ${feePayer} (admin key ✓)`);
+    console.log(`  programs : ${programIds.join(', ')}`);
+
+    // Simulate before signing so a reverting route costs nothing.
+    await simulateVersioned(swapTx, 'Jupiter swap');
+
+    // Measure the SKR balance immediately before the swap. A failed read here is
+    // fatal: without it we cannot compute the burn delta.
+    const preSwapBalance = await getTokenBalanceStrict(adminSkrAta);
+    console.log(`  admin SKR before swap: ${preSwapBalance.amount} base units`);
+
+    if (dryRun) {
+      console.log('\n[dry-run] Swap verified and simulated but NOT sent. No transaction was broadcast.');
+      console.log(`[dry-run] Would burn approximately ${expectedSkr} SKR (quote outAmount;`);
+      console.log('[dry-run] the real burn uses the measured post-swap balance delta).');
+      return;
+    }
+
+    swapTx.sign([adminKeypair]);
     console.log('Broadcasting swap transaction to Solana network...');
     const rawSwapTx = swapTx.serialize();
     const swapSig = await conn.sendRawTransaction(rawSwapTx, {
@@ -383,15 +610,21 @@ async function main() {
     await conn.confirmTransaction(swapSig, 'confirmed');
     console.log(`✅ DEX Swap successful! Bought SKR via Jupiter.`);
 
-    // Step 3: Burn the Acquired SKR Tokens
-    console.log('\n[Step 3/3] Inspecting acquired SKR tokens and executing burn...');
-    // Brief sleep to let ATA index on RPC
+    // Step 3: Burn ONLY what this swap acquired.
+    console.log('\n[Step 3/3] Measuring acquired SKR and executing burn...');
     await new Promise((r) => setTimeout(r, 1500));
-    const finalSkrBalance = await getTokenBalanceSafe(adminSkrAta);
-    const skrToBurnUnits = finalSkrBalance.amount;
+    const postSwapBalance = await getTokenBalanceStrict(adminSkrAta);
+    const skrToBurnUnits = postSwapBalance.amount - preSwapBalance.amount;
 
-    if (skrToBurnUnits === 0n) {
-      console.error('Error: No SKR tokens found in admin account to burn.');
+    console.log(`  admin SKR after swap:  ${postSwapBalance.amount} base units`);
+    console.log(`  acquired by this swap: ${skrToBurnUnits} base units`);
+
+    if (skrToBurnUnits <= 0n) {
+      console.error(
+        'Error: the swap did not increase the admin SKR balance ' +
+          `(before ${preSwapBalance.amount}, after ${postSwapBalance.amount}). ` +
+          'Nothing to burn — refusing to burn pre-existing balance.'
+      );
       process.exit(1);
     }
 
@@ -401,7 +634,7 @@ async function main() {
     const burnTx = new Transaction().add(
       createBurnInstruction(adminSkrAta, SKR_MINT, adminKeypair.publicKey, skrToBurnUnits)
     );
-    const burnSig = await sendAndConfirmTransaction(conn, burnTx, [adminKeypair]);
+    const burnSig = await sendLegacy(burnTx, 'SKR burn');
 
     console.log('\n🎉 SUCCESS! Buy & Burn Complete!');
     console.log(`Total SKR Burned:       ${burnUi.toLocaleString()} SKR`);
@@ -412,6 +645,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('\n❌ Execution Error:', err);
+  console.error('\n❌ Execution Error:', err.message || err);
   process.exit(1);
 });

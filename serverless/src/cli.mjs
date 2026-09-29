@@ -37,15 +37,22 @@ if (!process.env.ORACLE_KEYPAIR) {
 
 async function run() {
   const isStatusOnly = process.argv.includes('--status') || process.argv.includes('-s');
+  // --json emits ONLY the status document on stdout, so CI can parse it directly.
+  const jsonOnly = process.argv.includes('--json');
 
-  console.log('=== ClockLend Serverless Oracle CLI Runner ===');
-  console.log('Network:', process.env.NETWORK || 'devnet');
-  console.log('RPC:', process.env.RPC_URL || 'https://api.devnet.solana.com');
+  const log = jsonOnly ? () => {} : (...a) => console.log(...a);
+
+  log('=== ClockLend Serverless Oracle CLI Runner ===');
+  log('Network:', process.env.NETWORK || 'mainnet-beta');
+  log('RPC:', process.env.RPC_URL || 'https://api.mainnet-beta.solana.com');
 
   if (isStatusOnly) {
-    console.log('\nFetching on-chain oracle status...');
+    log('\nFetching on-chain oracle status...');
     const status = await getOracleStatus(process.env);
     console.log(JSON.stringify(status, null, 2));
+    // NOTE: intentionally always exit 0 here. Staleness is the *reason* a crank
+    // is about to run, so it must not be treated as a status failure — callers
+    // inspect `healthy` / `staleFeeds` in the JSON instead.
     return;
   }
 

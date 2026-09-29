@@ -26,6 +26,68 @@ const SKR_MINT = new PublicKey('SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3');
 const ADMIN_SEED = Buffer.from('admin');
 const ORACLE_SEED = Buffer.from('oracle');
 
+// Program/staleness bounds.
+// TARGET_PROGRAM_ID is the mainnet-beta deployment; a worker pointed at any other
+// program id is almost certainly misconfigured, so we surface that in /health.
+const TARGET_PROGRAM_ID = '4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7';
+// The on-chain program caps admin-feed pricing at ADMIN_FEED_MAX_PRICE_AGE_SECS = 600
+// (program/src/processor.rs: `feed.max_staleness_seconds.min(ADMIN_FEED_MAX_PRICE_AGE_SECS)`).
+// The stored feed window is 3600s "retained for monitoring" only. Alert before the
+// 600s cliff so a human can intervene while the feed is still usable.
+const ONCHAIN_PRICE_AGE_LIMIT_SECONDS = 600;
+const STALENESS_ALERT_SECONDS = 540;
+
+// Endpoint fallbacks. Defaults are MAINNET so an unconfigured deploy cranks the
+// deployed mainnet feeds rather than silently writing devnet.
+const MAINNET_RPC_FALLBACK = 'https://api.mainnet-beta.solana.com';
+const DEVNET_RPC_FALLBACK = 'https://api.devnet.solana.com';
+
+// Genesis hashes captured live from each public endpoint via getGenesisHash.
+// Used to prove the RPC endpoint matches the intended cluster before signing.
+const GENESIS_HASHES: Record<string, string> = {
+  'mainnet-beta': '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d',
+  devnet: 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG',
+};
+
+function resolveNetwork(env: Env): string {
+  const raw = (env.NETWORK || 'mainnet-beta').trim().toLowerCase();
+  return raw === 'devnet' || raw === 'testnet' ? 'devnet' : 'mainnet-beta';
+}
+
+function resolveRpcUrl(env: Env): string {
+  if (env.RPC_URL && env.RPC_URL.trim()) return env.RPC_URL.trim();
+  return resolveNetwork(env) === 'devnet' ? DEVNET_RPC_FALLBACK : MAINNET_RPC_FALLBACK;
+}
+
+/** Fail closed if the RPC endpoint is not the cluster we intend to sign for. */
+async function assertExpectedCluster(connection: Connection, env: Env): Promise<string> {
+  const network = resolveNetwork(env);
+  const expected = GENESIS_HASHES[network];
+  let actual: string;
+  try {
+    actual = await connection.getGenesisHash();
+  } catch (err: any) {
+    throw new Error(`Could not read genesis hash from RPC endpoint: ${err.message || err}`);
+  }
+  if (actual !== expected) {
+    const other = Object.entries(GENESIS_HASHES).find(([, h]) => h === actual)?.[0] || 'unrecognized cluster';
+    throw new Error(
+      `CLUSTER MISMATCH: NETWORK=${network} expects genesis ${expected}, ` +
+        `but the RPC endpoint reports ${actual} (${other}). Refusing to sign.`
+    );
+  }
+  return actual;
+}
+
+// Best-effort in-isolate record of the last successful crank. Cloudflare isolates
+// are recycled freely, so this is a hint for /health, not durable state.
+let lastCrankResult: {
+  signature: string;
+  solPrice: number;
+  skrPrice: number;
+  timestamp: string;
+} | null = null;
+
 // Helper to write 64-bit integer in little-endian format
 function writeU64LE(val: bigint | number): Buffer {
   const buf = Buffer.alloc(8);
@@ -108,8 +170,9 @@ export async function crankOracles(env: Env): Promise<{
   }
 
   const programId = new PublicKey(env.PROGRAM_ID || DEFAULT_PROGRAM_ID);
-  const rpcUrl = env.RPC_URL || 'https://api.devnet.solana.com';
+  const rpcUrl = resolveRpcUrl(env);
   const connection = new Connection(rpcUrl, 'confirmed');
+  const genesisHash = await assertExpectedCluster(connection, env);
 
   const authority = parseKeypair(env.ORACLE_KEYPAIR);
   const [adminPDA] = PublicKey.findProgramAddressSync([ADMIN_SEED], programId);
@@ -183,22 +246,35 @@ export async function crankOracles(env: Env): Promise<{
     'confirmed'
   );
 
+  const timestamp = new Date().toISOString();
   console.log(`[Serverless Oracle] Crank succeeded. Tx: ${signature}`);
+  console.log(
+    `[Serverless Oracle] Cranked program ${programId.toBase58()} on ${resolveNetwork(env)} ` +
+      `(genesis ${genesisHash}) at ${timestamp}`
+  );
+  lastCrankResult = {
+    signature,
+    solPrice: sol,
+    skrPrice: skr,
+    timestamp,
+  };
   return {
     success: true,
     signature,
     solPrice: sol,
     skrPrice: skr,
     authority: authority.publicKey.toBase58(),
-    timestamp: new Date().toISOString(),
+    timestamp,
   };
 }
 
 // Query on-chain PDA health & current price
 export async function getOracleStatus(env: Env) {
   const programId = new PublicKey(env.PROGRAM_ID || DEFAULT_PROGRAM_ID);
-  const rpcUrl = env.RPC_URL || 'https://api.devnet.solana.com';
+  const rpcUrl = resolveRpcUrl(env);
   const connection = new Connection(rpcUrl, 'confirmed');
+  const network = resolveNetwork(env);
+  const genesisHash = await connection.getGenesisHash().catch(() => null);
 
   const [solOraclePDA] = PublicKey.findProgramAddressSync([ORACLE_SEED, NATIVE_SOL_MINT.toBuffer()], programId);
   const [skrOraclePDA] = PublicKey.findProgramAddressSync([ORACLE_SEED, SKR_MINT.toBuffer()], programId);
@@ -231,16 +307,43 @@ export async function getOracleStatus(env: Env) {
       lastUpdated: dateStr,
       ageSeconds,
       authority,
+      // Stored window (3600s) is retained for monitoring only; the program caps
+      // admin-feed pricing at 600s regardless (see processor.rs round-11 note).
       maxStalenessSeconds: maxStaleness,
-      isFresh: ageSeconds < 600,
+      priceAgeLimitSeconds: ONCHAIN_PRICE_AGE_LIMIT_SECONDS,
+      isFresh: ageSeconds < ONCHAIN_PRICE_AGE_LIMIT_SECONDS,
+      shouldAlert: ageSeconds >= STALENESS_ALERT_SECONDS,
     };
   }
 
+  const solFeed = unpack(accounts[0]?.data ? Buffer.from(accounts[0].data) : null, 9);
+  const skrFeed = unpack(accounts[1]?.data ? Buffer.from(accounts[1].data) : null, 6);
+  const feeds = { sol: solFeed, skr: skrFeed };
+  const staleFeeds: string[] = [];
+  if (!solFeed) staleFeeds.push('sol:missing');
+  else if (solFeed.shouldAlert) staleFeeds.push(`sol:${solFeed.ageSeconds}s`);
+  if (!skrFeed) staleFeeds.push('skr:missing');
+  else if (skrFeed.shouldAlert) staleFeeds.push(`skr:${skrFeed.ageSeconds}s`);
+
+  const ages = [solFeed?.ageSeconds, skrFeed?.ageSeconds].filter(
+    (a): a is number => typeof a === 'number'
+  );
+
   return {
     programId: programId.toBase58(),
+    expectedProgramId: TARGET_PROGRAM_ID,
+    programIdMatchesTarget: programId.toBase58() === TARGET_PROGRAM_ID,
+    network,
+    genesisHash,
+    genesisMatchesNetwork: genesisHash === GENESIS_HASHES[network],
     rpcUrl,
-    solFeed: unpack(accounts[0]?.data ? Buffer.from(accounts[0].data) : null, 9),
-    skrFeed: unpack(accounts[1]?.data ? Buffer.from(accounts[1].data) : null, 6),
+    solFeed,
+    skrFeed,
+    oldestFeedAgeSeconds: ages.length ? Math.max(...ages) : null,
+    stalenessAlertThresholdSeconds: STALENESS_ALERT_SECONDS,
+    staleFeeds,
+    healthy: staleFeeds.length === 0,
+    lastCrank: lastCrankResult,
   };
 }
 
@@ -263,7 +366,33 @@ export default {
     if (url.pathname === '/' || url.pathname === '/health' || url.pathname === '/status') {
       try {
         const status = await getOracleStatus(env);
+
+        // Staleness alert: log loudly when any feed is approaching the on-chain
+        // 600s pricing cliff. Alerting at 540s leaves a usable margin to react.
+        if (status.staleFeeds.length > 0) {
+          console.error(
+            `[Serverless Oracle ALERT] STALE PRICE FEEDS on ${status.network} program ${status.programId}: ` +
+              `${status.staleFeeds.join(', ')} (threshold ${STALENESS_ALERT_SECONDS}s, ` +
+              `on-chain limit ${ONCHAIN_PRICE_AGE_LIMIT_SECONDS}s). ` +
+              `Borrow/liquidation paths will revert with StaleOraclePrice once ${ONCHAIN_PRICE_AGE_LIMIT_SECONDS}s elapse. ` +
+              `Check the cron trigger and the ORACLE_KEYPAIR authority.`
+          );
+        }
+        if (!status.programIdMatchesTarget) {
+          console.error(
+            `[Serverless Oracle ALERT] PROGRAM_ID ${status.programId} is not the expected ` +
+              `mainnet deployment ${TARGET_PROGRAM_ID}.`
+          );
+        }
+        if (!status.genesisMatchesNetwork) {
+          console.error(
+            `[Serverless Oracle ALERT] RPC endpoint genesis ${status.genesisHash} does not match ` +
+              `NETWORK=${status.network} — cranks will refuse to sign.`
+          );
+        }
+
         return new Response(JSON.stringify(status, null, 2), {
+          status: status.healthy ? 200 : 503,
           headers: { 'content-type': 'application/json' },
         });
       } catch (err: any) {
@@ -276,16 +405,28 @@ export default {
 
     // Manual on-demand crank endpoint (POST /crank)
     if (url.pathname === '/crank' && request.method === 'POST') {
-      // Check auth token if configured
-      if (env.CRANK_AUTH_TOKEN) {
-        const authHeader = request.headers.get('authorization') || '';
-        const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-        if (token !== env.CRANK_AUTH_TOKEN) {
-          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-            status: 401,
-            headers: { 'content-type': 'application/json' },
-          });
-        }
+      // FAIL CLOSED. This endpoint spends the oracle authority's lamports and
+      // writes global protocol prices, so an unauthenticated /crank is a griefing
+      // vector. If no token is configured we refuse the request outright rather
+      // than silently running unauthenticated.
+      if (!env.CRANK_AUTH_TOKEN) {
+        return new Response(
+          JSON.stringify({
+            error: 'Crank endpoint disabled: CRANK_AUTH_TOKEN is not configured.',
+            remedy: 'Set the secret with `npx wrangler secret put CRANK_AUTH_TOKEN` and redeploy.',
+            docs: 'serverless/README.md',
+          }),
+          { status: 503, headers: { 'content-type': 'application/json' } }
+        );
+      }
+
+      const authHeader = request.headers.get('authorization') || '';
+      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+      if (token !== env.CRANK_AUTH_TOKEN) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { 'content-type': 'application/json' },
+        });
       }
 
       try {

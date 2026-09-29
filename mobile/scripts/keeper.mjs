@@ -3,6 +3,7 @@ import {
   Connection, Keypair, PublicKey, Transaction, TransactionInstruction,
   SystemProgram, SYSVAR_CLOCK_PUBKEY, sendAndConfirmTransaction,
 } from '@solana/web3.js';
+import { assertCluster, normalizeCluster, GENESIS_HASHES } from '../../scripts/lib/cluster-guard.mjs';
 
 // Load the repo-root .env (no external deps) so server-side scripts can use
 // SOLANA_RPC_URL / HELIUS_RPC_URL without exporting them manually.
@@ -27,14 +28,23 @@ const NATIVE_MINT = new PublicKey('So11111111111111111111111111111111111111112')
 const ORACLE_SEED = Buffer.from('oracle');
 const ADMIN_SEED = Buffer.from('admin');
 
+// The program caps admin-feed pricing at 600s regardless of the stored window
+// (processor.rs: feed.max_staleness_seconds.min(ADMIN_FEED_MAX_PRICE_AGE_SECS)).
+const ONCHAIN_PRICE_AGE_LIMIT_SECONDS = 600;
+
 const args = process.argv.slice(2);
-const network = args.includes('--network') ? args[args.indexOf('--network') + 1] : 'mainnet-beta';
-const skrPrice = parseFloat(args.includes('--skr-price') ? args[args.indexOf('--skr-price') + 1] : '0');
-const solPriceOverride = parseFloat(args.includes('--sol-price') ? args[args.indexOf('--sol-price') + 1] : '0');
+const readFlag = (name, fallback) => {
+  const i = args.indexOf(name);
+  return i !== -1 && args[i + 1] ? args[i + 1] : fallback;
+};
+// Accept --network or --cluster; both mean the same thing.
+const network = normalizeCluster(readFlag('--network', readFlag('--cluster', process.env.NETWORK || 'mainnet-beta')));
+const skrPrice = parseFloat(readFlag('--skr-price', '0'));
+const solPriceOverride = parseFloat(readFlag('--sol-price', '0'));
 
 const RPC = network === 'devnet'
-  ? 'https://api.devnet.solana.com'
-  : process.env.SOLANA_RPC_URL || process.env.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com';
+  ? (process.env.DEVNET_RPC || 'https://api.devnet.solana.com')
+  : (process.env.SOLANA_RPC_URL || process.env.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com');
 // After --rotate-oracle, feeds are signed by the keeper key (the rotated
 // oracle_authority), never by the full admin/upgrade key.
 const keypairPath = process.env.KEEPER_KEY || process.env.ORACLE_KEY || `${process.env.HOME}/.config/solana/mainnet-keeper.json`;
@@ -43,13 +53,75 @@ const conn = new Connection(RPC, 'confirmed');
 
 const w64 = (n) => { const b = Buffer.alloc(8); b.writeBigUInt64LE(BigInt(n)); return b; };
 
+// Decode a PriceFeed PDA. Layout (98 bytes):
+//   0..8   'CLK_FEED' discriminator
+//   8      is_initialized
+//   9..41  mint
+//   41..49 price (u64 LE, micro-USD)
+//   49     decimals
+//   50..58 last_updated_at (i64 LE, unix seconds)
+//   58..90 authority
+//   90..98 max_staleness_seconds (i64 LE)
+function unpackFeed(data) {
+  const d = Buffer.from(data);
+  if (d.length < 98 || d.subarray(0, 8).toString() !== 'CLK_FEED') return null;
+  return {
+    isInitialized: d[8] === 1,
+    priceMicro: d.readBigUInt64LE(41),
+    decimals: d[49] || null,
+    lastUpdatedAt: Number(d.readBigInt64LE(50)),
+    authority: new PublicKey(d.subarray(58, 90)).toBase58(),
+    maxStalenessSeconds: Number(d.readBigInt64LE(90)),
+  };
+}
+
+/** Read the feed and report how stale it was BEFORE this run. */
+async function readFeedState(oraclePda) {
+  try {
+    const acc = await conn.getAccountInfo(oraclePda);
+    if (!acc) return { exists: false };
+    const feed = unpackFeed(acc.data);
+    if (!feed) return { exists: true, decodable: false };
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const ageSeconds = feed.lastUpdatedAt > 0 ? Math.max(0, nowSeconds - feed.lastUpdatedAt) : null;
+    return {
+      exists: true,
+      decodable: true,
+      ...feed,
+      ageSeconds,
+      // Whether the feed was already past the on-chain 600s pricing cliff.
+      wasStale: ageSeconds === null || ageSeconds > ONCHAIN_PRICE_AGE_LIMIT_SECONDS,
+    };
+  } catch (e) {
+    return { exists: false, readError: e.message || String(e) };
+  }
+}
+
+function describeStaleness(label, state) {
+  if (!state.exists) return `${label}: feed account does not exist yet (first crank will create it)`;
+  if (state.readError) return `${label}: could not read feed (${state.readError})`;
+  if (!state.decodable) return `${label}: feed account present but not a decodable CLK_FEED`;
+  const age = state.ageSeconds === null ? 'never updated' : `${state.ageSeconds}s old`;
+  const verdict = state.wasStale ? 'STALE (past the 600s on-chain pricing limit)' : 'fresh';
+  return `${label}: ${age} — ${verdict} (authority ${state.authority}, stored window ${state.maxStalenessSeconds}s)`;
+}
+
 async function main() {
   const [adminPda] = PublicKey.findProgramAddressSync([ADMIN_SEED], PROGRAM_ID);
 
+  console.log(`=== ClockLend keeper ===`);
+  console.log(`network:    ${network}`);
+  console.log(`rpc:        ${RPC}`);
+  console.log(`program:    ${PROGRAM_ID.toBase58()}`);
+  console.log(`signer:     ${keypair.publicKey.toBase58()}`);
+  const genesis = await assertCluster(conn, network);
+  console.log(`genesis:    ${genesis} (matches ${network})`);
+
+  const targets = [];
   const solUsd = solPriceOverride > 0
     ? solPriceOverride
     : await fetchJupUsdPrice(NATIVE_MINT.toBase58()).catch(() => fetchUsdPrice('solana'));
-  await setFeed(NATIVE_MINT, Math.round(solUsd * 1e6), 9, adminPda, `SOL $${solUsd}`);
+  targets.push({ mint: NATIVE_MINT, priceMicroUsd: Math.round(solUsd * 1e6), decimals: 9, label: `SOL $${solUsd}` });
 
   // SKR is listed on Jupiter (jup.ag/tokens/SKRbvo6Gf…); default to the live
   // market price unless --skr-price is passed as a manual override.
@@ -58,16 +130,46 @@ async function main() {
       ? skrPrice
       : await fetchJupUsdPrice(SKR_MINT.toBase58()).catch(() => 0);
     if (skrUsd > 0) {
-      await setFeed(SKR_MINT, Math.round(skrUsd * 1e6), 6, adminPda, `SKR $${skrUsd}`);
+      targets.push({ mint: SKR_MINT, priceMicroUsd: Math.round(skrUsd * 1e6), decimals: 6, label: `SKR $${skrUsd}` });
     } else {
       console.log('  SKR price unavailable from Jupiter — feed left unchanged.');
     }
   }
+
+  const failures = [];
+
+  for (const t of targets) {
+    const [oraclePda] = PublicKey.findProgramAddressSync([ORACLE_SEED, t.mint.toBuffer()], PROGRAM_ID);
+    const before = await readFeedState(oraclePda);
+    console.log(`  pre-update ${describeStaleness(t.label, before)}`);
+
+    const ok = await setFeed(oraclePda, t.mint, t.priceMicroUsd, t.decimals, adminPda, t.label);
+    if (!ok) {
+      failures.push(t.label);
+      continue;
+    }
+
+    const after = await readFeedState(oraclePda);
+    if (after.exists && after.decodable && after.ageSeconds !== null && after.ageSeconds > ONCHAIN_PRICE_AGE_LIMIT_SECONDS) {
+      // The transaction confirmed but the account did not change as expected —
+      // treat that as a failed update rather than reporting success.
+      console.error(`  FAILED ${t.label}: post-update age is still ${after.ageSeconds}s — feed did not advance.`);
+      failures.push(t.label);
+    } else {
+      console.log(`  post-update ${describeStaleness(t.label, after)}`);
+    }
+  }
+
   console.log(`${new Date().toISOString()} keeper run complete (${network})`);
+
+  if (failures.length > 0) {
+    console.error(`\nFAILED: ${failures.length} feed update(s) did not succeed: ${failures.join(', ')}`);
+    process.exit(1);
+  }
+  console.log(`All ${targets.length} feed update(s) succeeded.`);
 }
 
-async function setFeed(mint, priceMicroUsd, decimals, adminPda, label) {
-  const [oraclePda] = PublicKey.findProgramAddressSync([ORACLE_SEED, mint.toBuffer()], PROGRAM_ID);
+async function setFeed(oraclePda, mint, priceMicroUsd, decimals, adminPda, label) {
   const data = Buffer.concat([Buffer.from([12]), w64(priceMicroUsd), Buffer.from([decimals])]);
   try {
     const sig = await sendAndConfirmTransaction(conn, new Transaction().add(new TransactionInstruction({
@@ -83,8 +185,10 @@ async function setFeed(mint, priceMicroUsd, decimals, adminPda, label) {
       data,
     })), [keypair], { commitment: 'confirmed' });
     console.log(`  feed updated (${label}): ${sig}`);
+    return true;
   } catch (e) {
     console.error(`  FAILED to update ${label}: ${e.message}`);
+    return false;
   }
 }
 

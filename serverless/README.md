@@ -10,8 +10,9 @@ Replaces dedicated 24/7 Linux keeper servers with modern serverless edge functio
 
 * **Zero Mobile Dependency**: The ClockLend mobile app talks **only to Solana RPC/WSS**. It never makes requests to this serverless app.
 * **Direct On-Chain Updates**: This worker fetches live prices from Jupiter (with CoinGecko fallback) and updates the on-chain `PriceFeed` PDAs (`[b"oracle", mint]`) using Instruction 12 (`SetPriceFeed`).
-* **Enforced Staleness Window**: ClockLend smart contracts enforce a strict **600-second (10-minute)** freshness bound. The cron schedule runs every **3 minutes** (`*/3 * * * *`), giving a 2x safety margin.
-* **Secure Key Storage**: The Oracle Authority private key is stored exclusively as an encrypted cloud secret, never exposed to clients or checked into git.
+* **Enforced Staleness Window**: The on-chain program caps admin-feed pricing at **600 seconds** (`ADMIN_FEED_MAX_PRICE_AGE_SECS` in `program/src/processor.rs`, applied as `feed.max_staleness_seconds.min(...)`). The feed's own stored window is 3600s and is retained for monitoring only. The cron schedule runs every **3 minutes** (`*/3 * * * *`), giving a 2x safety margin.
+* **Fail-Closed Cluster Guard**: Before signing, the worker reads `getGenesisHash` and refuses to crank if the endpoint is not the cluster named by `NETWORK`. A worker pointed at a devnet RPC with the mainnet `PROGRAM_ID` fails loudly instead of silently writing devnet feeds.
+* **Secure Key Storage**: The Oracle Authority private key is stored exclusively as a Cloudflare secret. It is not in `wrangler.toml` and not in git.
 
 ---
 
@@ -30,25 +31,55 @@ npm install
 npx wrangler login
 ```
 
-### 3. Set Your Oracle Secret Key
-Set your oracle authority keypair (supports Base58 private key or JSON array `[1,2,3...]`):
+### 3. Set Your Secrets
+All secrets are set with `wrangler secret put` — none of them live in `wrangler.toml`.
+
+**Oracle authority keypair** (supports Base58 private key or JSON array `[1,2,3...]`):
 ```bash
 npx wrangler secret put ORACLE_KEYPAIR
 ```
-*(Optional) If using Jupiter API key for higher rate limits:*
+
+**Crank auth token (required).** `POST /crank` spends the oracle authority's lamports and
+writes global protocol prices, so it must never be callable unauthenticated. The endpoint
+**fails closed**: if `CRANK_AUTH_TOKEN` is not configured it returns `503` and refuses every
+request. Set it before you deploy:
+```bash
+npx wrangler secret put CRANK_AUTH_TOKEN
+```
+Then call it with:
+```bash
+curl -X POST https://<worker>/crank -H "Authorization: Bearer $CRANK_AUTH_TOKEN"
+```
+> **Hardening note:** a Helius API key was previously committed inside `wrangler.toml`'s
+> `[vars]` block. It has been moved out of `[vars]` into a comment, and the worker now reads
+> `RPC_URL` from the environment. The committed value still needs to be supplied as a secret
+> and should be rotated when convenient — see step 4.
+
+**RPC endpoint.** `RPC_URL` is intentionally not in `[vars]` (commented values there are
+plaintext in git). Set it as a secret:
+```bash
+npx wrangler secret put RPC_URL
+# paste: https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_KEY
+```
+If `RPC_URL` is unset the worker falls back to `https://api.mainnet-beta.solana.com`, which
+is rate-limited and not suitable for a production 3-minute cron.
+
+*(Optional) Jupiter API key for higher rate limits:*
 ```bash
 npx wrangler secret put JUPITER_API_KEY
 ```
 
-### 4. Configure RPC in `wrangler.toml` (Optional)
-By default, `wrangler.toml` uses Solana Devnet. For mainnet, update `RPC_URL`:
+### 4. Non-secret configuration lives in `wrangler.toml`
 ```toml
 [vars]
-PROGRAM_ID = "HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3"
-RPC_URL = "https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_KEY"
+PROGRAM_ID = "4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7"
 NETWORK = "mainnet-beta"
-PRIORITY_FEE_MICRO_LAMPORTS = "50000"
+PRIORITY_FEE_MICRO_LAMPORTS = "25000"
 ```
+`NETWORK` and the RPC endpoint must agree — the worker compares the endpoint's
+`getGenesisHash` against the expected genesis hash for `NETWORK` and refuses to sign on a
+mismatch (mainnet-beta = `5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d`,
+devnet = `EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG`).
 
 ### 5. Deploy
 ```bash
@@ -64,46 +95,71 @@ That's it! Cloudflare will automatically trigger `scheduled()` every 3 minutes.
 Your deployed worker automatically exposes HTTP endpoints:
 
 * **`GET /health`** or **`GET /`**:
-  Queries the live Solana blockchain and returns on-chain price values, last updated timestamps, and freshness status.
+  Reads the live Solana blockchain and reports both price feeds, their ages, the cluster it is
+  actually talking to, and the last crank this isolate observed. Returns **200** when every feed
+  is inside the alert threshold and **503** when any feed is stale, missing, or the cluster /
+  program id does not match — so an uptime monitor on this URL pages you.
   ```json
   {
-    "programId": "HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3",
-    "rpcUrl": "https://api.devnet.solana.com",
+    "programId": "4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7",
+    "expectedProgramId": "4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7",
+    "programIdMatchesTarget": true,
+    "network": "mainnet-beta",
+    "genesisHash": "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
+    "genesisMatchesNetwork": true,
+    "rpcUrl": "https://mainnet.helius-rpc.com/?api-key=***",
     "solFeed": {
       "isInitialized": true,
-      "priceUsd": 152.45,
+      "priceUsd": 120.18,
       "decimals": 9,
-      "lastUpdated": "2026-09-28T07:15:00.000Z",
+      "lastUpdated": "2026-09-29T04:03:48.000Z",
       "ageSeconds": 45,
-      "isFresh": true
+      "isFresh": true,
+      "shouldAlert": false,
+      "priceAgeLimitSeconds": 600
     },
-    "skrFeed": {
-      "isInitialized": true,
-      "priceUsd": 0.0215,
-      "decimals": 6,
-      "lastUpdated": "2026-09-28T07:15:00.000Z",
-      "ageSeconds": 45,
-      "isFresh": true
+    "skrFeed": { "...": "same shape" },
+    "oldestFeedAgeSeconds": 46,
+    "stalenessAlertThresholdSeconds": 540,
+    "staleFeeds": [],
+    "healthy": true,
+    "lastCrank": {
+      "signature": "5xQ...",
+      "solPrice": 120.18,
+      "skrPrice": 0.0186,
+      "timestamp": "2026-09-29T04:04:00.000Z"
     }
   }
   ```
+  When any feed passes **540 seconds** the worker logs a `STALE PRICE FEEDS` alert line (visible
+  in `wrangler tail`) naming the feed and its age, so the 600s on-chain pricing cliff is never a
+  surprise. `lastCrank` is per-isolate best-effort state — Cloudflare recycles isolates freely, so
+  treat `null` as "unknown", not "never cranked".
 
 * **`POST /crank`**:
-  Manually trigger an immediate price update transaction (optionally protected by `CRANK_AUTH_TOKEN`).
+  Manually trigger an immediate price update transaction. **Requires**
+  `Authorization: Bearer <CRANK_AUTH_TOKEN>`; returns **401** on a bad token and **503** when
+  `CRANK_AUTH_TOKEN` is not configured at all (fail closed).
 
 ---
 
 ## 🛠️ Local Testing
 
-You can test the crank locally without deploying:
+You can test the crank locally without deploying. The runner reads `NETWORK`, `RPC_URL`,
+and `PROGRAM_ID` from the environment (and auto-loads the repo-root `.env`):
 
 ```bash
-# Check on-chain oracle status
-ORACLE_KEY=~/.config/solana/id.json npm run test:local -- --status
+cd serverless
 
-# Execute a live test crank
-ORACLE_KEY=~/.config/solana/id.json npm run test:local
+# Check on-chain oracle status against mainnet-beta
+NETWORK=mainnet-beta ORACLE_KEY=~/.config/solana/mainnet-keeper.json npm run test:local -- --status
+
+# Execute a live crank (spends real lamports — mainnet)
+NETWORK=mainnet-beta ORACLE_KEY=~/.config/solana/mainnet-keeper.json npm run test:local
 ```
+
+`ORACLE_KEY` is a *file path* convenience wrapper; `ORACLE_KEYPAIR` (the raw JSON array or
+Base58 string) is what the code reads.
 
 ---
 
@@ -113,6 +169,8 @@ If you prefer AWS:
 1. Entry point: `src/lambda.ts` (`export const handler`).
 2. Add an **EventBridge Rule** with rate `cron(0/3 * * * ? *)` (every 3 minutes).
 3. Set environment variables in Lambda Configuration:
-   - `ORACLE_KEYPAIR`
+   - `ORACLE_KEYPAIR` (required — store via Secrets Manager / SSM, not plaintext)
+   - `CRANK_AUTH_TOKEN` (required if you expose the HTTP handler)
    - `RPC_URL`
    - `PROGRAM_ID`
+   - `NETWORK` (`mainnet-beta`)

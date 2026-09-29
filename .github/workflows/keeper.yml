@@ -1,5 +1,13 @@
-# ClockLend secondary price keeper (Failover / Backup)
-# Runs on GitHub Actions (Azure infrastructure) to back up Cloudflare Workers.
+# ClockLend secondary price keeper (failover / backup)
+#
+# Backs up the Cloudflare Workers cron (serverless/wrangler.toml) so a Cloudflare
+# outage cannot leave the on-chain feeds stale.
+#
+# This job cranks MAINNET-BETA. The previous revision pinned `RPC_URL` to
+# api.devnet.solana.com while PROGRAM_ID fell through to the mainnet default, so
+# it never once cranked the mainnet feeds — it wrote devnet feeds that nothing
+# reads. Cluster, endpoint, and program id are now all explicit, and the worker
+# additionally verifies getGenesisHash before signing.
 name: ClockLend Keeper Backup
 
 on:
@@ -7,20 +15,87 @@ on:
     - cron: '*/6 * * * *'
   workflow_dispatch: {}
 
+# Only one crank at a time; a queued pile-up can only waste lamports.
+concurrency:
+  group: clocklend-keeper
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Explicit, not inherited. Genesis hash for mainnet-beta is verified in-job.
+  NETWORK: mainnet-beta
+  PROGRAM_ID: 4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7
+  MAINNET_GENESIS_HASH: 5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d
+
 jobs:
   crank:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+
       - name: Install dependencies
         run: npm --prefix serverless ci
-      - name: Run keeper (devnet)
+
+      # Fail loudly if the keeper key was never provisioned, rather than running
+      # a crank that cannot sign.
+      - name: Preflight — require keeper keypair
         env:
           ORACLE_KEYPAIR: ${{ secrets.KEEPER_KEYPAIR_JSON }}
-          RPC_URL: https://api.devnet.solana.com
-          NETWORK: devnet
+        run: |
+          if [ -z "$ORACLE_KEYPAIR" ]; then
+            echo "::error::Secret KEEPER_KEYPAIR_JSON is not set. Add the JSON array from"
+            echo "::error::~/.config/solana/mainnet-keeper.json under Settings > Secrets"
+            echo "::error::and variables > Actions. See docs/MAINNET_RUNBOOK.md section 2.2."
+            exit 1
+          fi
+          echo "Keeper keypair secret is present."
+
+      # Read-only sanity check: prove we are on mainnet-beta with the expected
+      # program before spending lamports.
+      - name: Verify mainnet cluster and oracle status
+        env:
+          RPC_URL: ${{ secrets.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com' }}
+        run: |
+          node serverless/src/cli.mjs --status --json > /tmp/status.json
+          node --input-type=module -e "
+            import fs from 'fs';
+            const s = JSON.parse(fs.readFileSync('/tmp/status.json','utf8'));
+            if (s.genesisHash !== process.env.MAINNET_GENESIS_HASH) {
+              console.error('::error::RPC endpoint is not mainnet-beta (genesis ' + s.genesisHash + ')');
+              process.exit(1);
+            }
+            if (!s.programIdMatchesTarget) {
+              console.error('::error::Unexpected program id ' + s.programId);
+              process.exit(1);
+            }
+            console.log('genesis ok:', s.genesisHash);
+            console.log('oldest feed age:', s.oldestFeedAgeSeconds, 's; healthy =', s.healthy);
+          "
+
+      - name: Run keeper (mainnet-beta)
+        env:
+          ORACLE_KEYPAIR: ${{ secrets.KEEPER_KEYPAIR_JSON }}
+          RPC_URL: ${{ secrets.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com' }}
         run: node serverless/src/cli.mjs
 
+      - name: Confirm feeds are fresh after crank
+        env:
+          RPC_URL: ${{ secrets.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com' }}
+        run: |
+          node serverless/src/cli.mjs --status --json > /tmp/after.json
+          node --input-type=module -e "
+            import fs from 'fs';
+            const s = JSON.parse(fs.readFileSync('/tmp/after.json','utf8'));
+            if (!s.healthy) {
+              console.error('::error::Feeds still stale after crank: ' + JSON.stringify(s.staleFeeds));
+              process.exit(1);
+            }
+            console.log('Feeds fresh. oldest age:', s.oldestFeedAgeSeconds, 's');
+          "

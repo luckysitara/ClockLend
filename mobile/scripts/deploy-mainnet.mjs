@@ -1,10 +1,12 @@
 import fs from 'fs';
+import crypto from 'crypto';
 import {
   Connection, Keypair, PublicKey, Transaction, TransactionInstruction,
   SystemProgram, SYSVAR_RENT_PUBKEY, SYSVAR_CLOCK_PUBKEY,
   sendAndConfirmTransaction, ComputeBudgetProgram,
 } from '@solana/web3.js';
 import { execSync } from 'child_process';
+import { assertCluster, normalizeCluster, GENESIS_HASHES } from '../../scripts/lib/cluster-guard.mjs';
 
 async function sendTxWithRetry(instructions, signers) {
   const tx = new Transaction();
@@ -85,14 +87,83 @@ const VAULT_SEED = Buffer.from('vault');
 const ADMIN_SEED = Buffer.from('admin');
 const TREASURY_SEED = Buffer.from('treasury');
 
-const RPC = process.env.MAINNET_RPC || process.env.SOLANA_RPC_URL || process.env.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com';
+// ---------------------------------------------------------------------------
+// Cluster handling — ONE explicit cluster variable.
+//
+// Previously this was split: web3.js talked to RPC (env-derived) while the
+// solana CLI talked to SOLANA_CLUSTER (defaulting to the RPC string), so the two
+// halves of a deploy could disagree about which cluster they were touching. Now
+// a single CLUSTER value drives both, and getGenesisHash proves the endpoint
+// really is that cluster before anything is signed or any CLI command runs.
+// ---------------------------------------------------------------------------
+const DEFAULT_RPC = {
+  'mainnet-beta': 'https://api.mainnet-beta.solana.com',
+  devnet: 'https://api.devnet.solana.com',
+};
+const _clusterFlagIdx = process.argv.indexOf('--cluster');
+const CLUSTER = normalizeCluster(
+  (_clusterFlagIdx !== -1 ? process.argv[_clusterFlagIdx + 1] : null) ||
+    process.env.SOLANA_CLUSTER ||
+    process.env.CLUSTER ||
+    'mainnet-beta'
+);
+if (!GENESIS_HASHES[CLUSTER]) {
+  throw new Error(`Unknown cluster "${CLUSTER}" — expected mainnet-beta or devnet.`);
+}
+const _rpcFlagIdx = process.argv.indexOf('--rpc');
+const RPC = (_rpcFlagIdx !== -1 ? process.argv[_rpcFlagIdx + 1] : null) ||
+  process.env.MAINNET_RPC || process.env.SOLANA_RPC_URL || process.env.HELIUS_RPC_URL ||
+  DEFAULT_RPC[CLUSTER];
 const keypairPath = process.env.DEPLOYER_KEY || `${process.env.HOME}/.config/solana/mainnet-deployer.json`;
 const keeperKeyPath = process.env.ORACLE_KEY || `${process.env.HOME}/.config/solana/mainnet-keeper.json`;
-// Cluster for the solana CLI subprocess calls (web3.js calls always use RPC).
-// Set SOLANA_CLUSTER=devnet for a dry run.
-const CLI_NETWORK = process.env.SOLANA_CLUSTER || RPC;
+// The solana CLI subprocesses use the SAME resolved endpoint as web3.js.
+const CLI_NETWORK = RPC;
 const keypair = Keypair.fromSecretKey(new Uint8Array(JSON.parse(fs.readFileSync(keypairPath, 'utf8'))));
 const conn = new Connection(RPC, 'confirmed');
+
+const sha256File = (p) => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
+
+/**
+ * ProgramData layout for BPFLoaderUpgradeab1e:
+ *   [0..4)   u32 LE enum tag (3 == ProgramData)
+ *   [4..12)  u64 LE slot
+ *   [12]     Option<Pubkey> discriminant (1 == Some)
+ *   [13..45) upgrade authority
+ *   [45..)   program bytecode (zero-padded to the historical max allocation)
+ *
+ * Verification slices exactly `data[45 .. 45 + localSize]`; bytes past that are
+ * retained zero padding and must NOT be included in the hash.
+ */
+async function verifyDeployedProgram(soPath, expectedProgramId) {
+  const [programDataPda] = PublicKey.findProgramAddressSync([expectedProgramId.toBuffer()], BPF_LOADER);
+  const acc = await conn.getAccountInfo(programDataPda);
+  if (!acc) throw new Error(`ProgramData account ${programDataPda.toBase58()} not found on ${CLUSTER}`);
+  const data = Buffer.from(acc.data);
+  if (data.length < 45) throw new Error('ProgramData account is too small to contain an ELF header');
+
+  const localSize = fs.statSync(soPath).size;
+  const localHash = sha256File(soPath);
+  if (data.length < 45 + localSize) {
+    throw new Error(
+      `ProgramData holds ${data.length - 45} bytecode bytes but the local ELF is ${localSize} bytes — ` +
+        'the on-chain allocation is too small (run `solana program extend` first).'
+    );
+  }
+  const onchainHash = sha256(data.subarray(45, 45 + localSize));
+
+  const optionFlag = data[12];
+  const upgradeAuthority = optionFlag === 1 ? new PublicKey(data.subarray(13, 45)).toBase58() : '(none — immutable)';
+
+  const match = onchainHash === localHash;
+  console.log('\n--- On-chain verification ---');
+  console.log(`  ProgramData:       ${programDataPda.toBase58()} (${data.length} bytes allocated)`);
+  console.log(`  upgrade authority: ${upgradeAuthority}`);
+  console.log(`  on-chain sha256:   ${onchainHash}`);
+  console.log(`  local sha256:      ${localHash}`);
+  console.log(`  ${match ? '✅ MATCH — the deployed bytecode is byte-identical to the local build.' : '❌ MISMATCH — the deployed bytecode differs from the local build.'}`);
+  return { match, onchainHash, localHash, upgradeAuthority, allocatedBytes: data.length };
+}
 
 const w64 = (n) => { const b = Buffer.alloc(8); b.writeBigUInt64LE(BigInt(n)); return b; };
 const w64s = (n) => { const b = Buffer.alloc(8); b.writeBigInt64LE(BigInt(n)); return b; };
@@ -123,8 +194,21 @@ async function main() {
   const createPool = args.includes('--create-pool');
   const rotateOracle = args.includes('--rotate-oracle');
   const bufferArg = args.indexOf('--buffer') !== -1 ? args[args.indexOf('--buffer') + 1] : process.env.BUFFER;
-  const unknown = args.filter((a) => a.startsWith('--') && !['--create-pool', '--rotate-oracle', '--skr-price', '--skip-build', '--buffer'].includes(a));
+  // --upgrade is REQUIRED to touch an existing program account; see the branch below.
+  const upgrade = args.includes('--upgrade');
+  const unknown = args.filter((a) => a.startsWith('--') && ![
+    '--create-pool', '--rotate-oracle', '--skr-price', '--skip-build', '--buffer',
+    '--upgrade', '--cluster', '--rpc',
+  ].includes(a));
   if (unknown.length) throw new Error(`Unknown flags: ${unknown.join(', ')}`);
+
+  console.log(`Cluster: ${CLUSTER}`);
+  console.log(`RPC:     ${RPC}`);
+  // Prove the endpoint is the cluster we think it is before spending anything.
+  // Fail closed: a mismatch here would deploy mainnet bytecode to devnet (or
+  // vice versa) while every log line claims the other cluster.
+  const genesis = await assertCluster(conn, CLUSTER);
+  console.log(`Genesis: ${genesis} (matches ${CLUSTER})`);
 
   // C-3 preflight: fail BEFORE spending lamports if the program-id keypair is
   // not on this machine (first deploy) — the CLI's error comes only after the
@@ -181,7 +265,85 @@ async function main() {
   const soMd5 = execSync(`md5sum ${soPath}`, { encoding: 'utf8' }).split(' ')[0];
   console.log(`Artifact: ${soPath} (${soStat.size} bytes, md5 ${soMd5})`);
 
-  if (!programExists) {
+  if (programExists) {
+    // ---------------------------------------------------------------------
+    // UPGRADE PATH.
+    //
+    // Previously this branch printed "skipping deploy step" and moved on, so a
+    // run against an existing program silently did NOT ship the new build while
+    // still printing "MAINNET BOOTSTRAP COMPLETE". Any run that intends to change
+    // deployed bytecode must now say so explicitly with --upgrade.
+    //
+    // Known CLI quirk: plain `solana program deploy <file>` can appear to no-op
+    // on an existing upgradeable program. The reliable path is to write a new
+    // buffer and deploy with `--program-id ... --buffer ...`.
+    // ---------------------------------------------------------------------
+    if (!upgrade) {
+      console.log(
+        `\nProgram already deployed at ${PROGRAM_ID.toBase58()} on ${CLUSTER}.\n` +
+          'Pass --upgrade to write a new buffer and upgrade the deployed program, or\n' +
+          'remove the existing program first. Refusing to silently skip the deploy step.'
+      );
+      console.log('Skipping the deploy step (no --upgrade given).');
+    } else {
+      const [programDataPda] = PublicKey.findProgramAddressSync([PROGRAM_ID.toBuffer()], BPF_LOADER);
+      const pdAcc = await conn.getAccountInfo(programDataPda);
+      if (!pdAcc) throw new Error(`ProgramData ${programDataPda.toBase58()} not found — cannot upgrade.`);
+      const allocated = pdAcc.data.length - 45;
+      console.log(
+        `\nUpgrading ${PROGRAM_ID.toBase58()} on ${CLUSTER}.\n` +
+          `  current on-chain bytecode: ${allocated} bytes\n` +
+          `  local ELF:                 ${soStat.size} bytes`
+      );
+
+      // agave caps a single extend at 10,240 bytes, so loop until it fits.
+      if (soStat.size > allocated) {
+        const needed = soStat.size - allocated;
+        console.log(
+          `Local ELF is larger than the current allocation — extending ProgramData by ${needed} bytes ` +
+            '(in <=10,240-byte steps)...'
+        );
+        let remaining = needed;
+        while (remaining > 0) {
+          const chunk = Math.min(10240, remaining);
+          console.log(`  solana program extend +${chunk}`);
+          execSync(
+            `solana program extend --url "${CLI_NETWORK}" --keypair ${keypairPath} ${PROGRAM_ID.toBase58()} ${chunk}`,
+            { stdio: 'inherit' }
+          );
+          remaining -= chunk;
+        }
+      }
+
+      const upgradeBufferPath = process.env.BUFFER_KEYPAIR || `${process.env.HOME}/.config/solana/mainnet-buffer.json`;
+      console.log(`Writing new program buffer using keypair ${upgradeBufferPath}...`);
+      execSync(
+        `solana program write-buffer --url "${CLI_NETWORK}" --keypair ${keypairPath} ` +
+          `--buffer ${upgradeBufferPath} --use-rpc --with-compute-unit-price 50000 --max-sign-attempts 20 ${soPath}`,
+        { stdio: 'inherit' }
+      );
+      const upgradeBuffer = execSync(`solana-keygen pubkey ${upgradeBufferPath}`, { encoding: 'utf8' }).trim();
+      console.log(`Buffer written: ${upgradeBuffer}`);
+
+      console.log(`Deploying upgrade to ${PROGRAM_ID.toBase58()}...`);
+      execSync(
+        `solana program deploy --url "${CLI_NETWORK}" --keypair ${keypairPath} ` +
+          `--program-id ${PROGRAM_ID.toBase58()} --buffer ${upgradeBuffer} --use-rpc --with-compute-unit-price 5000`,
+        { stdio: 'inherit' }
+      );
+
+      // A successful `solana program deploy` exit code is NOT sufficient proof —
+      // hash the ProgramData bytecode and compare it to the local artifact.
+      const verification = await verifyDeployedProgram(soPath, PROGRAM_ID);
+      if (!verification.match) {
+        throw new Error(
+          'Upgrade reported success but the on-chain bytecode does not match the local build. ' +
+            'Do NOT treat this deploy as complete — investigate before running anything else.'
+        );
+      }
+      console.log('Upgrade verified: on-chain bytecode matches the local build.');
+    }
+  } else {
     let buffer = bufferArg;
     if (!buffer) {
       // Dynamic rent preflight: calculate exact required rent for the ProgramData buffer (size + 45 bytes header)
@@ -210,8 +372,16 @@ async function main() {
     console.log('Deploying program...');
     const programIdArg = programKeypairPath || PROGRAM_ID.toBase58();
     execSync(`solana program deploy --url "${CLI_NETWORK}" --keypair ${keypairPath} --program-id ${programIdArg} --buffer ${buffer} --use-rpc --with-compute-unit-price 5000`, { stdio: 'inherit' });
-  } else {
-    console.log(`Program already deployed at ${PROGRAM_ID.toBase58()} (skipping deploy step)`);
+
+    // First deploy: verify the same way an upgrade is verified.
+    const verification = await verifyDeployedProgram(soPath, PROGRAM_ID);
+    if (!verification.match) {
+      throw new Error(
+        'Deploy reported success but the on-chain bytecode does not match the local build. ' +
+          'Do NOT treat this deploy as complete — investigate before running anything else.'
+      );
+    }
+    console.log('Deploy verified: on-chain bytecode matches the local build.');
   }
 
   // 2. InitializeAdmin (sole root = on-chain upgrade authority via ProgramData)
