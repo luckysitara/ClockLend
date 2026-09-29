@@ -21,7 +21,7 @@ const {
   sendAndConfirmTransaction,
 } = web3;
 
-const PROGRAM_ID = new PublicKey('HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3');
+const PROGRAM_ID = new PublicKey(process.env.PROGRAM_ID || '4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7');
 const ADMIN_SEED = Buffer.from('admin');
 
 const RPC_URL = process.env.RPC_URL || 'https://api.devnet.solana.com';

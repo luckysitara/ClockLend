@@ -9,9 +9,9 @@ compatibility_flags = ["nodejs_compat"]
 crons = ["*/3 * * * *"]
 
 [vars]
-PROGRAM_ID = "HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3"
-RPC_URL = "https://api.devnet.solana.com"
-NETWORK = "devnet"
+PROGRAM_ID = "4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7"
+RPC_URL = "https://mainnet.helius-rpc.com/?api-key=REDACTED-ROTATED-HELIUS-KEY"
+NETWORK = "mainnet-beta"
 PRIORITY_FEE_MICRO_LAMPORTS = "25000"
 
 # Secrets to set via `npx wrangler secret put`:

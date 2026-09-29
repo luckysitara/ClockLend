@@ -20,7 +20,7 @@ export interface Env {
 }
 
 // Canonical Constants
-const DEFAULT_PROGRAM_ID = 'HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3';
+const DEFAULT_PROGRAM_ID = '4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7';
 const NATIVE_SOL_MINT = new PublicKey('So11111111111111111111111111111111111111112');
 const SKR_MINT = new PublicKey('SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3');
 const ADMIN_SEED = Buffer.from('admin');

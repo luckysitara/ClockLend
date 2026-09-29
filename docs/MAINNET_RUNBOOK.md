@@ -15,9 +15,9 @@ ClockLend enforces strict separation of concerns across 3 dedicated keypairs:
 
 | Role | Purpose | File Location | Public Address | Funding Required |
 |---|---|---|---|---|
-| **Deployer** | Upgrade Authority & Protocol Admin | `~/.config/solana/mainnet-deployer.json` | `5avuk58DjBwBsyWkhgp6efC5WbnUKTFA5iLkbS8Aqv29` | **2.0 SOL** |
+| **Deployer** | Upgrade Authority & Protocol Admin | `~/.config/solana/mainnet-deployer.json` | `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds` | **2.0 SOL** |
 | **Keeper** | Serverless Oracle Price Feeder | `~/.config/solana/mainnet-keeper.json` | `HtiDpTkcWDDaQeRLSBvYDdw2sRJb5VvkD7EMvr5JWVzJ` | **0.1 SOL** |
-| **Program ID** | Mainnet Smart Contract Address | `~/.config/solana/clock-lend-program.json` | See Option A/B below | *None (rent paid by deployer)* |
+| **Program ID** | Mainnet Smart Contract Address | `~/.config/solana/clock-lend-program.json` | `4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7` | *None (rent paid by deployer)* |
 
 ### 0.1 Program ID Keypair Resolution
 A **first-time deploy** on Solana mainnet requires the Program ID's private keypair file (`PROGRAM_KEYPAIR`) so the Solana CLI can prove ownership and initialize the program account:

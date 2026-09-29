@@ -2,9 +2,34 @@ import fs from 'fs';
 import {
   Connection, Keypair, PublicKey, Transaction, TransactionInstruction,
   SystemProgram, SYSVAR_RENT_PUBKEY, SYSVAR_CLOCK_PUBKEY,
-  sendAndConfirmTransaction,
+  sendAndConfirmTransaction, ComputeBudgetProgram,
 } from '@solana/web3.js';
 import { execSync } from 'child_process';
+
+async function sendTxWithRetry(instructions, signers) {
+  const tx = new Transaction();
+  tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50000 }));
+  for (const ix of instructions) tx.add(ix);
+  tx.feePayer = keypair.publicKey;
+
+  let attempts = 0;
+  while (attempts < 6) {
+    try {
+      const { blockhash } = await conn.getLatestBlockhash('confirmed');
+      tx.recentBlockhash = blockhash;
+      const sig = await sendAndConfirmTransaction(conn, tx, signers, {
+        commitment: 'confirmed',
+        maxRetries: 5,
+      });
+      return sig;
+    } catch (e) {
+      attempts++;
+      console.warn(`Transaction attempt ${attempts} failed (${e.message || e}), retrying in 2s...`);
+      await new Promise(r => setTimeout(r, 2000));
+    }
+  }
+  throw new Error(`Transaction failed after ${attempts} attempts`);
+}
 
 // No @solana/spl-token dependency: the ATA helpers are hand-rolled (the same
 // derivation the mobile app uses) so the script runs on a bare checkout.
@@ -47,7 +72,7 @@ function loadEnv() {
 }
 loadEnv();
 
-const PROGRAM_ID = new PublicKey('HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3');
+const PROGRAM_ID = new PublicKey(process.env.PROGRAM_ID || '4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7');
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const ASSOC_TOKEN_PROGRAM = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 const USDC_MAINNET_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
@@ -65,7 +90,7 @@ const keypairPath = process.env.DEPLOYER_KEY || `${process.env.HOME}/.config/sol
 const keeperKeyPath = process.env.ORACLE_KEY || `${process.env.HOME}/.config/solana/mainnet-keeper.json`;
 // Cluster for the solana CLI subprocess calls (web3.js calls always use RPC).
 // Set SOLANA_CLUSTER=devnet for a dry run.
-const CLI_NETWORK = process.env.SOLANA_CLUSTER || 'mainnet-beta';
+const CLI_NETWORK = process.env.SOLANA_CLUSTER || RPC;
 const keypair = Keypair.fromSecretKey(new Uint8Array(JSON.parse(fs.readFileSync(keypairPath, 'utf8'))));
 const conn = new Connection(RPC, 'confirmed');
 
@@ -80,7 +105,7 @@ function resolveProgramKeypairPath() {
   const candidates = [
     process.env.PROGRAM_KEYPAIR,
     `${process.env.HOME}/.config/solana/clock-lend-program.json`,
-    new URL('../program/target/deploy/clock_lend-keypair.json', import.meta.url).pathname,
+    new URL('../../program/target/deploy/clock_lend-keypair.json', import.meta.url).pathname,
   ].filter(Boolean);
   for (const p of candidates) {
     if (!fs.existsSync(p)) continue;
@@ -97,7 +122,8 @@ async function main() {
   const skrPrice = parseFloat(args[args.indexOf('--skr-price') + 1] || '0');
   const createPool = args.includes('--create-pool');
   const rotateOracle = args.includes('--rotate-oracle');
-  const unknown = args.filter((a) => a.startsWith('--') && !['--create-pool', '--rotate-oracle', '--skr-price', '--skip-build'].includes(a));
+  const bufferArg = args.indexOf('--buffer') !== -1 ? args[args.indexOf('--buffer') + 1] : process.env.BUFFER;
+  const unknown = args.filter((a) => a.startsWith('--') && !['--create-pool', '--rotate-oracle', '--skr-price', '--skip-build', '--buffer'].includes(a));
   if (unknown.length) throw new Error(`Unknown flags: ${unknown.join(', ')}`);
 
   // C-3 preflight: fail BEFORE spending lamports if the program-id keypair is
@@ -117,14 +143,14 @@ async function main() {
   }
 
   // 1. Deploy the program (write-buffer + upgrade) — same program id on mainnet
-  const soPath = new URL('../program/target/deploy/clock_lend.so', import.meta.url).pathname;
+  const soPath = new URL('../../program/target/deploy/clock_lend.so', import.meta.url).pathname;
 
   // C-3 (round 9): build + freshness preflight. Shipping a stale ELF silently
   // omits whatever the sources gained since the last build. Hard-fail unless --skip-build is passed.
   const skipBuild = args.includes('--skip-build');
   if (!skipBuild) {
     console.log('Building the program from source (cargo build-sbf)...');
-    execSync(`cd ${new URL('../program', import.meta.url).pathname} && cargo build-sbf`, { stdio: 'inherit' });
+    execSync(`cd ${new URL('../../program', import.meta.url).pathname} && cargo build-sbf`, { stdio: 'inherit' });
   }
   if (!fs.existsSync(soPath)) {
     throw new Error(`${soPath} not found — run: cd program && cargo build-sbf`);
@@ -139,11 +165,11 @@ async function main() {
         else if (/\.[a-z]+$/i.test(e.name)) newestSource = Math.max(newestSource, fs.statSync(p).mtimeMs);
       }
     };
-    const root = new URL(`../program/${dir}`, import.meta.url).pathname;
+    const root = new URL(`../../program/${dir}`, import.meta.url).pathname;
     if (fs.existsSync(root)) walk(root);
   }
-  const tomlPath = new URL('../program/Cargo.toml', import.meta.url).pathname;
-  const lockPath = new URL('../program/Cargo.lock', import.meta.url).pathname;
+  const tomlPath = new URL('../../program/Cargo.toml', import.meta.url).pathname;
+  const lockPath = new URL('../../program/Cargo.lock', import.meta.url).pathname;
   newestSource = Math.max(newestSource, fs.statSync(tomlPath).mtimeMs);
   if (fs.existsSync(lockPath)) newestSource = Math.max(newestSource, fs.statSync(lockPath).mtimeMs);
   if (soStat.mtimeMs < newestSource) {
@@ -155,35 +181,44 @@ async function main() {
   const soMd5 = execSync(`md5sum ${soPath}`, { encoding: 'utf8' }).split(' ')[0];
   console.log(`Artifact: ${soPath} (${soStat.size} bytes, md5 ${soMd5})`);
 
-  // Dynamic rent preflight: calculate exact required rent for the ProgramData buffer (size + 45 bytes header)
-  // plus 0.1 SOL buffer for write-buffer transaction fees and priority fees.
-  const requiredRent = await conn.getMinimumBalanceForRentExemption(soStat.size + 45);
-  const deployFloor = requiredRent + 100_000_000;
-  const balance = await conn.getBalance(keypair.publicKey);
-  console.log(`Deployer ${keypair.publicKey.toBase58()} balance: ${(balance / 1e9).toFixed(4)} SOL (min needed: ${(deployFloor / 1e9).toFixed(4)} SOL, rent: ${(requiredRent / 1e9).toFixed(4)} SOL)`);
-  if (balance < deployFloor) {
-    throw new Error(
-      `Insufficient SOL — deployer has ${(balance / 1e9).toFixed(4)} SOL, but required rent is ${(requiredRent / 1e9).toFixed(4)} SOL ` +
-      `(${(deployFloor / 1e9).toFixed(4)} SOL needed with tx buffer). Fund the deployer wallet first.`
-    );
-  }
+  if (!programExists) {
+    let buffer = bufferArg;
+    if (!buffer) {
+      // Dynamic rent preflight: calculate exact required rent for the ProgramData buffer (size + 45 bytes header)
+      // plus 0.1 SOL buffer for write-buffer transaction fees and priority fees.
+      const requiredRent = await conn.getMinimumBalanceForRentExemption(soStat.size + 45);
+      const deployFloor = requiredRent + 100_000_000;
+      const balance = await conn.getBalance(keypair.publicKey);
+      console.log(`Deployer ${keypair.publicKey.toBase58()} balance: ${(balance / 1e9).toFixed(4)} SOL (min needed: ${(deployFloor / 1e9).toFixed(4)} SOL, rent: ${(requiredRent / 1e9).toFixed(4)} SOL)`);
+      if (balance < deployFloor) {
+        throw new Error(
+          `Insufficient SOL — deployer has ${(balance / 1e9).toFixed(4)} SOL, but required rent is ${(requiredRent / 1e9).toFixed(4)} SOL ` +
+          `(${(deployFloor / 1e9).toFixed(4)} SOL needed with tx buffer). Fund the deployer wallet first.`
+        );
+      }
 
-  console.log('Writing program buffer...');
-  const bufOut = execSync(`solana program write-buffer --url ${CLI_NETWORK} --keypair ${keypairPath} ${soPath}`, { encoding: 'utf8' });
-  const bufMatch = bufOut.match(/Buffer: (\w+)/);
-  if (!bufMatch) throw new Error(`Could not parse buffer from write-buffer output:\n${bufOut}`);
-  const buffer = bufMatch[1];
-  console.log('Upgrading program...');
-  const programIdArg = programKeypairPath || PROGRAM_ID.toBase58();
-  execSync(`solana program deploy --url ${CLI_NETWORK} --keypair ${keypairPath} --program-id ${programIdArg} --buffer ${buffer}`, { stdio: 'inherit' });
-  // No close needed: `deploy --buffer` transfers the buffer's lamports into the
-  // new/upgraded ProgramData as its rent — nothing is left to refund.
+      const bufferKeypairPath = process.env.BUFFER_KEYPAIR || `${process.env.HOME}/.config/solana/mainnet-buffer.json`;
+      console.log(`Writing program buffer using keypair ${bufferKeypairPath}...`);
+      const bufCmd = `solana program write-buffer --url "${CLI_NETWORK}" --keypair ${keypairPath} --buffer ${bufferKeypairPath} --use-rpc --with-compute-unit-price 50000 --max-sign-attempts 20 ${soPath}`;
+      execSync(bufCmd, { stdio: 'inherit' });
+      buffer = execSync(`solana-keygen pubkey ${bufferKeypairPath}`, { encoding: 'utf8' }).trim();
+      console.log(`Program buffer written: ${buffer}`);
+    } else {
+      console.log(`Using existing on-chain program buffer: ${buffer}`);
+    }
+
+    console.log('Deploying program...');
+    const programIdArg = programKeypairPath || PROGRAM_ID.toBase58();
+    execSync(`solana program deploy --url "${CLI_NETWORK}" --keypair ${keypairPath} --program-id ${programIdArg} --buffer ${buffer} --use-rpc --with-compute-unit-price 5000`, { stdio: 'inherit' });
+  } else {
+    console.log(`Program already deployed at ${PROGRAM_ID.toBase58()} (skipping deploy step)`);
+  }
 
   // 2. InitializeAdmin (sole root = on-chain upgrade authority via ProgramData)
   const [adminPda] = PublicKey.findProgramAddressSync([ADMIN_SEED], PROGRAM_ID);
   const [programDataPda] = PublicKey.findProgramAddressSync([PROGRAM_ID.toBuffer()], BPF_LOADER);
   console.log('Initializing AdminConfig...');
-  await sendAndConfirmTransaction(conn, new Transaction().add(new TransactionInstruction({
+  await sendTxWithRetry([new TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
       { pubkey: keypair.publicKey, isSigner: true, isWritable: true },
@@ -192,7 +227,7 @@ async function main() {
       { pubkey: programDataPda, isSigner: false, isWritable: false },
     ],
     data: Buffer.from([13]), // InitializeAdmin (tag 13)
-  })), [keypair], { commitment: 'confirmed' });
+  })], [keypair]);
   console.log(`Admin initialized: ${adminPda.toBase58()}`);
 
   // 2b. Optional: rotate the oracle authority to a separate, lower-privilege
@@ -204,7 +239,7 @@ async function main() {
       new Uint8Array(JSON.parse(fs.readFileSync(keeperKeyPath, 'utf8')))
     ).publicKey;
     console.log(`Rotating oracle_authority to keeper key ${keeperPubkey.toBase58()}...`);
-    await sendAndConfirmTransaction(conn, new Transaction().add(new TransactionInstruction({
+    await sendTxWithRetry([new TransactionInstruction({
       programId: PROGRAM_ID,
       keys: [
         { pubkey: keypair.publicKey, isSigner: true, isWritable: true }, // writable: first-time feed creation pays rent
@@ -215,7 +250,7 @@ async function main() {
         { pubkey: keeperPubkey, isSigner: false, isWritable: false },     // new oracle authority
       ],
       data: Buffer.from([13]), // InitializeAdmin (rotation)
-    })), [keypair], { commitment: 'confirmed' });
+    })], [keypair]);
     console.log('oracle_authority rotated. Keeper may sign feeds with the keeper key only.');
   }
 
@@ -223,11 +258,11 @@ async function main() {
   const [treasuryPda] = PublicKey.findProgramAddressSync([TREASURY_SEED], PROGRAM_ID);
   const treasuryAta = await getAssociatedTokenAddress(USDC_MAINNET_MINT, treasuryPda);
   console.log('Creating treasury USDC ATA...');
-  await sendAndConfirmTransaction(conn, new Transaction().add(
+  await sendTxWithRetry([
     createAssociatedTokenAccountIdempotentInstruction(
       keypair.publicKey, treasuryAta, treasuryPda, USDC_MAINNET_MINT
     )
-  ), [keypair], { commitment: 'confirmed' });
+  ], [keypair]);
   console.log(`Treasury USDC ATA: ${treasuryAta.toBase58()}`);
 
   // 4. Publish the global SOL price feed (Jupiter first, CoinGecko fallback)
@@ -261,7 +296,7 @@ async function main() {
       Buffer.from([0]), // is_oracle_free: false — require a live oracle (63rd byte, added in F7)
     ]);
     console.log('Creating "Seeker Genesis Circle" desk...');
-    await sendAndConfirmTransaction(conn, new Transaction().add(new TransactionInstruction({
+    await sendTxWithRetry([new TransactionInstruction({
       programId: PROGRAM_ID,
       keys: [
         { pubkey: keypair.publicKey, isSigner: true, isWritable: true },
@@ -273,7 +308,7 @@ async function main() {
         { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       ],
       data,
-    })), [keypair], { commitment: 'confirmed' });
+    })], [keypair]);
     console.log(`Desk created: ${poolPda.toBase58()}`);
   }
 
@@ -285,7 +320,7 @@ async function main() {
       [Buffer.from('skr_yield_vault'), USDC_MAINNET_MINT.toBuffer()], PROGRAM_ID);
     const [yieldTokenPda] = PublicKey.findProgramAddressSync(
       [Buffer.from('skr_yield_token'), USDC_MAINNET_MINT.toBuffer()], PROGRAM_ID);
-    await sendAndConfirmTransaction(conn, new Transaction().add(new TransactionInstruction({
+    await sendTxWithRetry([new TransactionInstruction({
       programId: PROGRAM_ID,
       keys: [
         { pubkey: keypair.publicKey, isSigner: true, isWritable: true },
@@ -298,7 +333,7 @@ async function main() {
         { pubkey: adminPda, isSigner: false, isWritable: false },
       ],
       data: Buffer.from([15]),
-    })), [keypair], { commitment: 'confirmed' });
+    })], [keypair]);
     console.log(`SkrYieldVault: ${yieldVaultPda.toBase58()} (token ${yieldTokenPda.toBase58()})`);
   }
 
@@ -313,7 +348,7 @@ async function main() {
 async function setFeed(mint, priceMicroUsd, decimals, adminPda) {
   const [oraclePda] = PublicKey.findProgramAddressSync([ORACLE_SEED, mint.toBuffer()], PROGRAM_ID);
   const data = Buffer.concat([Buffer.from([12]), w64(priceMicroUsd), Buffer.from([decimals])]);
-  await sendAndConfirmTransaction(conn, new Transaction().add(new TransactionInstruction({
+  await sendTxWithRetry([new TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
       { pubkey: keypair.publicKey, isSigner: true, isWritable: true }, // writable: first-time feed creation pays rent
@@ -324,7 +359,7 @@ async function setFeed(mint, priceMicroUsd, decimals, adminPda) {
       { pubkey: adminPda, isSigner: false, isWritable: false },
     ],
     data,
-  })), [keypair], { commitment: 'confirmed' });
+  })], [keypair]);
   console.log(`Feed set: ${oraclePda.toBase58()} = ${priceMicroUsd} micro-USD (${decimals} decimals)`);
 }
 
