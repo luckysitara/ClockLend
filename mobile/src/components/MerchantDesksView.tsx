@@ -366,7 +366,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                             <Text style={[styles.deskName, { color: colors.text }]}>{pool.name}</Text>
                             {pool.isVerifiedMerchant && (
                               <View style={[styles.verifiedTag, { backgroundColor: colors.badgeBg }]}>
-                                <Text style={[styles.verifiedTagText, { color: colors.primary }]}>VERIFIED</Text>
+                                <Text style={[styles.verifiedTagText, { color: colors.primaryLabel }]}>VERIFIED</Text>
                               </View>
                             )}
                             {isMyDesk && (
@@ -409,7 +409,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                       </View>
 
                       <View style={styles.rateCol}>
-                        <Text style={[styles.rateValue, { color: colors.primary }]}>
+                        <Text style={[styles.rateValue, { color: colors.primaryLabel }]}>
                           {(pool.interestRateBps / 100).toFixed(1)}%
                         </Text>
                         <Text style={[styles.rateLabel, { color: colors.textMuted }]}>Fixed APR</Text>
@@ -431,7 +431,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                     </View>
                     <View style={styles.metric}>
                       <Text style={[styles.mLabel, { color: colors.textMuted }]}>Repayment Rate</Text>
-                      <Text style={[styles.mValue, { color: colors.primary }]}>{pool.successRate === null ? '—' : `${pool.successRate}%`}</Text>
+                      <Text style={[styles.mValue, { color: colors.primaryLabel }]}>{pool.successRate === null ? '—' : `${pool.successRate}%`}</Text>
                     </View>
                   </View>
 
@@ -506,7 +506,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                     style={[
                       styles.pawnFilterChipText,
                       { color: colors.textSecondary },
-                      pawnFilter === f.id && { color: colors.primary, fontWeight: '800' },
+                      pawnFilter === f.id && { color: colors.primaryLabel, fontWeight: '800' },
                     ]}
                   >
                     {f.label}
@@ -638,10 +638,10 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                   OfferStatus,
                   { label: string; fg: string; bg: string }
                 > = {
-                  Open: { label: 'OPEN', fg: colors.primary, bg: colors.badgeBg },
+                  Open: { label: 'OPEN', fg: colors.primaryLabel, bg: colors.badgeBg },
                   Funded: { label: 'FUNDED', fg: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)' },
                   InGracePeriod: { label: 'GRACE PERIOD', fg: colors.warning, bg: 'rgba(245, 158, 11, 0.15)' },
-                  Repaid: { label: 'COMPLETED', fg: '#22c55e', bg: 'rgba(34, 197, 94, 0.15)' },
+                  Repaid: { label: 'COMPLETED', fg: colors.success, bg: colors.isDark ? 'rgba(74, 222, 128, 0.15)' : 'rgba(21, 128, 61, 0.15)' },
                   Defaulted: { label: 'DEFAULTED', fg: colors.danger, bg: 'rgba(239, 68, 68, 0.15)' },
                 };
                 const sv = statusView[offer.status] ?? statusView.Open;
@@ -652,7 +652,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                     style={[
                       styles.pawnCard,
                       { backgroundColor: colors.card, borderColor: colors.cardBorder },
-                      isRepaid && { borderColor: 'rgba(34, 197, 94, 0.3)' },
+                      isRepaid && { borderColor: colors.isDark ? 'rgba(74, 222, 128, 0.3)' : 'rgba(21, 128, 61, 0.3)' },
                     ]}
                   >
                     <View style={styles.pawnHeader}>
@@ -661,7 +661,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                           <Text style={[styles.pawnTitle, { color: colors.text }]}>{offer.collateralName}</Text>
                           {isCreator && (
                             <View style={[styles.ownerTag, { backgroundColor: colors.badgeBg }]}>
-                              <Text style={[styles.ownerTagText, { color: colors.primary }]}>YOUR PAWN</Text>
+                              <Text style={[styles.ownerTagText, { color: colors.primaryLabel }]}>YOUR PAWN</Text>
                             </View>
                           )}
                           {isFunder && (
@@ -686,7 +686,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                       </View>
                       <View style={styles.metric}>
                         <Text style={[styles.mLabel, { color: colors.textMuted }]}>Lender Yield</Text>
-                        <Text style={[styles.mValue, { color: colors.primary }]}>+${offer.interestOffered}</Text>
+                        <Text style={[styles.mValue, { color: colors.primaryLabel }]}>+${offer.interestOffered}</Text>
                       </View>
                       <View style={styles.metric}>
                         <Text style={[styles.mLabel, { color: colors.textMuted }]}>Duration</Text>
@@ -698,7 +698,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                       <View style={[styles.escrowRow, { borderColor: colors.cardBorder }]}>
                         <View style={styles.escrowInfo}>
                           <Text style={[styles.escrowLabel, { color: colors.textMuted }]}>Escrow:</Text>
-                          <Text style={[styles.escrowValue, { color: colors.primary }]}>
+                          <Text style={[styles.escrowValue, { color: colors.primaryLabel }]}>
                             {offer.escrowAddress.slice(0, 6)}...{offer.escrowAddress.slice(-6)}
                           </Text>
                         </View>
@@ -708,7 +708,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                             style={[styles.solscanChip, { backgroundColor: colors.badgeBg }]}
                             activeOpacity={0.7}
                           >
-                            <Text style={[styles.solscanChipText, { color: colors.primary }]}>Solscan ↗</Text>
+                            <Text style={[styles.solscanChipText, { color: colors.primaryLabel }]}>Solscan ↗</Text>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -818,8 +818,8 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                         </Text>
                       </View>
                     ) : (
-                      <View style={[styles.fundedNote, { backgroundColor: 'rgba(34, 197, 94, 0.08)' }]}>
-                        <Text style={[styles.fundedNoteText, { color: '#22c55e', fontWeight: '700' }]}>
+                      <View style={[styles.fundedNote, { backgroundColor: colors.isDark ? 'rgba(74, 222, 128, 0.08)' : 'rgba(21, 128, 61, 0.08)' }]}>
+                        <Text style={[styles.fundedNoteText, { color: colors.success, fontWeight: '700' }]}>
                           ✅ Repaid — collateral unlocked and returned to the creator.
                         </Text>
                       </View>
@@ -833,8 +833,15 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
       </ScrollView>
 
       {/* CREATE NEW LENDING DESK MODAL */}
-      <Modal visible={createPoolModal} transparent animationType="slide">
+      <Modal visible={createPoolModal} transparent animationType="slide" onRequestClose={() => setCreatePoolModal(false)}>
         <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setCreatePoolModal(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss modal"
+          />
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.cardBorder, maxHeight: '88%', paddingHorizontal: 16 }]}>
             <ScrollView showsVerticalScrollIndicator={false} style={{ width: '100%' }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 16 }}>
               <Text style={styles.modalNfcIcon}>🏛️</Text>
@@ -861,7 +868,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                       style={[
                         styles.typeSelectorText,
                         { color: colors.textSecondary },
-                        deskType === 'Individual' && { color: colors.primary, fontWeight: '700' },
+                        deskType === 'Individual' && { color: colors.primaryLabel, fontWeight: '700' },
                       ]}
                     >
                       Individual Desk
@@ -883,7 +890,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                       style={[
                         styles.typeSelectorText,
                         { color: colors.textSecondary },
-                        deskType === 'Circle' && { color: colors.primary, fontWeight: '700' },
+                        deskType === 'Circle' && { color: colors.primaryLabel, fontWeight: '700' },
                       ]}
                     >
                       Circle Pool
@@ -918,7 +925,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                         style={[
                           styles.quickChipText,
                           { color: colors.textSecondary },
-                          deskName === preset && { color: colors.primary, fontWeight: '700' },
+                          deskName === preset && { color: colors.primaryLabel, fontWeight: '700' },
                         ]}
                       >
                         {preset}
@@ -953,7 +960,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                           style={[
                             styles.quickChipText,
                             { color: colors.textSecondary },
-                            deskApr === apr && { color: colors.primary, fontWeight: '700' },
+                            deskApr === apr && { color: colors.primaryLabel, fontWeight: '700' },
                           ]}
                         >
                           {apr}%
@@ -986,7 +993,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                           style={[
                             styles.quickChipText,
                             { color: colors.textSecondary },
-                            deskLtv === ltv && { color: colors.primary, fontWeight: '700' },
+                            deskLtv === ltv && { color: colors.primaryLabel, fontWeight: '700' },
                           ]}
                         >
                           {ltv}%
@@ -1043,7 +1050,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                         style={[
                           styles.quickChipText,
                           { color: colors.textSecondary },
-                          deskLiquidity === liq && { color: colors.primary, fontWeight: '700' },
+                          deskLiquidity === liq && { color: colors.primaryLabel, fontWeight: '700' },
                         ]}
                       >
                         ${liq}
@@ -1079,8 +1086,15 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
       </Modal>
 
       {/* CREATE NEW PAWN MODAL */}
-      <Modal visible={pawnModal} transparent animationType="slide">
+      <Modal visible={pawnModal} transparent animationType="slide" onRequestClose={() => setPawnModal(false)}>
         <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setPawnModal(false)}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss modal"
+          />
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>List Asset for Peer Pawn</Text>
             <Text style={[styles.modalDesc, { color: colors.textSecondary }]}>
@@ -1126,7 +1140,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                       style={[
                         styles.quickChipText,
                         { color: colors.textSecondary },
-                        assetName === preset && { color: colors.primary, fontWeight: '700' },
+                        assetName === preset && { color: colors.primaryLabel, fontWeight: '700' },
                       ]}
                     >
                       {preset}
@@ -1174,7 +1188,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                       style={[
                         styles.quickChipText,
                         { color: colors.textSecondary },
-                        duration === d && { color: colors.primary, fontWeight: '700' },
+                        duration === d && { color: colors.primaryLabel, fontWeight: '700' },
                       ]}
                     >
                       {d} Days

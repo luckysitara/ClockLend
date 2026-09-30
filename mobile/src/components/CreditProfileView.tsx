@@ -117,7 +117,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
             <View style={styles.handleRow}>
               <Text style={[styles.passportHandle, { color: colors.text }]}>{skrHandle}</Text>
               <View style={[styles.hardwareTag, { backgroundColor: colors.badgeBg }]}>
-                <Text style={[styles.hardwareTagText, { color: colors.primary }]}>SEED VAULT</Text>
+                <Text style={[styles.hardwareTagText, { color: colors.primaryLabel }]}>SEED VAULT</Text>
               </View>
             </View>
             <Text style={[styles.walletSub, { color: colors.textMuted }]}>
@@ -142,7 +142,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         <View style={styles.sectionLabelRow}>
           <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>CREDIT</Text>
           <View style={[styles.tierTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
-            <Text style={[styles.tierTagText, { color: colors.primary }]}>
+            <Text style={[styles.tierTagText, { color: colors.primaryLabel }]}>
               {tierDiscountLabel(userProfile.tier)}
             </Text>
           </View>
@@ -152,7 +152,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
           <Text style={[styles.tierProgressTitle, { color: colors.textSecondary }]}>
             SKR Bond Tier Progression
           </Text>
-          <Text style={[styles.tierProgressNext, { color: colors.primary }]}>
+          <Text style={[styles.tierProgressNext, { color: colors.primaryLabel }]}>
             {userProfile.tier === 'Tier 2'
               ? 'Tier 2 — 50% APR discount active'
               : userProfile.tier === 'Tier 1'
@@ -198,7 +198,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         <View style={styles.sectionLabelRow}>
           <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>STAKING & EARNINGS</Text>
           <View style={[styles.trackPill, { backgroundColor: colors.badgeBg }]}>
-            <Text style={[styles.trackPillText, { color: colors.primary }]}>$10,000 SKR Track</Text>
+            <Text style={[styles.trackPillText, { color: colors.primaryLabel }]}>$10,000 SKR Track</Text>
           </View>
         </View>
         <Text style={[styles.sectionDesc, { color: colors.textSecondary }]}>
@@ -228,7 +228,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
               }}
               activeOpacity={0.7}
             >
-              <Text style={[styles.stakePresetText, { color: colors.primary }]}>+{amt} SKR</Text>
+              <Text style={[styles.stakePresetText, { color: colors.primaryLabel }]}>+{amt} SKR</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -316,7 +316,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
             Wallet Holdings (Solana Mainnet)
           </Text>
           {walletAssets && (
-            <Text style={[styles.totalUsdText, { color: colors.primary }]}>
+            <Text style={[styles.totalUsdText, { color: colors.primaryLabel }]}>
               ${walletAssets.totalUsdValue.toFixed(2)}
             </Text>
           )}
@@ -350,7 +350,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
               <View style={styles.rowIcon}>
                 <Ionicons name="wallet-outline" size={17} color={colors.primary} />
               </View>
-              <Text style={[styles.rowLink, { color: colors.primary, flex: 1 }]}>
+              <Text style={[styles.rowLink, { color: colors.primaryLabel, flex: 1 }]}>
                 View & Manage Wallet Assets
               </Text>
               <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
@@ -366,7 +366,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         <View style={styles.sectionLabelRow}>
           <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>SECURITY</Text>
           <View style={[styles.methodsBadge, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
-            <Text style={[styles.methodsBadgeText, { color: colors.primary }]}>
+            <Text style={[styles.methodsBadgeText, { color: colors.primaryLabel }]}>
               {lockEnabled
                 ? hasBioHardware && bioEnabled
                   ? 'PIN + Biometrics (2/2 Active)'
@@ -459,7 +459,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
               <View style={styles.rowIcon}>
                 <Ionicons name="lock-closed" size={15} color={colors.primary} />
               </View>
-              <Text style={[styles.rowLink, { color: colors.primary, flex: 1 }]}>Lock Now</Text>
+              <Text style={[styles.rowLink, { color: colors.primaryLabel, flex: 1 }]}>Lock Now</Text>
             </TouchableOpacity>
           </>
         )}
@@ -544,7 +544,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
           <View style={styles.rowIcon}>
             <Ionicons name="open-outline" size={16} color={colors.primary} />
           </View>
-          <Text style={[styles.rowLink, { color: colors.primary, flex: 1 }]}>
+          <Text style={[styles.rowLink, { color: colors.primaryLabel, flex: 1 }]}>
             View Protocol on Solana Explorer ↗
           </Text>
         </TouchableOpacity>

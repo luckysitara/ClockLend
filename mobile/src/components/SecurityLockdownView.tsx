@@ -6,16 +6,14 @@ import { terminateApplication, DeviceIntegrityResult } from '../services/securit
 
 interface SecurityLockdownViewProps {
   integrity: DeviceIntegrityResult;
+  onRetry?: () => void;
 }
 
-export const SecurityLockdownView: React.FC<SecurityLockdownViewProps> = ({ integrity }) => {
+export const SecurityLockdownView: React.FC<SecurityLockdownViewProps> = ({ integrity, onRetry }) => {
   const { colors, mode } = useTheme();
 
-  // The theme has `danger` but no success/green token, so the PASS pill is the
-  // one colour on this screen that cannot come from the theme. These two values
-  // are the green-400/green-700 pair: >= 7:1 on the dark card and >= 5:1 on the
-  // light one, so neither theme gets a green that disappears into the surface.
-  const passColor = colors.isDark ? '#4ADE80' : '#15803D';
+  // Route passColor directly through the theme's success token.
+  const passColor = colors.success;
   // Translucent danger wash behind the shield, tinted from `colors.danger`.
   const dangerTint = colors.isDark ? 'rgba(248, 113, 113, 0.16)' : 'rgba(220, 38, 38, 0.10)';
   // Solid fills carry `primaryText`, which must stay readable on the fill, so
@@ -122,11 +120,27 @@ export const SecurityLockdownView: React.FC<SecurityLockdownViewProps> = ({ inte
           </Text>
         </View>
 
+        {/* Actions */}
+        {onRetry && (
+          <TouchableOpacity
+            style={[styles.retryButton, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
+            activeOpacity={0.8}
+            onPress={onRetry}
+            accessibilityRole="button"
+            accessibilityLabel="Re-check environment"
+          >
+            <Ionicons name="refresh-outline" size={18} color={colors.text} style={{ marginRight: 8 }} />
+            <Text style={[styles.retryButtonText, { color: colors.text }]}>Re-check Hardware Environment</Text>
+          </TouchableOpacity>
+        )}
+
         {/* Exit Button */}
         <TouchableOpacity
           style={[styles.exitButton, { backgroundColor: dangerFill }]}
           activeOpacity={0.8}
           onPress={() => terminateApplication()}
+          accessibilityRole="button"
+          accessibilityLabel="Terminate application"
         >
           <Ionicons name="power-outline" size={20} color={colors.primaryText} style={{ marginRight: 8 }} />
           <Text style={[styles.exitButtonText, { color: colors.primaryText }]}>Terminate Application</Text>
@@ -224,6 +238,20 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     lineHeight: 18,
+  },
+  retryButton: {
+    width: '100%',
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   exitButton: {
     width: '100%',

@@ -31,6 +31,13 @@ export const JudgeBriefingModal: React.FC<JudgeBriefingModalProps> = ({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss judge briefing"
+        />
         <View style={[styles.container, { backgroundColor: colors.background, borderColor: colors.cardBorder }]}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.cardBorder }]}>
@@ -186,19 +193,19 @@ export const JudgeBriefingModal: React.FC<JudgeBriefingModalProps> = ({
                 <Text style={styles.pillarIcon}>🎬</Text>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.pillarTitle, { color: colors.text }]}>Presentation & Demo Verifiability</Text>
-                  <Text style={[styles.pillarTag, { color: '#22c55e' }]}>Real money, real escrow, zero mock data</Text>
+                  <Text style={[styles.pillarTag, { color: colors.success }]}>Real money, real escrow, zero mock data</Text>
                 </View>
               </View>
               <View style={styles.bulletList}>
                 <View style={styles.bulletItem}>
-                  <Text style={[styles.bulletDot, { color: '#22c55e' }]}>•</Text>
+                  <Text style={[styles.bulletDot, { color: colors.success }]}>•</Text>
                   <Text style={[styles.bulletText, { color: colors.textSecondary }]}>
                     <Text style={{ fontWeight: '800', color: colors.text }}>Zero Mock Mode: </Text>
                     Every button press invokes real Anchor/Solana instructions on Mainnet-beta.
                   </Text>
                 </View>
                 <View style={styles.bulletItem}>
-                  <Text style={[styles.bulletDot, { color: '#22c55e' }]}>•</Text>
+                  <Text style={[styles.bulletDot, { color: colors.success }]}>•</Text>
                   <Text style={[styles.bulletText, { color: colors.textSecondary }]}>
                     <Text style={{ fontWeight: '800', color: colors.text }}>Real Escrow Accounts: </Text>
                     Collateral is securely locked in program-derived vault PDAs with 100% mathematical non-custody.

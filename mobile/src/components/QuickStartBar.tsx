@@ -55,7 +55,7 @@ export const QuickStartBar: React.FC<QuickStartBarProps> = ({
             onPress={tap(() => onPresetAmount(amt))}
             activeOpacity={0.8}
           >
-            <Text style={[styles.presetChipText, { color: colors.primary }]}>Borrow ${amt}</Text>
+            <Text style={[styles.presetChipText, { color: colors.primaryLabel }]}>Borrow ${amt}</Text>
           </TouchableOpacity>
         ))}
       </View>

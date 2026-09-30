@@ -105,6 +105,13 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.overlay}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss leaderboard"
+        />
         <View style={[styles.container, { backgroundColor: colors.background, borderColor: colors.cardBorder }]}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.cardBorder }]}>
@@ -164,7 +171,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                   style={[
                     styles.filterChipText,
                     { color: colors.textSecondary },
-                    tierFilter === tier && { color: colors.primary, fontWeight: '800' },
+                    tierFilter === tier && { color: colors.primaryLabel, fontWeight: '800' },
                   ]}
                 >
                   {tier === 'ALL' ? 'All Tiers' : `${tier} Tier`}
@@ -271,7 +278,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                         <Text style={[styles.handleText, { color: colors.text }]}>{entry.skrHandle}</Text>
                         {entry.isCurrentUser && (
                           <View style={[styles.youTag, { backgroundColor: colors.badgeBg }]}>
-                            <Text style={[styles.youTagText, { color: colors.primary }]}>YOU</Text>
+                            <Text style={[styles.youTagText, { color: colors.primaryLabel }]}>YOU</Text>
                           </View>
                         )}
                         <View style={[styles.tierPill, { backgroundColor: `${tierColor}15`, borderColor: tierColor }]}>
@@ -287,7 +294,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                     </View>
 
                     <View style={styles.scoreCol}>
-                      <Text style={[styles.scoreValue, { color: colors.primary }]}>
+                      <Text style={[styles.scoreValue, { color: colors.primaryLabel }]}>
                         {(entry.reputationScore / 100).toFixed(1)}%
                       </Text>
                       <Text style={[styles.scoreLabel, { color: colors.textMuted }]}>Score</Text>

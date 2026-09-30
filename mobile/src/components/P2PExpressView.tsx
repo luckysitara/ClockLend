@@ -225,13 +225,13 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
         <View style={styles.badgeRow}>
           <View style={[styles.liveBadge, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
             <View style={[styles.liveDot, { backgroundColor: colors.primary }]} />
-            <Text style={[styles.liveBadgeText, { color: colors.primary }]}>BEST AVAILABLE ROUTE</Text>
+            <Text style={[styles.liveBadgeText, { color: colors.primaryLabel }]}>BEST AVAILABLE ROUTE</Text>
           </View>
         </View>
 
         <Text style={[styles.heroSub, { color: colors.textSecondary }]}>P2P EXPRESS BORROW</Text>
         <View style={styles.amountRow}>
-          <Text style={[styles.currencyPrefix, { color: colors.primary }]}>$</Text>
+          <Text style={[styles.currencyPrefix, { color: colors.primaryLabel }]}>$</Text>
           <TextInput
             style={[styles.heroInput, { color: colors.text }]}
             value={amountStr}
@@ -287,7 +287,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
               }}
               activeOpacity={0.7}
             >
-              <Text style={[styles.maxBadgeText, { color: colors.primary }]}>BORROW MAX</Text>
+              <Text style={[styles.maxBadgeText, { color: colors.primaryLabel }]}>BORROW MAX</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -325,7 +325,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
                 style={[
                   styles.collateralLabel,
                   { color: colors.text },
-                  collateralType === item.id && { color: colors.primary, fontWeight: '800' },
+                  collateralType === item.id && { color: colors.primaryLabel, fontWeight: '800' },
                 ]}
               >
                 {item.label}
@@ -370,7 +370,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
         {/* Collateral Yield Bonus Banner */}
         <View style={{ marginTop: 6, marginBottom: 8, paddingHorizontal: 4 }}>
           {collateralType === 'SKR' ? (
-            <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '600' }}>
+            <Text style={{ fontSize: 11, color: colors.primaryLabel, fontWeight: '600' }}>
               🔒 Escrowed SKR earns nothing in escrow — stake SKR in your Profile to earn protocol-fee dividends.
             </Text>
           ) : (
@@ -428,7 +428,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
                 style={[
                   styles.durationText,
                   { color: colors.text },
-                  durationDays === days && { color: colors.primary, fontWeight: '800' },
+                  durationDays === days && { color: colors.primaryLabel, fontWeight: '800' },
                 ]}
               >
                 {days} Days
@@ -464,7 +464,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
             {isLoadingPools ? 'Discovering Pools...' : (bestPool?.name || 'No lending pools available')}
           </Text>
           <View style={[styles.aprPill, { backgroundColor: colors.badgeBg }]}>
-            <Text style={[styles.aprPillText, { color: colors.primary }]}>{effectiveApr.toFixed(1)}% APR</Text>
+            <Text style={[styles.aprPillText, { color: colors.primaryLabel }]}>{effectiveApr.toFixed(1)}% APR</Text>
           </View>
         </View>
 
@@ -475,7 +475,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
           </View>
           <View style={styles.metricItem}>
             <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Grace Period</Text>
-            <Text style={[styles.metricValue, { color: colors.primary }]}>+24h Social</Text>
+            <Text style={[styles.metricValue, { color: colors.primaryLabel }]}>+24h Social</Text>
           </View>
           <View style={styles.metricItem}>
             <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Desk Liquidity</Text>
@@ -517,7 +517,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
           </View>
           <View style={styles.calcRight}>
             <Text style={[styles.calcLabel, { color: colors.textSecondary }]}>You receive</Text>
-            <Text style={[styles.calcValue, { color: colors.primary, marginTop: 2 }]}>
+            <Text style={[styles.calcValue, { color: colors.primaryLabel, marginTop: 2 }]}>
               ${formatUsdcMicro(origination.netMicro)} USDC
             </Text>
           </View>

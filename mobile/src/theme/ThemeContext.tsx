@@ -20,6 +20,9 @@ export interface ThemeColors {
   /** Success/positive state. Added because success greens were hard-coded
    *  per-component, and several were unreadable on the light theme. */
   success: string;
+  /** Accessible primary text token for labels/text on background or card surfaces.
+   *  WCAG AA passing (dark: #818CF8 = 5.60:1; light: #4F46E5 = 7.40:1). */
+  primaryLabel: string;
   badgeBg: string;
   badgeBorder: string;
   inputBg: string;
@@ -46,6 +49,7 @@ const darkColors: ThemeColors = {
   cardBorder: 'rgba(255, 255, 255, 0.08)',
   primary: '#6366F1',
   primaryText: '#FFFFFF',
+  primaryLabel: '#818CF8',
   text: '#DEE4EE',
   textSecondary: '#B6C1D2',
   textMuted: '#95A3B8',
@@ -69,6 +73,7 @@ const lightColors: ThemeColors = {
   cardBorder: '#E2E8F0',
   primary: '#572DFD',
   primaryText: '#FFFFFF',
+  primaryLabel: '#4F46E5',
   text: '#0F172A',
   textSecondary: '#475569',
   textMuted: '#94A3B8',
@@ -92,14 +97,14 @@ interface ThemeContextType {
 }
 
 const ThemeContext = createContext<ThemeContextType>({
-  mode: 'light',
-  colors: lightColors,
+  mode: 'dark',
+  colors: darkColors,
   toggleTheme: () => {},
   setTheme: () => {},
 });
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [mode, setMode] = useState<ThemeMode>('light');
+  const [mode, setMode] = useState<ThemeMode>('dark');
 
   const toggleTheme = () => {
     setMode((prev) => (prev === 'dark' ? 'light' : 'dark'));

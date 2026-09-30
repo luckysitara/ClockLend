@@ -93,9 +93,27 @@ export const TransactionNoticeModal: React.FC<TransactionNoticeModalProps> = ({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss notice"
+        />
         <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-          {/* Top Handle Bar */}
-          <View style={styles.handleBar} />
+          {/* Top Close Button & Handle Bar */}
+          <View style={styles.headerRow}>
+            <View style={styles.handleBar} />
+            <TouchableOpacity
+              style={[styles.closeBtn, { backgroundColor: colors.cardAlt }]}
+              onPress={onClose}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="Close modal"
+            >
+              <Text style={[styles.closeBtnText, { color: colors.textSecondary }]}>✕</Text>
+            </TouchableOpacity>
+          </View>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
             {/* Animated Icon Box */}
@@ -117,7 +135,7 @@ export const TransactionNoticeModal: React.FC<TransactionNoticeModalProps> = ({
                     <Text style={[styles.statLabel, { color: colors.textMuted }]}>
                       {data.type === 'repay' ? 'Repaid Principal & Fee' : 'Disbursed USDC'}
                     </Text>
-                    <Text style={[styles.statValue, { color: colors.primary }]}>{data.amount}</Text>
+                    <Text style={[styles.statValue, { color: colors.primaryLabel }]}>{data.amount}</Text>
                   </View>
                 )}
                 {data.collateral && (
@@ -142,11 +160,11 @@ export const TransactionNoticeModal: React.FC<TransactionNoticeModalProps> = ({
               <View style={[styles.evidenceBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
                 <View style={styles.evidenceHeader}>
                   <View style={styles.evidenceDotRow}>
-                    <View style={[styles.dotLive, { backgroundColor: colors.primary }]} />
+                    <View style={[styles.dotLive, { backgroundColor: colors.success }]} />
                     <Text style={[styles.evidenceHeaderText, { color: colors.text }]}>ON-CHAIN VERIFICATION</Text>
                   </View>
                   <View style={[styles.networkBadge, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
-                    <Text style={[styles.networkBadgeText, { color: colors.primary }]}>Solana Mainnet</Text>
+                    <Text style={[styles.networkBadgeText, { color: colors.primaryLabel }]}>Solana Mainnet</Text>
                   </View>
                 </View>
 
@@ -243,13 +261,33 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 20,
   },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    marginBottom: 12,
+  },
+  closeBtn: {
+    position: 'absolute',
+    right: 0,
+    top: -4,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
   handleBar: {
     width: 36,
     height: 4,
     borderRadius: 2,
     backgroundColor: 'rgba(150, 150, 150, 0.4)',
     alignSelf: 'center',
-    marginBottom: 16,
   },
   scrollContent: {
     alignItems: 'center',

@@ -1303,7 +1303,12 @@ function MainApp() {
 
   // 0. Hardware & Environment Integrity Lockdown (Anti-Emulator, Anti-Root, Anti-Frida)
   if (integrity && !integrity.isSecure) {
-    return <SecurityLockdownView integrity={integrity} />;
+    return (
+      <SecurityLockdownView
+        integrity={integrity}
+        onRetry={() => checkDeviceIntegrity().then((res) => setIntegrity(res))}
+      />
+    );
   }
 
   // 1. Splash Screen

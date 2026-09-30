@@ -116,6 +116,13 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss wallet assets"
+        />
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           {/* Top Header */}
           <View style={styles.topRow}>
@@ -147,7 +154,7 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
               onPress={() => Alert.alert('Connected Address', base58)}
               activeOpacity={0.7}
             >
-              <Text style={[styles.copyBtnText, { color: colors.primary }]}>Copy</Text>
+              <Text style={[styles.copyBtnText, { color: colors.primaryLabel }]}>Copy</Text>
             </TouchableOpacity>
             {onSwitchAddress && (
               <TouchableOpacity
@@ -155,7 +162,7 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
                 onPress={() => setShowSwitchInput(!showSwitchInput)}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.switchAddrBtnText, { color: colors.primary }]}>
+                <Text style={[styles.switchAddrBtnText, { color: colors.primaryLabel }]}>
                   {showSwitchInput ? 'Hide' : 'Switch'}
                 </Text>
               </TouchableOpacity>
@@ -223,7 +230,7 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
                 </Text>
               </View>
               <View style={[styles.identityTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
-                <Text style={[styles.identityTagText, { color: colors.primary }]}>@{skrHandle}</Text>
+                <Text style={[styles.identityTagText, { color: colors.primaryLabel }]}>@{skrHandle}</Text>
               </View>
             </View>
 
@@ -348,7 +355,7 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
               </View>
               <View style={styles.assetRight}>
                 <View style={[styles.verifiedPill, { backgroundColor: colors.badgeBg }]}>
-                  <Text style={[styles.verifiedPillText, { color: colors.primary }]}>
+                  <Text style={[styles.verifiedPillText, { color: colors.primaryLabel }]}>
                     {assets.hasSeekerGenesisToken ? 'VERIFIED' : 'NOT DETECTED'}
                   </Text>
                 </View>

@@ -407,7 +407,7 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
         <View style={styles.brandRow}>
           <Image source={LOGO_IMG} style={styles.miniLogo} resizeMode="contain" />
           <Text style={[styles.brandText, { color: colors.text }]}>ClockLend</Text>
-          <View style={styles.mainnetDot} />
+          <View style={[styles.mainnetDot, { backgroundColor: colors.success }]} />
         </View>
 
         <TouchableOpacity

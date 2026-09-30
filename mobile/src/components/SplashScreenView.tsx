@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import {
   View,
+  Pressable,
   StyleSheet,
   Image,
   Animated,
@@ -19,6 +20,13 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
   const { colors } = useTheme();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.88)).current;
+  const hasFinishedRef = useRef(false);
+
+  const finishEarly = () => {
+    if (hasFinishedRef.current) return;
+    hasFinishedRef.current = true;
+    onFinish();
+  };
 
   useEffect(() => {
     // 1. Smooth elegant entrance
@@ -43,7 +51,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
         duration: 350,
         useNativeDriver: true,
       }).start(() => {
-        onFinish();
+        finishEarly();
       });
     }, 1500);
 
@@ -51,7 +59,12 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
   }, []);
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <Pressable
+      style={[styles.container, { backgroundColor: colors.background }]}
+      onPress={finishEarly}
+      accessibilityRole="button"
+      accessibilityLabel="Skip splash screen"
+    >
       <Animated.View
         style={[
           styles.logoWrapper,
@@ -63,7 +76,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
       >
         <Image source={LOGO_IMG} style={styles.logo} resizeMode="contain" />
       </Animated.View>
-    </View>
+    </Pressable>
   );
 };
 
