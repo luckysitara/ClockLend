@@ -45,9 +45,18 @@ pub enum AccountKind {
 
 impl AccountKind {
     pub fn from_slice(src: &[u8]) -> Self {
-        if src.len() == 182 && src[0] == 1 {
-            return AccountKind::LendingPool;
-        }
+        // Classification is by 8-byte discriminator ONLY.
+        //
+        // This previously short-circuited to LendingPool for any 182-byte slice
+        // whose first byte was 1 — an owner-blind heuristic for devnet-v1 legacy
+        // pools. `from_slice` has no owner information and is fed by
+        // `get_account_kind` into optional-account scans, so that branch made
+        // "is this a pool?" answerable by byte length alone. No program-owned
+        // 182-byte account exists (the layouts are 200/170/202/67/98/73/121), and
+        // the discriminators below are unambiguous, so the branch was dead weight
+        // carrying real type-confusion risk. Legacy 182-byte pools remain
+        // readable through `LendingPool::unpack_from_slice`, which is only ever
+        // reached on the positional pool slot after an owner check.
         if src.len() < 8 {
             return AccountKind::Unknown;
         }

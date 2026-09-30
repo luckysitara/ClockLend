@@ -346,3 +346,82 @@ fn test_yield_vault_instruction_serialization() {
     let s3 = borsh::to_vec(&claim_ix).unwrap();
     assert_eq!(ClockLendInstruction::try_from_slice(&s3).unwrap(), claim_ix);
 }
+
+/// Round-14: `AccountKind::from_slice` used to short-circuit to `LendingPool`
+/// for ANY 182-byte slice whose first byte was 1 — an owner-blind
+/// devnet-v1-length heuristic, consulted by optional-account scans, that made
+/// "is this a pool?" answerable by byte length alone. Classification is now by
+/// 8-byte discriminator only, so a same-length lookalike cannot masquerade as
+/// a pool.
+#[test]
+fn test_account_kind_is_discriminator_only_not_length() {
+    use clock_lend::state::AccountKind;
+
+    // The exact shape the removed branch matched: 182 bytes, first byte 1,
+    // no discriminator anywhere. It must NOT classify as a LendingPool.
+    let mut legacy_shaped = vec![0u8; 182];
+    legacy_shaped[0] = 1;
+    assert_eq!(
+        AccountKind::from_slice(&legacy_shaped),
+        AccountKind::Unknown,
+        "182 bytes with a leading 1 must no longer classify as LendingPool"
+    );
+
+    // Same 182 bytes, but carrying a real discriminator: the rule is the
+    // discriminator, not the length.
+    let mut pool_shaped = vec![0u8; 182];
+    pool_shaped[0..8].copy_from_slice(b"CLK_POOL");
+    assert_eq!(AccountKind::from_slice(&pool_shaped), AccountKind::LendingPool);
+
+    // A current-layout pool account (200 bytes) still classifies as a pool.
+    let pool = LendingPool {
+        discriminator: LendingPool::DISCRIMINATOR,
+        is_initialized: true,
+        pool_id: 1,
+        pool_type: PoolType::Circle,
+        authority: Pubkey::new_unique(),
+        liquidity_mint: Pubkey::new_unique(),
+        vault_pda: Pubkey::new_unique(),
+        total_liquidity: 5_000_000_000,
+        total_borrowed: 0,
+        staked_skr_amount: 0,
+        interest_rate_bps: 400,
+        max_ltv_bps: 7000,
+        min_duration: 86400 * 3,
+        max_duration: 86400 * 30,
+        loans_originated: 0,
+        loans_repaid: 0,
+        name: [0u8; 32],
+        is_oracle_free: false,
+        has_custom_oracle: false,
+    };
+    let mut buf = vec![0u8; LendingPool::LEN];
+    pool.pack_into_slice(&mut buf).expect("Pack failed");
+    assert_eq!(AccountKind::from_slice(&buf), AccountKind::LendingPool);
+
+    // Shorter than a discriminator is always Unknown — including a truncated
+    // prefix of a valid discriminator.
+    assert_eq!(AccountKind::from_slice(&[]), AccountKind::Unknown);
+    assert_eq!(AccountKind::from_slice(&b"CLK_POO"[..]), AccountKind::Unknown);
+
+    // Every discriminator maps to its own kind (no collisions).
+    let cases: [(&[u8; 8], AccountKind); 8] = [
+        (b"CLK_POOL", AccountKind::LendingPool),
+        (b"CLK_LOAN", AccountKind::LoanOrder),
+        (b"CLK_PAWN", AccountKind::P2POffer),
+        (b"CLK_PROF", AccountKind::UserProfile),
+        (b"CLK_FEED", AccountKind::PriceFeed),
+        (b"CLK_ADMN", AccountKind::AdminConfig),
+        (b"CLK_SYLD", AccountKind::SkrYieldVault),
+        (b"CLK_UYLD", AccountKind::UserYieldPosition),
+    ];
+    for (bytes, kind) in cases {
+        assert_eq!(
+            AccountKind::from_slice(bytes),
+            kind,
+            "discriminator {:?} must classify as {:?}",
+            core::str::from_utf8(bytes).unwrap(),
+            kind
+        );
+    }
+}

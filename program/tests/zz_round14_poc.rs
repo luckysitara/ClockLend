@@ -11,6 +11,13 @@
 // REG-3: on oracle-free pools the borrower can never price collateral ABOVE
 //        the hardcoded baseline: a live feed is taken at min(baseline, live).
 //
+// REG-4: CreateP2POffer is capped by the same MAX_LTV_BPS (7000) as the pool
+//        path — 70% is accepted, 75% reverts InvalidCollateralRatio.
+//
+// REG-5: the permissionless borrow path PARKS its half-fee yield (credits
+//        unallocated/pending without moving acc_reward_per_share); only the
+//        authority-gated DepositSkrYield folds the backlog into share value.
+//
 // Run: cargo test --test zz_round14_poc -- --nocapture
 use clock_lend::{
     instruction::ClockLendInstruction,
@@ -18,7 +25,7 @@ use clock_lend::{
     state::{
         LendingPool, PoolType, ESCROW_SEED, LOAN_SEED, POOL_SEED, PROFILE_SEED,
         SKR_YIELD_TOKEN_SEED, SKR_YIELD_VAULT_SEED, TREASURY_SEED, USDC_DEVNET_MINT,
-        USDC_MAINNET_MINT, VAULT_SEED,
+        USDC_MAINNET_MINT, USER_YIELD_SEED, VAULT_SEED,
     },
 };
 use solana_program::{
@@ -36,6 +43,10 @@ use solana_sdk::{
 
 const USDC: u64 = 1_000_000;
 const SYS: Pubkey = solana_program::system_program::ID;
+
+/// Scale of SkrYieldVault::acc_reward_per_share (mirrors YIELD_SCALE in
+/// processor.rs, which is private to the program crate).
+const YIELD_SCALE: u128 = 1_000_000_000_000;
 
 fn tok(mint: Pubkey, owner: Pubkey, amount: u64) -> Vec<u8> {
     let mut a = spl_token::state::Account::unpack_unchecked(&[0u8; 165]).unwrap();
@@ -81,6 +92,74 @@ async fn token_amount(bc: &mut BanksClient, pk: Pubkey) -> u64 {
         }
         _ => 0,
     }
+}
+
+/// Mirror of bank_integration.rs's helper: asserts the transaction failed with
+/// the given ClockLendError code.
+fn expect_custom_error(res: &Result<(), BanksClientError>, code: u32, ctx: &str) {
+    let err = match res.as_ref().err() {
+        Some(e) => format!("{e:?}"),
+        None => panic!("{ctx}: expected failure, but the transaction SUCCEEDED"),
+    };
+    if !err.contains(&format!("Custom({code})")) {
+        panic!("{ctx}: expected Custom({code}), got {err}");
+    }
+}
+
+/// Genesis-pack a pre-initialized SKR yield vault (the skr_yield_and_lst_tests
+/// convention: the vault and its stakers already exist when the money path
+/// under test runs).
+fn yield_vault_data(
+    authority: Pubkey,
+    reward_mint: Pubkey,
+    total_staked_skr: u64,
+    acc_reward_per_share: u128,
+    total_rewards_distributed: u64,
+    pending_rewards: u64,
+    unallocated_rewards: u64,
+) -> Vec<u8> {
+    use clock_lend::state::{SkrYieldVault, DISCRIMINATOR_SKR_YIELD};
+    let vault = SkrYieldVault {
+        discriminator: DISCRIMINATOR_SKR_YIELD,
+        is_initialized: true,
+        authority,
+        reward_mint,
+        total_staked_skr,
+        acc_reward_per_share,
+        total_rewards_distributed,
+        pending_rewards,
+        unallocated_rewards,
+    };
+    let mut b = vec![0u8; SkrYieldVault::LEN];
+    vault.pack_into_slice(&mut b).unwrap();
+    b
+}
+
+/// Genesis-pack a pre-synced user yield position (stake already counted in
+/// vault.total_staked_skr).
+fn yield_position_data(user: Pubkey, reward_mint: Pubkey, staked_skr: u64) -> Vec<u8> {
+    use clock_lend::state::{UserYieldPosition, DISCRIMINATOR_USER_YIELD};
+    let pos = UserYieldPosition {
+        discriminator: DISCRIMINATOR_USER_YIELD,
+        is_initialized: true,
+        user,
+        reward_mint,
+        staked_skr,
+        reward_debt: 0,
+        accrued_rewards: 0,
+        total_claimed: 0,
+        last_interaction_time: 0,
+    };
+    let mut b = vec![0u8; UserYieldPosition::LEN];
+    pos.pack_into_slice(&mut b).unwrap();
+    b
+}
+
+async fn read_yield_vault(bc: &mut BanksClient, pda: Pubkey) -> clock_lend::state::SkrYieldVault {
+    clock_lend::state::SkrYieldVault::unpack_from_slice(
+        &bc.get_account(pda).await.unwrap().unwrap().data,
+    )
+    .unwrap()
 }
 
 // ---------------------------------------------------------------------------
@@ -803,7 +882,11 @@ async fn regression_p2p_offer_defaults_to_mainnet_usdc() {
         ],
         data: borsh::to_vec(&ClockLendInstruction::CreateP2POffer {
             offer_id: 1,
-            requested_amount: 15 * USDC,
+            // $14 against $20 of collateral = 70% LTV. This was $15 (75%) before
+            // P2P was brought under the shared MAX_LTV_BPS cap; the assertions in
+            // this test concern the liquidity_mint default, not the LTV, so
+            // lowering the amount preserves its intent.
+            requested_amount: 14 * USDC,
             collateral_amount: 1_000 * USDC, // 1000 SKR = $20 at the feed price
             interest_offered: 1 * USDC,
             duration_seconds: 86_400 * 3,
@@ -843,4 +926,506 @@ async fn regression_p2p_offer_defaults_to_mainnet_usdc() {
     println!("REG-2 fund with mainnet USDC -> {r:?}");
     assert!(r.is_ok(), "the mainnet-defaulted offer must be fundable with mainnet USDC");
     println!("REG-2 PASS: no-mint P2P offers bind to mainnet USDC and can be funded.");
+}
+
+// ---------------------------------------------------------------------------
+// REG-4: CreateP2POffer is capped by the SAME MAX_LTV_BPS (7000) as the pool
+//        path. At the $0.02 SKR feed a 1000-SKR ($20) collateral offer may
+//        request at most 14 USDC; 15 USDC (75%) must revert.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn regression_p2p_offer_is_capped_at_shared_max_ltv() {
+    let pid = clock_lend::id();
+    let creator = Keypair::new();
+    let skr_mint_acc = clock_lend::state::SKR_MINT;
+    let (offer_75, _) = Pubkey::find_program_address(
+        &[clock_lend::state::P2P_SEED, creator.pubkey().as_ref(), &1u64.to_le_bytes()],
+        &pid,
+    );
+    let (escrow_75, _) = Pubkey::find_program_address(&[ESCROW_SEED, offer_75.as_ref()], &pid);
+    let (offer_70, _) = Pubkey::find_program_address(
+        &[clock_lend::state::P2P_SEED, creator.pubkey().as_ref(), &2u64.to_le_bytes()],
+        &pid,
+    );
+    let (escrow_70, _) = Pubkey::find_program_address(&[ESCROW_SEED, offer_70.as_ref()], &pid);
+    let (oracle, _) =
+        Pubkey::find_program_address(&[clock_lend::state::ORACLE_SEED, skr_mint_acc.as_ref()], &pid);
+
+    // Admin feed: 1000 SKR = 1_000 * USDC base units at $0.02 => $20 of
+    // collateral value, so 14 USDC is exactly 70% and 15 USDC is 75%.
+    let mut feed = vec![0u8; clock_lend::state::PriceFeed::LEN];
+    feed[0..8].copy_from_slice(b"CLK_FEED");
+    feed[8] = 1;
+    feed[9..41].copy_from_slice(skr_mint_acc.as_ref());
+    feed[41..49].copy_from_slice(&20_000u64.to_le_bytes()); // $0.02
+    feed[49] = 6;
+    feed[50..58].copy_from_slice(&2_000_000_000i64.to_le_bytes()); // far-future => never stale
+    feed[58..90].copy_from_slice(creator.pubkey().as_ref());
+    feed[90..98].copy_from_slice(&3600i64.to_le_bytes());
+
+    let mut pt = ProgramTest::new("clock_lend", pid, processor!(process_instruction));
+    pt.add_account(
+        skr_mint_acc,
+        Account {
+            lamports: 100_000_000_000,
+            data: mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    pt.add_account(
+        oracle,
+        Account {
+            lamports: 100_000_000_000,
+            data: feed,
+            owner: pid,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    let creator_skr = Pubkey::new_unique();
+    pt.add_account(
+        creator_skr,
+        Account {
+            lamports: 100_000_000_000,
+            data: tok(skr_mint_acc, creator.pubkey(), 3_000 * USDC),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    let (mut bc, payer, bh) = pt.start().await;
+    send(
+        &mut bc,
+        system_instruction::transfer(&payer.pubkey(), &creator.pubkey(), 30_000_000_000),
+        &[&payer],
+        &payer,
+        bh,
+    )
+    .await
+    .unwrap();
+
+    let mk_create = |offer_id: u64, offer: Pubkey, escrow: Pubkey, requested: u64| Instruction {
+        program_id: pid,
+        accounts: vec![
+            AccountMeta::new(creator.pubkey(), true),
+            AccountMeta::new(offer, false),
+            AccountMeta::new(creator_skr, false),
+            AccountMeta::new(escrow, false),
+            AccountMeta::new_readonly(skr_mint_acc, false),
+            AccountMeta::new_readonly(spl_token::id(), false),
+            AccountMeta::new_readonly(SYS, false),
+            AccountMeta::new_readonly(oracle, false),
+        ],
+        data: borsh::to_vec(&ClockLendInstruction::CreateP2POffer {
+            offer_id,
+            requested_amount: requested,
+            collateral_amount: 1_000 * USDC, // 1000 SKR = $20 at the feed price
+            interest_offered: 1 * USDC,
+            duration_seconds: 86_400 * 3,
+        })
+        .unwrap(),
+    };
+
+    // 75% LTV: over the shared 7000-bps cap (this was allowed at the old
+    // P2P-only 9000-bps cap).
+    let bh_fail = bc.get_latest_blockhash().await.unwrap();
+    let r = send(
+        &mut bc,
+        mk_create(1, offer_75, escrow_75, 15 * USDC),
+        &[&payer, &creator],
+        &payer,
+        bh_fail,
+    )
+    .await;
+    println!("REG-4 15 USDC vs $20 collateral (75% LTV) -> {r:?}");
+    expect_custom_error(
+        &r,
+        10,
+        "15 USDC against 1000 SKR at $0.02 = 75% LTV MUST fail InvalidCollateralRatio",
+    );
+    assert!(
+        bc.get_account(offer_75).await.unwrap().is_none(),
+        "the rejected offer must not be created"
+    );
+
+    // 70% LTV: exactly at the cap, must still be accepted.
+    let bh_ok = bc.get_latest_blockhash().await.unwrap();
+    send(
+        &mut bc,
+        mk_create(2, offer_70, escrow_70, 14 * USDC),
+        &[&payer, &creator],
+        &payer,
+        bh_ok,
+    )
+    .await
+    .expect("14 USDC against 1000 SKR at $0.02 = exactly 70% LTV MUST be accepted");
+
+    let offer_state = clock_lend::state::P2POffer::unpack_from_slice(
+        &bc.get_account(offer_70).await.unwrap().unwrap().data,
+    )
+    .unwrap();
+    assert_eq!(offer_state.requested_amount, 14 * USDC, "the 70% offer must be recorded");
+    assert_eq!(offer_state.collateral_amount, 1_000 * USDC);
+    assert_eq!(
+        token_amount(&mut bc, escrow_70).await,
+        1_000 * USDC,
+        "the 70% offer's collateral must be locked in escrow"
+    );
+    println!("REG-4 PASS: P2P offers are capped at the shared 7000-bps LTV.");
+}
+
+// ---------------------------------------------------------------------------
+// REG-5: the permissionless borrow path PARKS its half of the origination fee
+//        in the yield vault instead of folding it into acc_reward_per_share.
+//        A borrower — who can create their own pool and borrow against it —
+//        must not be able to decide when the parked backlog is released to
+//        stakers; only the authority-gated DepositSkrYield may fold.
+// ---------------------------------------------------------------------------
+#[tokio::test]
+async fn regression_borrow_parks_yield_and_only_authority_deposit_folds() {
+    let pid = clock_lend::id();
+    let usdc = USDC_DEVNET_MINT;
+    let authority = Keypair::new(); // pool authority, yield-vault authority, depositor
+    let borrower = Keypair::new();
+    let staker = Keypair::new();
+
+    let (pool, _) = Pubkey::find_program_address(
+        &[POOL_SEED, authority.pubkey().as_ref(), &1u64.to_le_bytes()],
+        &pid,
+    );
+    let (vault, _) = Pubkey::find_program_address(&[VAULT_SEED, pool.as_ref()], &pid);
+    let (treasury_pda, _) = Pubkey::find_program_address(&[TREASURY_SEED], &pid);
+    // The borrow derives these from the POOL's liquidity mint, so the yield
+    // vault that the fee-split leg can reach is the USDC-denominated one.
+    let (yield_vault, _) =
+        Pubkey::find_program_address(&[SKR_YIELD_VAULT_SEED, usdc.as_ref()], &pid);
+    let (yield_token, _) =
+        Pubkey::find_program_address(&[SKR_YIELD_TOKEN_SEED, usdc.as_ref()], &pid);
+    let (staker_pos, _) = Pubkey::find_program_address(
+        &[USER_YIELD_SEED, staker.pubkey().as_ref(), usdc.as_ref()],
+        &pid,
+    );
+
+    // Pre-existing staker state: a synced 1000-unit stake with an 8 USDC parked
+    // backlog behind it. acc_reward_per_share is deliberately non-zero so
+    // "unchanged" is a meaningful assertion.
+    const TOTAL_STAKED: u64 = 1_000 * USDC;
+    const ACC_BEFORE: u128 = 5_000_000_000_000;
+    const PENDING_BEFORE: u64 = 100 * USDC;
+    const UNALLOCATED_BEFORE: u64 = 8 * USDC;
+    const DISTRIBUTED_BEFORE: u64 = 100 * USDC;
+
+    let mut pt = ProgramTest::new("clock_lend", pid, processor!(process_instruction));
+    pt.add_account(
+        usdc,
+        Account {
+            lamports: 100_000_000_000,
+            data: mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    let treasury_tok = Pubkey::new_unique();
+    pt.add_account(
+        treasury_tok,
+        Account {
+            lamports: 100_000_000_000,
+            data: tok(usdc, treasury_pda, 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    let authority_usdc = Pubkey::new_unique();
+    pt.add_account(
+        authority_usdc,
+        Account {
+            lamports: 100_000_000_000,
+            data: tok(usdc, authority.pubkey(), 2_000 * USDC),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    let borrower_usdc = Pubkey::new_unique();
+    pt.add_account(
+        borrower_usdc,
+        Account {
+            lamports: 100_000_000_000,
+            data: tok(usdc, borrower.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    // The vault's own token account, holding exactly pending_rewards (the
+    // program-internal invariant WithdrawUnusedYield relies on).
+    pt.add_account(
+        yield_token,
+        Account {
+            lamports: 100_000_000_000,
+            data: tok(usdc, yield_vault, PENDING_BEFORE),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    pt.add_account(
+        yield_vault,
+        Account {
+            lamports: 100_000_000_000,
+            data: yield_vault_data(
+                authority.pubkey(),
+                usdc,
+                TOTAL_STAKED,
+                ACC_BEFORE,
+                DISTRIBUTED_BEFORE,
+                PENDING_BEFORE,
+                UNALLOCATED_BEFORE,
+            ),
+            owner: pid,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    // The staker behind that stake.
+    pt.add_account(
+        staker_pos,
+        Account {
+            lamports: 100_000_000_000,
+            data: yield_position_data(staker.pubkey(), usdc, TOTAL_STAKED),
+            owner: pid,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    let (mut bc, payer, bh) = pt.start().await;
+    send(
+        &mut bc,
+        system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 30_000_000_000),
+        &[&payer],
+        &payer,
+        bh,
+    )
+    .await
+    .unwrap();
+    send(
+        &mut bc,
+        system_instruction::transfer(&payer.pubkey(), &borrower.pubkey(), 30_000_000_000),
+        &[&payer],
+        &payer,
+        bh,
+    )
+    .await
+    .unwrap();
+
+    // Oracle-free pool: no feed, SOL collateral priced from the $150 baseline.
+    let init_ix = Instruction {
+        program_id: pid,
+        accounts: vec![
+            AccountMeta::new(authority.pubkey(), true),
+            AccountMeta::new(pool, false),
+            AccountMeta::new_readonly(usdc, false),
+            AccountMeta::new(vault, false),
+            AccountMeta::new_readonly(SYS, false),
+            AccountMeta::new_readonly(solana_program::sysvar::rent::id(), false),
+            AccountMeta::new_readonly(spl_token::id(), false),
+        ],
+        data: borsh::to_vec(&ClockLendInstruction::InitializePool {
+            pool_id: 1,
+            pool_type: PoolType::Individual,
+            interest_rate_bps: 800,
+            max_ltv_bps: 3000,
+            min_duration: 86_400,
+            max_duration: 86_400 * 30,
+            name: [8u8; 32],
+            is_oracle_free: true,
+        })
+        .unwrap(),
+    };
+    send(&mut bc, init_ix, &[&payer, &authority], &payer, bh)
+        .await
+        .expect("init pool");
+
+    let dep_ix = Instruction {
+        program_id: pid,
+        accounts: vec![
+            AccountMeta::new(authority.pubkey(), true),
+            AccountMeta::new(pool, false),
+            AccountMeta::new(authority_usdc, false),
+            AccountMeta::new(vault, false),
+            AccountMeta::new_readonly(spl_token::id(), false),
+        ],
+        data: borsh::to_vec(&ClockLendInstruction::DepositLiquidity {
+            amount: 1_000 * USDC,
+        })
+        .unwrap(),
+    };
+    send(&mut bc, dep_ix, &[&payer, &authority], &payer, bh)
+        .await
+        .expect("deposit");
+
+    let loan_id: u64 = 1;
+    let (loan, _) = Pubkey::find_program_address(
+        &[
+            LOAN_SEED,
+            pool.as_ref(),
+            borrower.pubkey().as_ref(),
+            &loan_id.to_le_bytes(),
+        ],
+        &pid,
+    );
+    let (escrow, _) = Pubkey::find_program_address(&[ESCROW_SEED, loan.as_ref()], &pid);
+    let (profile, _) =
+        Pubkey::find_program_address(&[PROFILE_SEED, borrower.pubkey().as_ref()], &pid);
+
+    let borrow_amount: u64 = 40 * USDC; // 1 SOL collateral = $150 -> 27% < the 30% cap
+    let collateral: u64 = 1_000_000_000; // 1 SOL
+    let borrow_ix = Instruction {
+        program_id: pid,
+        accounts: vec![
+            AccountMeta::new(borrower.pubkey(), true),
+            AccountMeta::new(pool, false),
+            AccountMeta::new(loan, false),
+            AccountMeta::new(vault, false),
+            AccountMeta::new(borrower_usdc, false),
+            AccountMeta::new(borrower.pubkey(), false),
+            AccountMeta::new(escrow, false),
+            AccountMeta::new_readonly(SYS, false), // native-SOL collateral mint
+            AccountMeta::new_readonly(spl_token::id(), false),
+            AccountMeta::new_readonly(SYS, false),
+            AccountMeta::new(profile, false),
+            AccountMeta::new(treasury_tok, false),
+            AccountMeta::new(yield_vault, false),
+            AccountMeta::new(yield_token, false),
+        ],
+        data: borsh::to_vec(&ClockLendInstruction::BorrowFromPool {
+            loan_id,
+            borrow_amount,
+            collateral_amount: collateral,
+            duration_seconds: 86_400 * 7,
+        })
+        .unwrap(),
+    };
+
+    let vault_before = read_yield_vault(&mut bc, yield_vault).await;
+    let yield_tok_before = token_amount(&mut bc, yield_token).await;
+    let bh_borrow = bc.get_latest_blockhash().await.unwrap();
+    send(&mut bc, borrow_ix, &[&payer, &borrower], &payer, bh_borrow)
+        .await
+        .expect("borrow with yield accounts");
+
+    let fee = borrow_amount * 25 / 10_000; // 0.25% for SOL collateral
+    let y_div = fee / 2;
+    let vault_after = read_yield_vault(&mut bc, yield_vault).await;
+    let yield_tok_after = token_amount(&mut bc, yield_token).await;
+
+    println!(
+        "REG-5 borrow fee={fee} yield_leg={y_div}: acc_per_share {} -> {} | unallocated {} -> {} | pending {} -> {}",
+        vault_before.acc_reward_per_share,
+        vault_after.acc_reward_per_share,
+        vault_before.unallocated_rewards,
+        vault_after.unallocated_rewards,
+        vault_before.pending_rewards,
+        vault_after.pending_rewards,
+    );
+
+    // The tokens really moved into the vault's token account...
+    assert_eq!(
+        yield_tok_after - yield_tok_before,
+        y_div,
+        "the half-fee must be transferred into the yield vault's token account"
+    );
+    // ...and were credited exactly, without releasing the backlog.
+    assert_eq!(
+        vault_after.unallocated_rewards,
+        UNALLOCATED_BEFORE + y_div,
+        "the half-fee must be PARKED in unallocated_rewards (backlog untouched)"
+    );
+    assert_eq!(
+        vault_after.pending_rewards,
+        PENDING_BEFORE + y_div,
+        "pending_rewards must grow by the half-fee so the WithdrawUnusedYield bound stays correct"
+    );
+    assert_eq!(
+        vault_after.total_rewards_distributed,
+        DISTRIBUTED_BEFORE + y_div,
+        "total_rewards_distributed must grow by the half-fee"
+    );
+    assert_eq!(
+        vault_after.acc_reward_per_share, ACC_BEFORE,
+        "the permissionless borrow must NOT move acc_reward_per_share"
+    );
+    assert_eq!(
+        vault_after.total_staked_skr, TOTAL_STAKED,
+        "the borrow must not touch the stake total"
+    );
+
+    // Guard against a silent revert to the ACCRUING behaviour: accrue_yield
+    // would have folded (amount + backlog/4) into acc_reward_per_share and
+    // drained unallocated_rewards by that quarter. Pin that the two behaviours
+    // are distinguishable, so this test cannot pass for both.
+    let fold_if_accrued = (UNALLOCATED_BEFORE + 3) / 4;
+    let accr_if_folded = ACC_BEFORE
+        + ((y_div as u128 + fold_if_accrued as u128) * YIELD_SCALE) / (TOTAL_STAKED as u128);
+    assert_ne!(
+        vault_after.acc_reward_per_share, accr_if_folded,
+        "a fold here would have produced exactly this value — the borrow must park instead"
+    );
+    assert_ne!(
+        vault_after.unallocated_rewards,
+        UNALLOCATED_BEFORE - fold_if_accrued,
+        "a fold here would have drained the backlog by a quarter"
+    );
+
+    // The fold still works — from the authority-gated path only.
+    let deposit_amount: u64 = 10 * USDC;
+    let deposit_ix = Instruction {
+        program_id: pid,
+        accounts: vec![
+            AccountMeta::new(authority.pubkey(), true),
+            AccountMeta::new(yield_vault, false),
+            AccountMeta::new(authority_usdc, false),
+            AccountMeta::new(yield_token, false),
+            AccountMeta::new_readonly(spl_token::id(), false),
+        ],
+        data: borsh::to_vec(&ClockLendInstruction::DepositSkrYield {
+            amount: deposit_amount,
+        })
+        .unwrap(),
+    };
+    let bh_dep = bc.get_latest_blockhash().await.unwrap();
+    send(&mut bc, deposit_ix, &[&payer, &authority], &payer, bh_dep)
+        .await
+        .expect("authority DepositSkrYield");
+
+    let vault_folded = read_yield_vault(&mut bc, yield_vault).await;
+    // Mirror accrue_yield: quarter of the parked backlog is released, plus the
+    // new amount, split across the staked total.
+    let fold = (vault_after.unallocated_rewards + 3) / 4;
+    let expected_acc = vault_after.acc_reward_per_share
+        + ((deposit_amount as u128 + fold as u128) * YIELD_SCALE) / (TOTAL_STAKED as u128);
+    println!(
+        "REG-5 authority deposit {deposit_amount}: acc_per_share {} -> {} (expected {expected_acc})",
+        vault_after.acc_reward_per_share, vault_folded.acc_reward_per_share
+    );
+    assert!(
+        vault_folded.acc_reward_per_share > vault_after.acc_reward_per_share,
+        "the authority-gated deposit MUST still fold rewards into acc_reward_per_share"
+    );
+    assert_eq!(
+        vault_folded.acc_reward_per_share, expected_acc,
+        "the fold must release exactly a quarter of the parked backlog plus the deposit"
+    );
+    assert_eq!(
+        vault_folded.unallocated_rewards,
+        vault_after.unallocated_rewards - fold,
+        "the fold must draw down the parked backlog"
+    );
+    println!("REG-5 PASS: borrow parks its fee half; only the authority deposit folds.");
 }

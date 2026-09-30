@@ -68,8 +68,17 @@ pub enum ClockLendInstruction {
     /// 11. `[writable, optional]` Treasury Account
     /// 12. `[]` Clock Sysvar
     /// 13. `[writable, optional]` SkrYieldVault PDA `[b"skr_yield_vault", pool.liquidity_mint]`
-    ///     (passing it routes 50% of the origination fee to SKR yield holders;
-    ///     the vault must already be initialized or the borrow reverts)
+    ///     (passing it routes 50% of the origination fee to SKR yield holders)
+    ///
+    ///     NOTE: the borrow does NOT revert when this PDA is passed but the vault
+    ///     account is absent or uninitialized. The half-fee transfer to the vault
+    ///     token account still executes, but the accounting call (`park_yield`,
+    ///     or `accrue_yield` on the authority path) is skipped entirely, so the
+    ///     tokens land outside `pending_rewards` and are later sweepable by the
+    ///     vault authority via `WithdrawUnusedYield` as "externally donated".
+    ///     Unreachable today only because `InitializeSkrYieldVault` creates both
+    ///     PDAs atomically; a future path that can create the token PDA alone
+    ///     would make this a fee-stranding bug.
     /// 14. `[writable, optional]` Vault Token Account `[b"skr_yield_token", pool.liquidity_mint]`
     BorrowFromPool {
         loan_id: u64,

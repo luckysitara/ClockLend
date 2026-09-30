@@ -396,14 +396,8 @@ pub fn process_initialize_pool(
     if max_duration < min_duration || max_duration > 365 * 86400 {
         return Err(ClockLendError::InvalidDuration.into());
     }
-    if max_ltv_bps == 0 || max_ltv_bps > 9500 {
-        return Err(ClockLendError::InvalidCollateralRatio.into());
-    }
-    // Round-14 M-3: the protocol has no price-based liquidation (the only
-    // liquidation path is the post-due-time clock). Cap LTV at 7000 so a
-    // collateral drawdown cannot put the lender underwater before the
-    // borrower's term ends.
-    if max_ltv_bps > 7000 {
+    // Round-14 M-3 / shared cap: see MAX_LTV_BPS.
+    if max_ltv_bps == 0 || max_ltv_bps > MAX_LTV_BPS {
         return Err(ClockLendError::InvalidCollateralRatio.into());
     }
     // Round 11: oracle-free pools price from hardcoded baselines with no
@@ -1393,6 +1387,17 @@ pub fn process_borrow_from_pool(
         return Err(ClockLendError::PoolInactive.into());
     }
 
+    // Round-14 L-2: re-derive the pool PDA from its own fields. Every other
+    // handler was hardened this way; borrow — the largest money path — was left
+    // relying on the discriminator alone. No program-owned account can currently
+    // reach here with a valid `CLK_POOL` discriminator unless it was created by
+    // InitializePool, so this closes a latent gap rather than a live one.
+    assert_pda(
+        program_id,
+        pool_account,
+        &[POOL_SEED, pool.authority.as_ref(), &pool.pool_id.to_le_bytes()],
+    )?;
+
     // Security check: verify vault account
     if *vault_account.key != pool.vault_pda {
         return Err(ClockLendError::InvalidVaultAccount.into());
@@ -1892,7 +1897,10 @@ pub fn process_borrow_from_pool(
                         if !vault.is_initialized {
                             return Err(ClockLendError::PoolInactive.into());
                         }
-                        accrue_yield(&mut vault, y_div)?;
+                        // PARK, do not fold: see park_yield. The borrow path is
+                        // permissionless, so folding here let a just-in-time
+                        // staker drain the whole parked backlog.
+                        park_yield(&mut vault, y_div)?;
                         vault.pack_into_slice(&mut yield_vault_acc.try_borrow_mut_data()?)?;
                     }
                     (origination_fee.saturating_sub(y_div), y_div)
@@ -2185,9 +2193,11 @@ pub fn process_create_p2p_offer(
         .ok_or(ClockLendError::AmountOverflow)?
         / col_scale;
 
-    // Cap P2P borrow at max 90% LTV of collateral value
+    // Cap P2P borrow at MAX_LTV_BPS of collateral value. This previously allowed
+    // 9000 bps, which the round-14 M-3 reasoning (no price-based liquidation)
+    // rules out just as much as it does on the pool path.
     let max_requested_amount = collateral_value_micro_usd
-        .checked_mul(9000)
+        .checked_mul(MAX_LTV_BPS as u128)
         .ok_or(ClockLendError::AmountOverflow)?
         / 10000;
 
@@ -3807,6 +3817,15 @@ pub fn process_withdraw_treasury(
     Ok(())
 }
 
+/// Maximum loan-to-value, in bps, for BOTH pool lending and P2P pawns.
+///
+/// The protocol has no price-based liquidation — the only liquidation path is
+/// the post-due-date clock — so a high LTV lets a collateral drawdown put the
+/// lender underwater before the borrower's term ends. Round 14 capped the pool
+/// path at 7000 but left the P2P path at 9000; both now read this one constant
+/// so they cannot drift apart again.
+const MAX_LTV_BPS: u16 = 7000;
+
 /// Scale for acc_reward_per_share (dividend accounting).
 const YIELD_SCALE: u128 = 1_000_000_000_000;
 /// Minimum time a stake must be held before its dividends are claimable.
@@ -3820,15 +3839,52 @@ const ADMIN_FEED_MAX_PRICE_AGE_SECS: i64 = 600;
 /// single write cannot reprice the entire protocol.
 const MAX_PRICE_MOVE_BPS: u64 = 2500;
 
+/// Credit `amount` to the vault WITHOUT moving `acc_reward_per_share`.
+///
+/// Used by the permissionless borrow path, which routes its half of the
+/// origination fee into the vault but must not be able to decide WHEN the
+/// parked backlog is folded into share value.
+///
+/// `accrue_yield` releases `unallocated_rewards / 4` on every call, so letting a
+/// borrower trigger it meant a just-in-time staker could drain essentially the
+/// whole backlog (~1 - (3/4)^n; n ≈ 20 dust borrows, all in one transaction)
+/// after merely staking an hour earlier to clear MIN_STAKE_AGE_SECS — which is
+/// exactly what the drip was written to prevent. That path is permissionless:
+/// any user can create their own pool and borrow against it.
+///
+/// Parking keeps the accounting exact — the tokens still land in the vault and
+/// are still counted in `pending_rewards`, so the `WithdrawUnusedYield` bound
+/// stays correct and nothing is stranded — while leaving the timing of the fold
+/// to the authority-gated `DepositSkrYield` path.
+fn park_yield(vault: &mut SkrYieldVault, amount: u64) -> ProgramResult {
+    vault.unallocated_rewards = vault
+        .unallocated_rewards
+        .checked_add(amount)
+        .ok_or(ClockLendError::AmountOverflow)?;
+    vault.total_rewards_distributed = vault
+        .total_rewards_distributed
+        .checked_add(amount)
+        .ok_or(ClockLendError::AmountOverflow)?;
+    vault.pending_rewards = vault
+        .pending_rewards
+        .checked_add(amount)
+        .ok_or(ClockLendError::AmountOverflow)?;
+    Ok(())
+}
+
 /// Fold `amount` into acc_reward_per_share. Rewards deposited while no staker
 /// is synced are parked in `unallocated_rewards` and folded into the next
 /// allocation so they are never stranded.
+///
+/// Authority-gated callers only (`DepositSkrYield`); see `park_yield` for why
+/// the permissionless borrow path must not reach the fold below.
 fn accrue_yield(vault: &mut SkrYieldVault, amount: u64) -> ProgramResult {
     if vault.total_staked_skr > 0 {
-        // Round 11: the parked backlog is dripped (a quarter per accrue) so a
-        // just-in-time staker cannot capture 100% of it with a single dust
-        // borrow-triggered fold; long-term stakers receive the rest over the
-        // following accrues.
+        // The parked backlog is dripped (a quarter per accrue) so a
+        // just-in-time staker cannot capture 100% of it with a single fold;
+        // long-term stakers receive the rest over the following accrues.
+        // NOTE: this only paces attacker-influenced drains while the *caller* is
+        // trusted; the borrow path parks instead of calling this.
         let fold = vault.unallocated_rewards.saturating_add(3) / 4;
         let total_to_allocate = (amount as u128)
             .checked_add(fold as u128)

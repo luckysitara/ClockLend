@@ -5614,12 +5614,16 @@ async fn test_bank_initialize_pool_rejects_invalid_bounds() {
         }
     };
 
-    let cases: [(u64, u16, u16, i64, i64, u32, &str); 5] = [
+    let cases: [(u64, u16, u16, i64, i64, u32, &str); 6] = [
         (811, 800, 8500, 0, 86400 * 30, 32, "min_duration 0"),
         (812, 800, 8500, 86400 * 30, 86400, 32, "max < min"),
         (813, 800, 0, 86400, 86400 * 30, 10, "ltv 0"),
         (814, 800, 9501, 86400, 86400 * 30, 10, "ltv > 9500"),
         (815, 10001, 7000, 86400, 86400 * 30, 33, "interest > 10000"),
+        // Round-14: the pool cap is MAX_LTV_BPS (7000, shared with P2P), not
+        // the old 9500. Pin the boundary from above; the pool-818 init below
+        // pins 7000 itself as accepted.
+        (818, 800, 7001, 86400, 86400 * 30, 10, "ltv 7001 (one bps over the shared cap)"),
     ];
     for (pool_id, interest, ltv, min_d, max_d, code, label) in cases {
         let blockhash = banks_client.get_latest_blockhash().await.unwrap();
@@ -5630,6 +5634,7 @@ async fn test_bank_initialize_pool_rejects_invalid_bounds() {
     }
 
     // PoolAlreadyInitialized: same pool id twice (use different params to ensure distinct tx signature).
+    // This first init also pins max_ltv_bps == 7000 (exactly MAX_LTV_BPS) as ACCEPTED.
     let blockhash = banks_client.get_latest_blockhash().await.unwrap();
     let mut tx = Transaction::new_with_payer(&[init(816, 800, 7000, 86400, 86400 * 30)], Some(&payer.pubkey()));
     tx.sign(&[&payer, &authority], blockhash);
