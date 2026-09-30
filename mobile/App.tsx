@@ -29,6 +29,7 @@ import { SplashScreenView } from './src/components/SplashScreenView';
 import { SecurityLockScreen, LockScreenMode } from './src/components/SecurityLockScreen';
 import { SecurityLockdownView } from './src/components/SecurityLockdownView';
 import { isLockEnabled, checkDeviceIntegrity, DeviceIntegrityResult } from './src/services/securityService';
+import { syncLoanReminders, clearLoanReminders } from './src/services/loanReminders';
 import * as SecureStore from 'expo-secure-store';
 import {
   fetchLivePools,
@@ -127,6 +128,31 @@ function MainApp() {
   const handleQuickStartPreset = (amt: string) => {
     setBorrowPreset(amt);
     setActiveTab('BORROW');
+  };
+
+  // Show the Judge Briefing Hub once per device, the first time the main shell
+  // is actually on screen — never over the splash, the lock screen or the
+  // onboarding gate. Same SecureStore pattern as the Quick-Start bar.
+  useEffect(() => {
+    if (!session || showSplash || isLocked) return;
+    let cancelled = false;
+    SecureStore.getItemAsync('clocklend_judge_briefing_seen_v1')
+      .then((val) => {
+        if (!cancelled && val !== '1') setShowJudgeBriefing(true);
+      })
+      .catch(() => {
+        if (!cancelled) setShowJudgeBriefing(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.publicKey, showSplash, isLocked]);
+
+  const handleJudgeBriefingClose = async () => {
+    setShowJudgeBriefing(false);
+    try {
+      await SecureStore.setItemAsync('clocklend_judge_briefing_seen_v1', '1');
+    } catch {}
   };
 
   // Auto-lock and hardware integrity check on app launch and background resume
@@ -351,7 +377,18 @@ function MainApp() {
   }, [session?.publicKey, orderWatchKey, selectedNetwork]);
 
   // Logout handler with sleek toast feedback (no annoying OS alert popup)
+  // Due-date reminders. A lending app has exactly one event that must pull a
+  // user back — the date they owe money — and this is it. Reconciled whenever
+  // the loan set changes so a repaid loan can never produce a stale reminder.
+  // Never throws, and degrades to a no-op in a build without the native module.
+  useEffect(() => {
+    if (!session?.publicKey) return;
+    void syncLoanReminders(orders);
+  }, [orders, session?.publicKey]);
+
   const handleDisconnect = () => {
+    // Drop this user's scheduled reminders so the next one does not inherit them.
+    void clearLoanReminders();
     setShowAssetsModal(false);
     const handle = session?.skrHandle ? `@${session.skrHandle}` : 'wallet';
     setSession(null);
@@ -1345,9 +1382,6 @@ function MainApp() {
             onCancelPawnOffer={handleCancelPawnOffer}
             onCreatePool={handleCreatePool}
             onDepositLiquidity={handleDepositLiquidity}
-            onNfcBumpCircle={() => {
-              loadProtocolData(session.publicKey, session.skrHandle);
-            }}
           />
         )}
 
@@ -1385,6 +1419,7 @@ function MainApp() {
               setIsLocked(true);
             }}
             onOpenLeaderboard={() => setShowLeaderboard(true)}
+            onOpenJudgeBriefing={() => setShowJudgeBriefing(true)}
           />
         )}
       </View>
@@ -1514,7 +1549,7 @@ function MainApp() {
       {/* Solana Mobile Hackathon Judge Briefing Hub */}
       <JudgeBriefingModal
         visible={showJudgeBriefing}
-        onClose={() => setShowJudgeBriefing(false)}
+        onClose={handleJudgeBriefingClose}
       />
 
       {/* Floating In-App Toast Notification */}
