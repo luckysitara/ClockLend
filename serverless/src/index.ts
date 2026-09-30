@@ -51,17 +51,55 @@ const GENESIS_HASHES: Record<string, string> = {
 
 function resolveNetwork(env: Env): string {
   const raw = (env.NETWORK || 'mainnet-beta').trim().toLowerCase();
-  return raw === 'devnet' || raw === 'testnet' ? 'devnet' : 'mainnet-beta';
+  if (raw === 'devnet' || raw === 'testnet') return 'devnet';
+  if (raw === 'local' || raw === 'localnet' || raw === 'localhost') return 'localnet';
+  return 'mainnet-beta';
+}
+
+/**
+ * True only for a loopback HTTP RPC endpoint.
+ *
+ * `localnet` cannot be identified by genesis hash — a `solana-test-validator`
+ * mints a fresh random genesis on every run — so it is validated by ENDPOINT,
+ * and only a loopback host qualifies. This is what stops NETWORK=localnet from
+ * becoming a way to bypass the cluster guard: pointing it at a remote endpoint
+ * is rejected rather than accepted, so mainnet and devnet stay as strictly
+ * enforced as before. Mirrors `scripts/lib/cluster-guard.mjs`.
+ */
+function isLoopbackRpc(rpcUrl: string): boolean {
+  try {
+    const u = new URL(String(rpcUrl));
+    if (u.protocol !== 'http:' && u.protocol !== 'ws:') return false;
+    const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+  } catch {
+    return false;
+  }
 }
 
 function resolveRpcUrl(env: Env): string {
   if (env.RPC_URL && env.RPC_URL.trim()) return env.RPC_URL.trim();
   return resolveNetwork(env) === 'devnet' ? DEVNET_RPC_FALLBACK : MAINNET_RPC_FALLBACK;
 }
+// NOTE: localnet has no fallback endpoint by design — it must be given explicitly
+// via RPC_URL, so a mistyped NETWORK cannot silently pick up a public cluster.
 
 /** Fail closed if the RPC endpoint is not the cluster we intend to sign for. */
 async function assertExpectedCluster(connection: Connection, env: Env): Promise<string> {
   const network = resolveNetwork(env);
+
+  if (network === 'localnet') {
+    const endpoint = (connection as any)?.rpcEndpoint || resolveRpcUrl(env);
+    if (!isLoopbackRpc(endpoint)) {
+      throw new Error(
+        `CLUSTER MISMATCH: NETWORK=localnet requires a loopback RPC endpoint, but got ` +
+          `${endpoint || '(unset)'}. A test validator's genesis is random, so localnet is ` +
+          `authorised by endpoint and only 127.0.0.1/localhost qualifies.`
+      );
+    }
+    return await connection.getGenesisHash();
+  }
+
   const expected = GENESIS_HASHES[network];
   let actual: string;
   try {
@@ -325,7 +363,7 @@ function redactUrl(raw: string): string {
  * 41..49 price (u64 LE), 49 decimals, 50..58 last_updated_at (i64 LE),
  * 58..90 authority, 90..98 max_staleness_seconds.
  */
-async function verifyFeedsAdvanced(
+export async function verifyFeedsAdvanced(
   connection: Connection,
   feeds: Array<{ pda: PublicKey; label: string }>,
   sinceUnix: number,

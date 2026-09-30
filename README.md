@@ -69,8 +69,10 @@ collected.
   `mobile/.env` `EXPO_PUBLIC_*` vars, gitignored)
 - Pricing: Jupiter Price API v3 for SOL **and SKR** with CoinGecko fallback; the keeper
   refreshes both on-chain feeds from the same source
-- Keeper: `mobile/scripts/keeper.mjs` (per-feed failure tracking, exits non-zero on failure)
-  plus `.github/workflows/keeper.yml` as failover and a Cloudflare Workers cron in `serverless/`
+- Keeper: **one implementation** — the Cloudflare Worker in `serverless/` (`crankOracles`, run on a
+  `*/3` cron and now verifying both feeds after each crank). The same code backs the manual CLI
+  (`serverless/src/cli.mjs`) and the `.github/workflows/keeper.yml` failover; the standalone
+  `mobile/scripts/keeper.mjs` duplicate was removed so the two cannot drift apart again
 - Deploy: `mobile/scripts/deploy-mainnet.mjs` — program (with `--upgrade` for real upgrades),
   admin init (ProgramData proof), treasury ATA, SOL/SKR feeds, first desk
 

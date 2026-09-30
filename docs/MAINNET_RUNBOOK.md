@@ -150,13 +150,14 @@ containing the JSON array from `~/.config/solana/mainnet-keeper.json`, plus opti
 cd serverless
 NETWORK=mainnet-beta RPC_URL=https://api.mainnet-beta.solana.com node src/cli.mjs --status
 
-# Crank with the keeper key (mobile/scripts/keeper.mjs exits 1 if any feed fails)
-cd /home/rootkit/lend
-KEEPER_KEY=~/.config/solana/mainnet-keeper.json \
-  node mobile/scripts/keeper.mjs --network mainnet-beta
+# Crank with the keeper key. Uses the SAME code the Cloudflare Worker runs,
+# and exits non-zero if either feed fails or cannot be verified.
+cd /home/rootkit/lend/serverless
+ORACLE_KEY=~/.config/solana/mainnet-keeper.json \
+  NETWORK=mainnet-beta node src/cli.mjs
 ```
 
-`keeper.mjs` logs each feed's staleness age before the update, verifies the feed actually
+The runner logs each feed's staleness age before the update, verifies the feed actually
 advanced afterwards, and exits non-zero if any feed did not update.
 
 ---

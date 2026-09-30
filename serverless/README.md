@@ -181,7 +181,7 @@ The AWS Lambda handler has been **removed**. It was a third deployment of the sa
 If you want a second runner, note what you are choosing between: EventBridge has a *more
 reliable* scheduler than GitHub Actions, which auto-disables scheduled workflows on a repo
 with no activity for 60 days and delays runs under load against a 600 s staleness bound. A
-`systemd` timer on any always-on host running `mobile/scripts/keeper.mjs` is a better
+`systemd` timer on any always-on host running `src/cli.mjs` is a better
 secondary than either.
 
 What actually makes a single runner safe is **monitoring**, not redundancy: an external

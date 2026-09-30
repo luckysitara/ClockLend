@@ -20,8 +20,8 @@ plain keypair. Migrating first makes the redeploy a 24-hour process for no benef
 ## 1. Land the work (this machine) — ✅ DONE 2026-09-30
 
 Committed as five commits (`bcc1dad`, `39744de`, `51d25a8`, `9afe419`, `d1e8247`).
-Pre-commit checks that were run: `node mobile/scripts/keeper.test.mjs` → 12/12;
-`cargo test --release` → 107 passed / 0 failed.
+Pre-commit checks that were run: `cargo test --release` → 107 passed / 0 failed;
+`cd serverless && npm test` → 10/10.
 
 ## 2. Push the rewritten history (this machine) — ✅ DONE
 
@@ -196,7 +196,8 @@ Follow `docs/KEEPER_LIVENESS.md` §4 in order. The short version:
    oracle key. If a Lambda is still deployed in your AWS account, **delete the function and
    its `ORACLE_KEYPAIR` environment variable**; revoking that key copy is the point. If you
    want a second runner, a `systemd` timer on an always-on host beats GitHub Actions, whose
-   scheduled workflows auto-disable after 60 days of repo inactivity.
+   scheduled workflows auto-disable after 60 days of repo inactivity. Any such secondary should
+   run `serverless/src/cli.mjs`, which uses the same code the Worker does.
 
 Not implemented, and worth knowing: there is still **no rate limiting** on `/crank` or
 `/health`. `/health` makes RPC calls per request, so it can be spammed to exhaust the Helius

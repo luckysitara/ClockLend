@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
+    "test": "node test/feeds.test.mjs",
     "test:local": "node src/cli.mjs",
     "tail": "wrangler tail"
   },

@@ -18,9 +18,12 @@ pool, the P2P deck — stays up and looks healthy while every money path fails. 
 mode is invisible unless something is watching for it, which is exactly how the current
 outage went unnoticed.
 
-## 2. Two ways the keeper was lying about success
+## 2. How the keeper was lying about success
 
-Both are fixed in `mobile/scripts/keeper.mjs`; neither fix is deployed anywhere yet.
+There is now **one implementation** — the Cloudflare Worker in `serverless/src/index.ts`
+(`crankOracles`), which also backs the manual CLI and the GitHub Actions failover. The
+standalone `mobile/scripts/keeper.mjs` duplicate has been deleted so the two cannot drift
+apart again. None of these fixes is deployed yet.
 
 **a) "Couldn't verify" was reported as "succeeded".** After sending the update, the keeper
 read the feed back. If that read *failed* (RPC 429, timeout), `readFeedState` returned
@@ -32,16 +35,18 @@ Now: the post-check **retries** (3 attempts, backoff), and if it still cannot co
 write it reports `UNVERIFIED`, records a failure, and exits non-zero. Absence of evidence
 is no longer treated as evidence of a landed update.
 
-The rule is a pure function, `classifyPostUpdate`, so it is testable without a network:
+The rule lives in `verifyFeedsAdvanced`, which is exported so it is testable without a
+network:
 
 ```bash
-node mobile/scripts/keeper.test.mjs   # 12 cases, exits non-zero on failure
+cd serverless && npm test    # 10 cases, exits non-zero on failure
 ```
 
-It pins the regression directly: every unconfirmable read (null result, missing account,
-`readError`, undecodable, null age) must classify as `unverified` and never as `ok`.
-Note there is no test framework in `mobile/`, so this is a plain Node script — run it
-directly. It needs `@solana/web3.js` present in `mobile/node_modules`.
+It pins the regression directly: a null read, a throwing read, a truncated account, and a
+feed that did not advance must all be reported unconfirmed and never as verified. There is no
+test framework in `serverless/`, so this is a plain Node script — run it directly. It imports
+`src/index.ts`, which Node type-strips natively and which needs `serverless/node_modules`
+(`npm install`).
 
 **b) A missing SKR price was logged and ignored.** If Jupiter (and the CoinGecko fallback)
 had no SKR price, the SKR target was dropped from the list with a console line and the run
@@ -57,8 +62,10 @@ state, and it says nothing if the read-back is the thing that failed. It now rea
 back and throws if either `last_updated_at` did not advance past the start of the crank —
 retrying briefly first, and treating an unreadable feed as unconfirmed.
 
-Note these are two separate runners with two separate code paths: the fixes to
-`mobile/scripts/keeper.mjs` do **not** cover the Worker, and vice versa. Both now fail closed.
+**This is why the duplicate was deleted.** Previously `mobile/scripts/keeper.mjs` and this
+file were two independent implementations of the same job: fixing one did not fix the other,
+which is exactly how the silent-success bug survived its first fix. There is now a single
+implementation, so a fix cannot land on only half the system.
 
 ## 3. The structural reason it died silently
 
@@ -103,8 +110,9 @@ Do these in order. Steps 1–3 are what actually restore liveness.
 
 3. **Crank now** to unblock borrowing:
    ```bash
-   KEEPER_KEY=~/.config/solana/mainnet-keeper.json \
-     node mobile/scripts/keeper.mjs --network mainnet-beta
+   cd serverless
+   ORACLE_KEY=~/.config/solana/mainnet-keeper.json \
+     NETWORK=mainnet-beta node src/cli.mjs
    ```
    It exits non-zero if either feed does not advance, so a clean exit now means something.
    (Before the fix above, exit 0 did not mean that.)
@@ -116,7 +124,8 @@ Do these in order. Steps 1–3 are what actually restore liveness.
 5. **Decide whether you need a second, independent runner.** A single Cloudflare account is
    now a single point of failure for the protocol's availability. The GitHub runner is not a
    strong backup because of the scheduling issues above; a plain `systemd` timer or a cron
-   entry on any always-on host running `keeper.mjs` would be a more predictable secondary.
+   entry on any always-on host running `serverless/src/cli.mjs` would be a more predictable
+   secondary.
    The keeper is a stateless CLI — it needs only an RPC URL and the keeper keypair.
 
 ## 5. The structural recommendation
@@ -133,33 +142,44 @@ oracle reintroduces dependency on a third party's feed quality and update cadenc
 presumably why it was removed. The alternative is to accept the keeper dependency openly and
 invest in step 2 above, so the outage is measured in minutes rather than nine hours.
 
-## 5a. End-to-end verification (local validator, 2026-09-29)
+## 5a. End-to-end verification (local validator, 2026-09-30)
 
-The keeper fixes were dry-run against a `solana-test-validator` — not on mainnet, not on
-devnet, and with a throwaway keypair — using the round-15 program build deployed locally.
+The surviving implementation — `crankOracles` in `serverless/src/index.ts`, the code the
+Cloudflare Worker actually runs — was dry-run against a `solana-test-validator` with the
+round-15 program deployed locally and a throwaway keypair. Not mainnet, not devnet, and
+nothing of yours touched.
 
-**Happy path.** The keeper created both feeds from scratch, updated them, read them back,
-reported `1s old — fresh` for each, and exited `0`.
+**Happy path.** `node src/cli.mjs` created both feeds, sent the crank, and reported
+`Crank succeeded and both feeds verified` — exercising the new `verifyFeedsAdvanced` on the
+success path — then exited `0`.
 
-**Failure path, with an A/B.** An RPC proxy in front of the validator returned `null` for
-`getAccountInfo` on the two oracle PDAs while forwarding everything else, including
-WebSocket — so the writes landed and confirmed, but the read-back could not confirm them.
-That is precisely the case the old code mis-reported:
+**Failure path.** An RPC proxy in front of the validator returned `null` for `getAccountInfo`
+on the two oracle PDAs while forwarding everything else, WebSocket included, so the
+transaction landed and confirmed but the read-back could not confirm it:
 
-| | pre-fix keeper | post-fix keeper |
-| :--- | :--- | :--- |
-| Post-update line | `feed account does not exist yet` | `UNVERIFIED … write not confirmed after retries` |
-| Final line | `All 2 feed update(s) succeeded.` | `FAILED: 2 feed update(s) did not succeed` |
-| **Exit code** | **0** | **1** |
+```
+❌ Execution Failed: Crank confirmed (2aJqYHCE…) but these feeds did not advance past
+   1790739393: SOL $119.19, SKR $0.01833.
+   Treating the run as failed rather than reporting success.
+exit 1
+```
 
-Same proxy, same validator, same keypair — only the keeper logic differed. The old code
-reported a healthy crank while both feeds were unconfirmed, which is exactly how a nine-hour
-outage went unnoticed.
+That is the whole point: `confirmTransaction` succeeded, and the run still refused to report
+success. Before the fix there was no read-back at all, so this exact scenario — a confirmed
+crank whose effect cannot be verified — was indistinguishable from a healthy one.
 
-To make the local run possible, `scripts/lib/cluster-guard.mjs` gained a `localnet` cluster.
-It is authorised by **endpoint, not genesis hash** — a test validator mints a fresh random
-genesis each run — and only a loopback URL qualifies, so `--cluster localnet` cannot be used
-to bypass the guard against a remote RPC. Mainnet and devnet enforcement is unchanged.
+**An earlier A/B, against the pre-fix code.** The same proxy was run against the standalone
+`mobile/scripts/keeper.mjs` before it was deleted, comparing old and new: the old code
+printed `All 2 feed update(s) succeeded.` and exited `0`; the new code reported `UNVERIFIED`
+and exited `1`. Same proxy, same validator, same keypair — only the verification logic
+differed. That implementation is gone, which is the point; the behaviour it proved is now
+pinned by `npm test`.
+
+To make the local run possible, both `scripts/lib/cluster-guard.mjs` and `src/index.ts` gained
+a `localnet` cluster. It is authorised by **endpoint, not genesis hash** — a test validator
+mints a fresh random genesis each run — and only a loopback URL qualifies, so `NETWORK=localnet`
+cannot be used to bypass the guard against a remote RPC. Mainnet and devnet enforcement is
+unchanged.
 
 Still unverified: nothing here exercised a real RPC provider's rate limiting, and the
 `@solana/web3.js` version used locally may differ from the one in CI.
@@ -168,7 +188,7 @@ Still unverified: nothing here exercised a real RPC provider's rate limiting, an
 
 - **Verified on chain:** four lifetime feed writes, their slots and timestamps, current feed
   ages (~9 h), pool state, and that the program's bound is 600 s.
-- **Verified in source:** both silent-failure paths in `keeper.mjs` (now fixed), the program's
+- **Verified in source:** the silent-failure paths (now fixed), the program's
   staleness rejection, and the two cron expressions.
 - **Not verified:** whether the Cloudflare Worker was ever deployed, and whether the GitHub
   workflow is currently enabled — both require access to those accounts. Step 1 and step 4

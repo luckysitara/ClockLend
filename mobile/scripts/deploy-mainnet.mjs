@@ -514,7 +514,7 @@ async function main() {
   console.log('\nMAINNET BOOTSTRAP COMPLETE');
   console.log('Pricing is ADMIN-FEED-ONLY (Pyth removed): the feeds just published are the sole');
   console.log('price source, bound to 600s freshness. GET THE KEEPER RUNNING NOW:');
-  console.log('  KEEPER_KEY=~/.config/solana/mainnet-keeper.json node mobile/scripts/keeper.mjs --network mainnet-beta');
+  console.log('  cd serverless && ORACLE_KEY=~/.config/solana/mainnet-keeper.json node src/cli.mjs');
   console.log('Schedule it at <10-minute cadence (cron or .github/workflows/keeper.yml) or borrows');
   console.log('revert with StaleOraclePrice after 600s.');
 }
