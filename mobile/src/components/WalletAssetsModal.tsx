@@ -236,7 +236,9 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
                 </Text>
               </View>
               <View style={[styles.identityTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
-                <Text style={[styles.identityTagText, { color: colors.primaryLabel }]}>@{skrHandle}</Text>
+                <Text style={[styles.identityTagText, { color: colors.primaryLabel }]}>
+                  {skrHandle.replace(/^@/, '').replace(/\.skr$/i, '')}.skr
+                </Text>
               </View>
             </View>
 
@@ -302,71 +304,32 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
               </View>
             </View>
 
-            {/* 4. BONK (if held) */}
-            {assets.bonkBalance > 0 && (
-              <View style={[styles.assetItem, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-                <View style={styles.assetLeft}>
-                  <View style={[styles.assetIconBox, { backgroundColor: 'rgba(234, 88, 12, 0.15)' }]}>
-                    <Text style={styles.assetIcon}>🐕</Text>
-                  </View>
-                  <View>
-                    <Text style={[styles.assetName, { color: colors.text }]}>Bonk (BONK)</Text>
-                    <Text style={[styles.assetSymbol, { color: colors.textMuted }]}>Community Token</Text>
-                  </View>
-                </View>
-                <View style={styles.assetRight}>
-                  <Text style={[styles.assetAmount, { color: colors.text }]}>{assets.bonkBalance.toLocaleString()}</Text>
-                  <Text style={[styles.assetUsd, { color: colors.textSecondary }]}>
-                    ≈ ${(assets.bonkBalance * 0.00002).toFixed(2)}
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            {/* 5. Additional detected tokens */}
+            {/* Detected additional SPL tokens (clean initials avatar, no mock emojis) */}
             {assets.tokenList &&
               assets.tokenList
-                .filter((t) => t.symbol !== 'USDC' && t.symbol !== 'SKR' && t.symbol !== 'BONK' && t.symbol !== 'SGT')
+                .filter((t) => t.symbol !== 'SOL' && t.symbol !== 'USDC' && t.symbol !== 'SKR' && t.symbol !== 'SGT' && t.amount > 0)
                 .map((token, idx) => (
                   <View key={token.mint + idx} style={[styles.assetItem, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
                     <View style={styles.assetLeft}>
-                      <View style={[styles.assetIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-                        <Text style={styles.assetIcon}>🪙</Text>
+                      <View style={[styles.assetIconBox, { backgroundColor: colors.badgeBg }]}>
+                        <Text style={[styles.tokenInitials, { color: colors.primaryLabel }]}>
+                          {token.symbol.slice(0, 3).toUpperCase()}
+                        </Text>
                       </View>
                       <View>
-                        <Text style={[styles.assetName, { color: colors.text }]}>{token.name}</Text>
+                        <Text style={[styles.assetName, { color: colors.text }]}>{token.name || token.symbol}</Text>
                         <Text style={[styles.assetSymbol, { color: colors.textMuted }]}>
-                          {token.symbol} {token.isToken2022 ? '• Token-2022' : ''}
+                          {token.symbol} • SPL Token
                         </Text>
                       </View>
                     </View>
                     <View style={styles.assetRight}>
                       <Text style={[styles.assetAmount, { color: colors.text }]}>
-                        {token.amount > 1000 ? token.amount.toLocaleString() : token.amount.toFixed(2)}
+                        {token.amount > 1000 ? token.amount.toLocaleString() : token.amount.toFixed(2)} {token.symbol}
                       </Text>
                     </View>
                   </View>
                 ))}
-
-            {/* 6. Seeker Genesis NFT */}
-            <View style={[styles.assetItem, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-              <View style={styles.assetLeft}>
-                <View style={[styles.assetIconBox, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-                  <Text style={styles.assetIcon}>📱</Text>
-                </View>
-                <View>
-                  <Text style={[styles.assetName, { color: colors.text }]}>Seeker Genesis Token</Text>
-                  <Text style={[styles.assetSymbol, { color: colors.textMuted }]}>Device Hardware Enclave</Text>
-                </View>
-              </View>
-              <View style={styles.assetRight}>
-                <View style={[styles.verifiedPill, { backgroundColor: colors.badgeBg }]}>
-                  <Text style={[styles.verifiedPillText, { color: colors.primaryLabel }]}>
-                    {assets.hasSeekerGenesisToken ? 'VERIFIED' : 'NOT DETECTED'}
-                  </Text>
-                </View>
-              </View>
-            </View>
 
             {/* Quick Actions */}
             <View style={styles.actionGrid}>
@@ -612,6 +575,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  tokenInitials: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   assetIcon: {
     fontSize: 20,

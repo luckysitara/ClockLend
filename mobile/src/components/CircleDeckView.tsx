@@ -131,7 +131,7 @@ export const CircleDeckView: React.FC<CircleDeckViewProps> = ({
                   activeOpacity={0.8}
                 >
                   <LinearGradient
-                    colors={['#6366F1', '#38BDF8']}
+                    colors={['#7C3AED', '#A78BFA']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={styles.fundGradient}
@@ -344,7 +344,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   assetEscrowNote: {
-    color: '#38BDF8',
+    color: '#A78BFA',
     fontSize: 11,
     marginTop: 2,
   },
@@ -378,7 +378,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   profitValue: {
-    color: '#38BDF8',
+    color: '#A78BFA',
     fontSize: 15,
     fontWeight: '900',
   },
@@ -387,7 +387,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   openText: {
-    color: '#38BDF8',
+    color: '#A78BFA',
   },
   fundedText: {
     color: '#60A5FA',

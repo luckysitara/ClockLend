@@ -208,7 +208,7 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
           accessibilityLabel="Connect Seeker Hardware Wallet"
         >
           <LinearGradient
-            colors={mode === 'dark' ? ['#0284C7', '#38BDF8'] : ['#0284C7', '#0EA5E9', '#38BDF8']}
+            colors={mode === 'dark' ? ['#5B21B6', '#7C3AED', '#8B5CF6'] : ['#6D28D9', '#7C3AED', '#8B5CF6']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.connectBtnGradient}
@@ -287,7 +287,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 14,
-    shadowColor: '#0EA5E9',
+    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.18,
     shadowRadius: 16,
@@ -376,7 +376,7 @@ const styles = StyleSheet.create({
   connectBtnContainer: {
     borderRadius: 28,
     overflow: 'hidden',
-    shadowColor: '#0EA5E9',
+    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.28,
     shadowRadius: 10,

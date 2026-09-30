@@ -223,21 +223,6 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
             </Text>
           </TouchableOpacity>
         </View>
-
-        <TouchableOpacity
-          style={[styles.createBtn, { backgroundColor: colors.primary }]}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            if (subTab === 'POOLS') setCreatePoolModal(true);
-            else setPawnModal(true);
-          }}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="add" size={18} color={colors.primaryText} />
-          <Text style={[styles.createBtnText, { color: colors.primaryText }]}>
-            {subTab === 'POOLS' ? 'Desk' : 'Pawn'}
-          </Text>
-        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -582,7 +567,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
 
               <View style={styles.inputSplitRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.inputLabel, { color: colors.textMuted }]}>FIXED APR (%)</Text>
+                  <Text style={[styles.inputLabel, { color: colors.textMuted }]}>FIXED APR (MAX 100%)</Text>
                   <TextInput
                     style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
                     value={deskApr}
@@ -591,6 +576,11 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                     placeholder="8.0"
                     placeholderTextColor={colors.textMuted}
                   />
+                  {parseFloat(deskApr) > 0 && (
+                    <Text style={{ fontSize: 10, color: colors.primaryLabel, marginTop: 4, fontWeight: '600' }}>
+                      ≈ {((parseFloat(deskApr) * 7) / 365).toFixed(2)}% flat fee / 7d
+                    </Text>
+                  )}
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.inputLabel, { color: colors.textMuted }]}>MAX LTV (%)</Text>

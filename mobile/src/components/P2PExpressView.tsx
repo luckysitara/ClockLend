@@ -56,7 +56,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
 }) => {
   const { colors, mode } = useTheme();
   const [amountStr, setAmountStr] = useState<string>(initialAmount ?? '50');
-  const [collateralType, setCollateralType] = useState<'SKR' | 'SOL'>('SOL');
+  const [collateralType, setCollateralType] = useState<'SKR' | 'SOL'>('SKR');
   const [durationDays, setDurationDays] = useState<number>(7);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
@@ -286,9 +286,9 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
                 : '0.00'}
             </Text>
 
-            {/* Collateral Selector (SOL / SKR) */}
+            {/* Collateral Selector (SKR / SOL) */}
             <View style={styles.tokenSelectorGroup}>
-              {(['SOL', 'SKR'] as const).map((t) => {
+              {(['SKR', 'SOL'] as const).map((t) => {
                 const isSelected = collateralType === t;
                 return (
                   <TouchableOpacity
@@ -363,8 +363,13 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
         {/* Section 4: Loan Breakdown */}
         <View style={[styles.summaryPanel, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
           <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Fixed Rate</Text>
-            <Text style={[styles.summaryValue, { color: colors.text }]}>{effectiveApr.toFixed(1)}% APR</Text>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Interest Fee</Text>
+            <Text style={[styles.summaryValue, { color: colors.text }]}>
+              {numAmount > 0 ? ((estInterest / numAmount) * 100).toFixed(2) : '0.00'}% flat (${estInterest.toFixed(2)})
+              <Text style={{ color: colors.primaryLabel, fontSize: 11, fontWeight: '700' }}>
+                {' '}• {effectiveApr.toFixed(1)}% APR
+              </Text>
+            </Text>
           </View>
 
           <View style={styles.summaryRow}>
@@ -372,7 +377,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
             <Text style={[styles.summaryValue, { color: colors.text }]}>
               ${(numAmount + estInterest).toFixed(2)} USDC{' '}
               <Text style={{ color: colors.primaryLabel, fontSize: 11 }}>
-                (+${estInterest.toFixed(3)} int)
+                (+${estInterest.toFixed(2)} fee)
               </Text>
             </Text>
           </View>
@@ -394,7 +399,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
           activeOpacity={0.88}
         >
           <LinearGradient
-            colors={mode === 'dark' ? ['#0284C7', '#38BDF8'] : ['#0284C7', '#0EA5E9', '#38BDF8']}
+            colors={mode === 'dark' ? ['#5B21B6', '#7C3AED', '#8B5CF6'] : ['#6D28D9', '#7C3AED', '#8B5CF6']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.borrowBtnGradient}
@@ -486,7 +491,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
               activeOpacity={0.88}
             >
               <LinearGradient
-                colors={mode === 'dark' ? ['#0284C7', '#38BDF8'] : ['#0284C7', '#0EA5E9', '#38BDF8']}
+                colors={mode === 'dark' ? ['#5B21B6', '#7C3AED', '#8B5CF6'] : ['#6D28D9', '#7C3AED', '#8B5CF6']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.confirmActionGradient}
@@ -551,7 +556,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     padding: 20,
-    shadowColor: '#0EA5E9',
+    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.12,
     shadowRadius: 14,
@@ -609,7 +614,7 @@ const styles = StyleSheet.create({
   tokenIconText: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#0EA5E9',
+    color: '#7C3AED',
   },
   tokenTagText: {
     fontSize: 14,
@@ -685,7 +690,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     borderRadius: 20,
     overflow: 'hidden',
-    shadowColor: '#0EA5E9',
+    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.28,
     shadowRadius: 10,
@@ -783,7 +788,7 @@ const styles = StyleSheet.create({
   confirmActionBtn: {
     borderRadius: 20,
     overflow: 'hidden',
-    shadowColor: '#0EA5E9',
+    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,

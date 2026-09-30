@@ -7,7 +7,6 @@ import {
   ScrollView,
   Image,
   Alert,
-  Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -88,21 +87,12 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
     Alert.alert('Copied to Clipboard', `${label}: ${text}`);
   };
 
-  const handleShareReferral = async (referralCode: string) => {
-    try {
-      Haptics.selectionAsync();
-      await Share.share({
-        message: `Join ClockLend P2P Credit Protocol on Solana Seeker using my referral code: ${referralCode}! https://clocklend.xyz`,
-      });
-    } catch {}
-  };
-
   const shorten = (addr: string) => `${addr.slice(0, 8)}...${addr.slice(-8)}`;
 
   const accruedUsd = (yieldPosition?.accruedRewards ?? 0) / 1_000_000;
   const canClaimYield = !!onClaimYield && accruedUsd > 0;
-  const referralCode = userProfile.pubkey.slice(0, 8).toUpperCase();
-  const initials = (skrHandle.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2) || 'CL').toUpperCase();
+  const cleanHandle = skrHandle.replace(/^@/, '').replace(/\.skr$/i, '');
+  const skrUsername = `${cleanHandle}.skr`;
 
   return (
     <ScrollView
@@ -130,22 +120,15 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* ── 1. Profile Hero Card (Matches 703a904b) ── */}
+      {/* ── 1. Profile Hero Card (Only .skr username, no profile image per user request) ── */}
       <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        <View style={styles.profileHeaderRow}>
-          <View style={[styles.avatarHex, { backgroundColor: colors.badgeBg, borderColor: colors.primary }]}>
-            <Text style={[styles.avatarInitials, { color: colors.primaryLabel }]}>{initials}</Text>
-            <View style={[styles.cameraBadge, { backgroundColor: colors.primary }]}>
-              <Ionicons name="camera" size={10} color="#FFFFFF" />
-            </View>
+        <View style={styles.skrUserRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.skrUsernameText, { color: colors.text }]}>{skrUsername}</Text>
+            <Text style={[styles.skrHandleSub, { color: colors.primaryLabel }]}>Solana Seeker Verified Account</Text>
           </View>
-          <View style={styles.profileInfo}>
-            <Text style={[styles.profileName, { color: colors.text }]}>
-              {skrHandle.startsWith('@') ? skrHandle.slice(1) : skrHandle}
-            </Text>
-            <Text style={[styles.profileHandle, { color: colors.primaryLabel }]}>
-              @{skrHandle.startsWith('@') ? skrHandle.slice(1) : skrHandle}
-            </Text>
+          <View style={[styles.skrBadge, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
+            <Text style={[styles.skrBadgeText, { color: colors.primaryLabel }]}>.SKR DOMAIN</Text>
           </View>
         </View>
       </View>
@@ -158,10 +141,10 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         <View style={styles.dataField}>
           <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>ClockLend Tag</Text>
           <View style={styles.fieldValueRow}>
-            <Text style={[styles.fieldValueText, { color: colors.text }]}>@{skrHandle}</Text>
+            <Text style={[styles.fieldValueText, { color: colors.text }]}>{skrUsername}</Text>
             <TouchableOpacity
               style={[styles.copyBtn, { backgroundColor: colors.cardAlt }]}
-              onPress={() => copyToClipboard(`@${skrHandle}`, 'Tag')}
+              onPress={() => copyToClipboard(skrUsername, 'Tag')}
               activeOpacity={0.7}
             >
               <Ionicons
@@ -198,48 +181,18 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
 
         <View style={[styles.divider, { backgroundColor: colors.divider }]} />
 
-        {/* Powered By Solana Badge */}
+        {/* Powered By Solana Badge (Genuine Solana Token Logo) */}
         <View style={styles.poweredByRow}>
           <Text style={[styles.poweredByText, { color: colors.textMuted }]}>Powered By</Text>
           <View style={[styles.solanaPill, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-            <Ionicons name="hardware-chip" size={13} color={colors.primary} />
+            <Image
+              source={require('../../assets/tokens/sol.png')}
+              style={styles.solanaLogo}
+              resizeMode="contain"
+            />
             <Text style={[styles.solanaPillText, { color: colors.text }]}>SOLANA</Text>
           </View>
         </View>
-      </View>
-
-      {/* ── 3. Referral Code Card (Matches 703a904b) ── */}
-      <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        <Text style={[styles.cardHeading, { color: colors.text }]}>Referral Code</Text>
-
-        <View style={styles.dataField}>
-          <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Your Referral Code</Text>
-          <View style={styles.fieldValueRow}>
-            <Text style={[styles.referralCodeText, { color: colors.text }]}>{referralCode}</Text>
-            <TouchableOpacity
-              style={[styles.copyBtn, { backgroundColor: colors.cardAlt }]}
-              onPress={() => copyToClipboard(referralCode, 'Referral Code')}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={copiedKey === 'Referral Code' ? 'checkmark' : 'copy-outline'}
-                size={16}
-                color={copiedKey === 'Referral Code' ? colors.success : colors.textSecondary}
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <TouchableOpacity
-          style={styles.inviteLinkRow}
-          onPress={() => handleShareReferral(referralCode)}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.inviteLinkText, { color: colors.primaryLabel }]}>
-            Invite Friends and earn rewards
-          </Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.primaryLabel} />
-        </TouchableOpacity>
       </View>
 
       {/* ── 4. On-Chain Credit Standing ── */}
@@ -367,45 +320,31 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 14,
   },
-  profileHeaderRow: {
+  skrUserRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    justifyContent: 'space-between',
   },
-  avatarHex: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  avatarInitials: {
+  skrUsernameText: {
     fontSize: 22,
     fontWeight: '900',
-  },
-  cameraBadge: {
-    position: 'absolute',
-    bottom: -4,
-    right: -4,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  profileName: {
-    fontSize: 20,
-    fontWeight: '800',
+    letterSpacing: -0.3,
     marginBottom: 4,
   },
-  profileHandle: {
-    fontSize: 14,
+  skrHandleSub: {
+    fontSize: 13,
     fontWeight: '600',
+  },
+  skrBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  skrBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   infoCard: {
     borderRadius: 20,
@@ -440,11 +379,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.2,
   },
-  referralCodeText: {
-    fontSize: 16,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
   copyBtn: {
     width: 32,
     height: 32,
@@ -471,24 +405,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 12,
     borderWidth: 1,
+  },
+  solanaLogo: {
+    width: 16,
+    height: 16,
   },
   solanaPillText: {
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.5,
-  },
-  inviteLinkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 8,
-  },
-  inviteLinkText: {
-    fontSize: 13,
-    fontWeight: '700',
   },
   creditHeaderRow: {
     flexDirection: 'row',

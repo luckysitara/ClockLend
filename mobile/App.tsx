@@ -1591,7 +1591,7 @@ function MainApp() {
             accessibilityLabel="ClockLend Hub"
           >
             <LinearGradient
-              colors={mode === 'dark' ? ['#0284C7', '#38BDF8'] : ['#0284C7', '#0EA5E9', '#38BDF8']}
+              colors={mode === 'dark' ? ['#5B21B6', '#7C3AED', '#8B5CF6'] : ['#6D28D9', '#7C3AED', '#8B5CF6']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.centerFabGradient}
@@ -1742,7 +1742,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    shadowColor: '#0EA5E9',
+    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,

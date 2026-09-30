@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Image,
   Animated,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -47,6 +48,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
   const { colors, mode } = useTheme();
   const [showBalance, setShowBalance] = useState<boolean>(true);
   const [activeBanner, setActiveBanner] = useState<number>(0);
+  const [showNotificationsModal, setShowNotificationsModal] = useState<boolean>(false);
 
   const bannerFadeAnim = useRef(new Animated.Value(1)).current;
   const bannerSlideAnim = useRef(new Animated.Value(0)).current;
@@ -62,7 +64,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
       sub: '8.5% Fixed APR • $250,000 USDC Capacity',
       cta: 'Borrow Now →',
       onPress: onNavigateBorrow,
-      gradient: ['#0369A1', '#0284C7', '#0EA5E9'] as const,
+      gradient: ['#5B21B6', '#7C3AED', '#8B5CF6'] as const,
     },
     {
       id: 'leaderboard',
@@ -71,7 +73,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
       sub: '1. @sol_whale • 2. @alpha_dev • 3. @crypto_king',
       cta: 'View Rankings →',
       onPress: onOpenLeaderboard,
-      gradient: ['#1E3A8A', '#2563EB', '#38BDF8'] as const,
+      gradient: ['#1E1B4B', '#4338CA', '#6366F1'] as const,
     },
     {
       id: 'social_grace',
@@ -80,7 +82,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
       sub: 'Escrow protection against sudden market flash crashes',
       cta: 'Explore Desks →',
       onPress: onNavigateDesks,
-      gradient: ['#0F766E', '#0D9488', '#14B8A6'] as const,
+      gradient: ['#064E3B', '#047857', '#10B981'] as const,
     },
   ];
 
@@ -134,7 +136,10 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
         <View style={styles.topRightControls}>
           <TouchableOpacity
             style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
-            onPress={onOpenAssetsModal}
+            onPress={() => {
+              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+              setShowNotificationsModal(true);
+            }}
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="Notifications"
@@ -157,9 +162,9 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
         </View>
       </View>
 
-      {/* ── Cyan/Ocean Gradient Hero Balance Card (Matches 8febc333) ── */}
+      {/* ── Royal Violet Gradient Hero Balance Card (Matches 8febc333) ── */}
       <LinearGradient
-        colors={mode === 'dark' ? ['#0369A1', '#0284C7', '#0EA5E9'] : ['#0284C7', '#0EA5E9', '#38BDF8']}
+        colors={mode === 'dark' ? ['#4C1D95', '#6D28D9', '#7C3AED'] : ['#5B21B6', '#7C3AED', '#8B5CF6']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.heroCard}
@@ -358,6 +363,82 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
           })
         )}
       </View>
+
+      {/* ── Notifications & Alerts Modal (Matches UX spec) ── */}
+      <Modal
+        visible={showNotificationsModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowNotificationsModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowNotificationsModal(false)}
+          />
+          <View style={[styles.modalSheet, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <View style={styles.modalSheetHandle} />
+            <View style={styles.modalSheetHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="notifications" size={20} color={colors.primary} />
+                <Text style={[styles.modalSheetTitle, { color: colors.text }]}>Notifications & Alerts</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowNotificationsModal(false)}
+                style={styles.modalCloseBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Close notifications"
+              >
+                <Ionicons name="close" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 380 }}>
+              <View style={[styles.notificationItem, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+                <View style={[styles.notifIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+                  <Ionicons name="shield-checkmark" size={18} color="#10B981" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.notifTitle, { color: colors.text }]}>Social Grace Shield Active</Text>
+                  <Text style={[styles.notifBody, { color: colors.textSecondary }]}>
+                    All your micro-loans are secured with an automatic 24-hour liquidation buffer.
+                  </Text>
+                  <Text style={[styles.notifTime, { color: colors.textMuted }]}>Protocol Protection</Text>
+                </View>
+              </View>
+
+              <View style={[styles.notificationItem, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+                <View style={[styles.notifIconBox, { backgroundColor: 'rgba(124, 58, 237, 0.15)' }]}>
+                  <Ionicons name="hardware-chip" size={18} color="#7C3AED" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.notifTitle, { color: colors.text }]}>Hardware Security Key Verified</Text>
+                  <Text style={[styles.notifBody, { color: colors.textSecondary }]}>
+                    Solana Mobile Seed Vault protects all signature requests on this device.
+                  </Text>
+                  <Text style={[styles.notifTime, { color: colors.textMuted }]}>Hardware Enclave</Text>
+                </View>
+              </View>
+
+              {activeOrders.length > 0 && (
+                <View style={[styles.notificationItem, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+                  <View style={[styles.notifIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
+                    <Ionicons name="receipt" size={18} color="#3B82F6" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.notifTitle, { color: colors.text }]}>Active Loans Standing</Text>
+                    <Text style={[styles.notifBody, { color: colors.textSecondary }]}>
+                      You currently have {activeOrders.length} active loan{activeOrders.length > 1 ? 's' : ''} in good standing.
+                    </Text>
+                    <Text style={[styles.notifTime, { color: colors.textMuted }]}>Credit Profile</Text>
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -432,7 +513,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     padding: 22,
     marginBottom: 16,
-    shadowColor: '#0EA5E9',
+    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.28,
     shadowRadius: 14,
@@ -500,7 +581,7 @@ const styles = StyleSheet.create({
   bannerWrapper: {
     borderRadius: 20,
     overflow: 'hidden',
-    shadowColor: '#0EA5E9',
+    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.22,
     shadowRadius: 12,
@@ -646,5 +727,71 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     marginTop: 2,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    padding: 20,
+    paddingBottom: 36,
+    maxHeight: '75%',
+  },
+  modalSheetHandle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  modalSheetHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalSheetTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  notificationItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  notifIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  notifTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  notifBody: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 4,
+  },
+  notifTime: {
+    fontSize: 11,
+    fontWeight: '600',
   },
 });
