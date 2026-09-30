@@ -15,11 +15,124 @@ import {
   Platform,
   Keyboard,
   TouchableWithoutFeedback,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { LendingPool, P2POffer, WalletAssets } from '../types';
+
+const SkeletonPulse: React.FC<{ style?: any }> = ({ style }) => {
+  const pulseAnim = React.useRef(new Animated.Value(0.35)).current;
+  const { colors } = useTheme();
+
+  React.useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 0.85,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 0.35,
+          duration: 750,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+
+  return (
+    <Animated.View
+      style={[
+        { backgroundColor: colors.cardAlt, borderRadius: 8 },
+        style,
+        { opacity: pulseAnim },
+      ]}
+    />
+  );
+};
+
+const DeskSkeleton: React.FC = () => {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.deskCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+      <View style={styles.deskHeader}>
+        <View style={styles.deskLeft}>
+          <SkeletonPulse style={{ width: 40, height: 40, borderRadius: 20 }} />
+          <View style={{ gap: 6 }}>
+            <SkeletonPulse style={{ width: 140, height: 16 }} />
+            <SkeletonPulse style={{ width: 90, height: 12 }} />
+          </View>
+        </View>
+        <View style={{ alignItems: 'flex-end', gap: 6 }}>
+          <SkeletonPulse style={{ width: 60, height: 18 }} />
+          <SkeletonPulse style={{ width: 45, height: 12 }} />
+        </View>
+      </View>
+      <View style={[styles.deskFooter, { borderTopColor: colors.cardBorder }]}>
+        <SkeletonPulse style={{ width: 100, height: 14 }} />
+        <SkeletonPulse style={{ width: 88, height: 32, borderRadius: 16 }} />
+      </View>
+    </View>
+  );
+};
+
+const PawnSkeleton: React.FC = () => {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.deskCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+      <View style={styles.deskHeader}>
+        <View style={styles.deskLeft}>
+          <SkeletonPulse style={{ width: 40, height: 40, borderRadius: 20 }} />
+          <View style={{ gap: 6 }}>
+            <SkeletonPulse style={{ width: 130, height: 16 }} />
+            <SkeletonPulse style={{ width: 95, height: 12 }} />
+          </View>
+        </View>
+        <View style={{ alignItems: 'flex-end', gap: 6 }}>
+          <SkeletonPulse style={{ width: 55, height: 18 }} />
+          <SkeletonPulse style={{ width: 50, height: 12 }} />
+        </View>
+      </View>
+      <View style={[styles.deskFooter, { borderTopColor: colors.cardBorder }]}>
+        <SkeletonPulse style={{ width: 80, height: 14 }} />
+        <SkeletonPulse style={{ width: 90, height: 32, borderRadius: 16 }} />
+      </View>
+    </View>
+  );
+};
+
+const ErrorStateCard: React.FC<{ onRetry?: () => void; message?: string }> = ({ onRetry, message }) => {
+  const { colors } = useTheme();
+  return (
+    <View style={[styles.errorCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+      <View style={[styles.errorIconBox, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
+        <Ionicons name="cloud-offline-outline" size={32} color={colors.danger} />
+      </View>
+      <Text style={[styles.errorTitle, { color: colors.text }]}>Unable to Connect to Markets</Text>
+      <Text style={[styles.errorSub, { color: colors.textSecondary }]}>
+        {message || 'Could not fetch live on-chain lending desks from Solana. Please check your network and try again.'}
+      </Text>
+      {onRetry && (
+        <TouchableOpacity
+          style={[styles.retryBtn, { backgroundColor: colors.primary }]}
+          onPress={() => {
+            try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+            onRetry();
+          }}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="refresh" size={16} color="#FFFFFF" />
+          <Text style={styles.retryBtnText}>Retry Connection</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+};
 
 interface MerchantDesksViewProps {
   pools: LendingPool[];
@@ -72,26 +185,26 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
   const [deskFilter, setDeskFilter] = useState<'ALL' | 'VERIFIED' | 'CIRCLES' | 'MY_DESKS'>('ALL');
   const [pawnFilter, setPawnFilter] = useState<'ALL' | 'MY_PAWNS' | 'FUNDED' | 'COMPLETED'>('ALL');
 
-  // Create Pool Modal
+  // Create Pool Modal - use empty initial state with placeholders
   const [createPoolModal, setCreatePoolModal] = useState<boolean>(false);
-  const [deskName, setDeskName] = useState<string>('Solana Chad Vault');
+  const [deskName, setDeskName] = useState<string>('');
   const [deskType, setDeskType] = useState<'Individual' | 'Circle'>('Individual');
-  const [deskApr, setDeskApr] = useState<string>('12.0');
-  const [deskLtv, setDeskLtv] = useState<string>('70');
-  const [deskMinDays, setDeskMinDays] = useState<string>('7');
-  const [deskMaxDays, setDeskMaxDays] = useState<string>('30');
-  const [deskLiquidity, setDeskLiquidity] = useState<string>(userUsdcBalance > 0 ? Math.min(50, Math.floor(userUsdcBalance)).toString() : '10');
+  const [deskApr, setDeskApr] = useState<string>('');
+  const [deskLtv, setDeskLtv] = useState<string>('');
+  const [deskMinDays, setDeskMinDays] = useState<string>('');
+  const [deskMaxDays, setDeskMaxDays] = useState<string>('');
+  const [deskLiquidity, setDeskLiquidity] = useState<string>('');
 
-  // Create Pawn Modal
+  // Create Pawn Modal - use empty initial state with placeholders
   const [pawnModal, setPawnModal] = useState<boolean>(false);
-  const [assetName, setAssetName] = useState<string>('1,000 SKR');
-  const [reqAmount, setReqAmount] = useState<string>('20');
-  const [profitAmount, setProfitAmount] = useState<string>('2');
-  const [duration, setDuration] = useState<string>('7');
+  const [assetName, setAssetName] = useState<string>('');
+  const [reqAmount, setReqAmount] = useState<string>('');
+  const [profitAmount, setProfitAmount] = useState<string>('');
+  const [duration, setDuration] = useState<string>('');
 
   // Deposit Liquidity state
   const [fundModal, setFundModal] = useState<LendingPool | null>(null);
-  const [fundAmount, setFundAmount] = useState<string>('100');
+  const [fundAmount, setFundAmount] = useState<string>('');
 
   const handleCreatePoolSubmit = () => {
     const apr = parseFloat(deskApr);
@@ -314,8 +427,19 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
               })}
             </ScrollView>
 
-            {/* Empty or List */}
-            {filteredPools.length === 0 ? (
+            {/* Loading Skeleton, Error State, or List */}
+            {isLoading && filteredPools.length === 0 && !poolsLoadFailed && !loadFailed ? (
+              <View>
+                <DeskSkeleton />
+                <DeskSkeleton />
+                <DeskSkeleton />
+              </View>
+            ) : (poolsLoadFailed || loadFailed) && filteredPools.length === 0 ? (
+              <ErrorStateCard
+                onRetry={onRetry}
+                message="Failed to read on-chain lending desks from Solana Mainnet. Please check your network and retry."
+              />
+            ) : filteredPools.length === 0 ? (
               <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
                 <Ionicons name="storefront-outline" size={36} color={colors.textMuted} />
                 <Text style={[styles.emptyTitle, { color: colors.text }]}>No Lending Desks Found</Text>
@@ -456,8 +580,18 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
               })}
             </ScrollView>
 
-            {/* Pawn Offer List */}
-            {filteredOffers.length === 0 ? (
+            {/* Loading Skeleton, Error State, or Pawn Offer List */}
+            {isLoading && filteredOffers.length === 0 && !offersLoadFailed && !loadFailed ? (
+              <View>
+                <PawnSkeleton />
+                <PawnSkeleton />
+              </View>
+            ) : (offersLoadFailed || loadFailed) && filteredOffers.length === 0 ? (
+              <ErrorStateCard
+                onRetry={onRetry}
+                message="Failed to read peer-to-peer pawn offers from Solana Mainnet. Please check your network and retry."
+              />
+            ) : filteredOffers.length === 0 ? (
               <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
                 <Ionicons name="pricetag-outline" size={36} color={colors.textMuted} />
                 <Text style={[styles.emptyTitle, { color: colors.text }]}>No P2P Pawns Listed</Text>
@@ -1173,6 +1307,48 @@ const styles = StyleSheet.create({
   },
   modalSubmitText: {
     fontSize: 15,
+    fontWeight: '800',
+  },
+  errorCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: 'center',
+    marginVertical: 12,
+  },
+  errorIconBox: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  errorTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  errorSub: {
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 18,
+    textAlign: 'center',
+    paddingHorizontal: 8,
+    marginBottom: 18,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  retryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: '800',
   },
 });

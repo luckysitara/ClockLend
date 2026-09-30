@@ -62,39 +62,39 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
 
-  // Auto-rotate slides every 3.5 seconds
+  // Auto-rotate slides horizontally every 5.5 seconds (reduced speed)
   useEffect(() => {
     const timer = setInterval(() => {
-      // Animate out
+      // Animate out horizontally to the left
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 0,
-          duration: 250,
+          duration: 280,
           useNativeDriver: true,
         }),
         Animated.timing(slideAnim, {
-          toValue: -8,
-          duration: 250,
+          toValue: -30,
+          duration: 280,
           useNativeDriver: true,
         }),
       ]).start(() => {
         setActiveSlide((prev) => (prev + 1) % ONBOARDING_SLIDES.length);
-        slideAnim.setValue(8);
-        // Animate in
+        slideAnim.setValue(30);
+        // Animate in horizontally from the right
         Animated.parallel([
           Animated.timing(fadeAnim, {
             toValue: 1,
-            duration: 300,
+            duration: 350,
             useNativeDriver: true,
           }),
           Animated.timing(slideAnim, {
             toValue: 0,
-            duration: 300,
+            duration: 350,
             useNativeDriver: true,
           }),
         ]).start();
       });
-    }, 3800);
+    }, 5500);
 
     return () => clearInterval(timer);
   }, []);
@@ -147,53 +147,50 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
         </TouchableOpacity>
       </View>
 
-      {/* ── Brand Lockup (Electric Cyan Logo & Typography) ── */}
+      {/* ── Brand Logo Only (No Text) ── */}
       <View style={styles.heroSection}>
         <View style={[styles.logoContainer, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           <Image source={LOGO_IMG} style={styles.logoImage} resizeMode="contain" />
         </View>
-
-        <Text style={[styles.brandTitle, { color: colors.text }]}>ClockLend</Text>
-        <Text style={[styles.brandTagline, { color: colors.textSecondary }]}>
-          Next-Gen Credit Protocol on Solana
-        </Text>
       </View>
 
-      {/* ── Sleek Auto-Rotating Feature Showcase Card ── */}
-      <View style={[styles.cardWrapper, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        <Animated.View
-          style={[
-            styles.cardInner,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}
-        >
-          <View style={[styles.badgePill, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
-            <Text style={[styles.badgeText, { color: colors.primaryLabel }]}>{slide.badge}</Text>
+      {/* ── Centered Bigger Showcase Card (Horizontal Carousel) ── */}
+      <View style={styles.centerSection}>
+        <View style={[styles.cardWrapper, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          <Animated.View
+            style={[
+              styles.cardInner,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateX: slideAnim }],
+              },
+            ]}
+          >
+            <View style={[styles.badgePill, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
+              <Text style={[styles.badgeText, { color: colors.primaryLabel }]}>{slide.badge}</Text>
+            </View>
+
+            <View style={[styles.iconBox, { backgroundColor: colors.badgeBg }]}>
+              <Ionicons name={slide.icon} size={36} color={colors.primary} />
+            </View>
+
+            <Text style={[styles.cardTitle, { color: colors.text }]}>{slide.title}</Text>
+            <Text style={[styles.cardDesc, { color: colors.textSecondary }]}>{slide.description}</Text>
+          </Animated.View>
+
+          {/* Carousel Indicator Dots */}
+          <View style={styles.dotsRow}>
+            {ONBOARDING_SLIDES.map((s, idx) => (
+              <View
+                key={s.id}
+                style={[
+                  styles.dot,
+                  { backgroundColor: idx === activeSlide ? colors.primary : colors.cardBorder },
+                  idx === activeSlide && styles.activeDot,
+                ]}
+              />
+            ))}
           </View>
-
-          <View style={[styles.iconBox, { backgroundColor: colors.badgeBg }]}>
-            <Ionicons name={slide.icon} size={30} color={colors.primary} />
-          </View>
-
-          <Text style={[styles.cardTitle, { color: colors.text }]}>{slide.title}</Text>
-          <Text style={[styles.cardDesc, { color: colors.textSecondary }]}>{slide.description}</Text>
-        </Animated.View>
-
-        {/* Carousel Indicator Dots */}
-        <View style={styles.dotsRow}>
-          {ONBOARDING_SLIDES.map((s, idx) => (
-            <View
-              key={s.id}
-              style={[
-                styles.dot,
-                { backgroundColor: idx === activeSlide ? colors.primary : colors.cardBorder },
-                idx === activeSlide && styles.activeDot,
-              ]}
-            />
-          ))}
         </View>
       </View>
 
@@ -277,16 +274,16 @@ const styles = StyleSheet.create({
   },
   heroSection: {
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingTop: 8,
+    paddingBottom: 4,
   },
   logoContainer: {
-    width: 76,
-    height: 76,
-    borderRadius: 24,
+    width: 84,
+    height: 84,
+    borderRadius: 28,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 14,
     shadowColor: '#1D4ED8',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.18,
@@ -294,67 +291,63 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   logoImage: {
-    width: 48,
-    height: 48,
+    width: 54,
+    height: 54,
   },
-  brandTitle: {
-    fontSize: 28,
-    fontWeight: '900',
-    letterSpacing: -0.5,
-    marginBottom: 4,
-  },
-  brandTagline: {
-    fontSize: 14,
-    fontWeight: '600',
+  centerSection: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: 12,
   },
   cardWrapper: {
-    borderRadius: 24,
+    borderRadius: 28,
     borderWidth: 1,
-    padding: 22,
+    paddingVertical: 28,
+    paddingHorizontal: 24,
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.05,
-    shadowRadius: 14,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 4,
   },
   cardInner: {
     alignItems: 'center',
     width: '100%',
   },
   badgePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
     borderRadius: 12,
     borderWidth: 1,
-    marginBottom: 14,
+    marginBottom: 16,
   },
   badgeText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   iconBox: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 16,
   },
   cardTitle: {
-    fontSize: 19,
+    fontSize: 21,
     fontWeight: '800',
-    marginBottom: 8,
+    marginBottom: 10,
     textAlign: 'center',
   },
   cardDesc: {
     fontSize: 14,
     fontWeight: '500',
-    lineHeight: 20,
+    lineHeight: 22,
     textAlign: 'center',
-    paddingHorizontal: 12,
-    marginBottom: 18,
+    paddingHorizontal: 10,
+    marginBottom: 22,
   },
   dotsRow: {
     flexDirection: 'row',
@@ -367,7 +360,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   activeDot: {
-    width: 22,
+    width: 24,
     borderRadius: 4,
   },
   bottomSection: {

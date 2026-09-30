@@ -1,10 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  View,
   Pressable,
   StyleSheet,
   Image,
-  Text,
   Animated,
   Dimensions,
 } from 'react-native';
@@ -21,11 +19,8 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
   const { colors, mode } = useTheme();
 
   // Animations
-  const logoScale = useRef(new Animated.Value(0.75)).current;
+  const logoScale = useRef(new Animated.Value(0.7)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
-  const logoTranslateX = useRef(new Animated.Value(0)).current;
-  const textOpacity = useRef(new Animated.Value(0)).current;
-  const textTranslateX = useRef(new Animated.Value(15)).current;
   const exitScale = useRef(new Animated.Value(1)).current;
   const exitOpacity = useRef(new Animated.Value(1)).current;
 
@@ -38,53 +33,41 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
   };
 
   useEffect(() => {
-    // 1. Initial Icon entrance (matches 932b78b0 icon splash)
+    // 1. Initial Icon entrance: spring scale + smooth fade in
     Animated.parallel([
       Animated.timing(logoOpacity, {
         toValue: 1,
-        duration: 400,
+        duration: 500,
         useNativeDriver: true,
       }),
       Animated.spring(logoScale, {
         toValue: 1,
-        friction: 7,
-        tension: 40,
+        friction: 6,
+        tension: 35,
         useNativeDriver: true,
       }),
     ]).start();
 
-    // 2. Reveal brand text lockup (matches b5644ebd brand lockup splash)
-    const textTimer = setTimeout(() => {
-      Animated.parallel([
-        Animated.timing(logoTranslateX, {
-          toValue: -8,
-          duration: 350,
-          useNativeDriver: true,
-        }),
-        Animated.timing(textOpacity, {
-          toValue: 1,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-        Animated.timing(textTranslateX, {
-          toValue: 0,
-          duration: 350,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }, 550);
+    // 2. Subtle breath pulse
+    const pulseTimer = setTimeout(() => {
+      Animated.timing(logoScale, {
+        toValue: 1.06,
+        duration: 600,
+        useNativeDriver: true,
+      }).start();
+    }, 700);
 
     // 3. Smooth exit transition into main shell
     const exitTimer = setTimeout(() => {
       Animated.parallel([
         Animated.timing(exitOpacity, {
           toValue: 0,
-          duration: 300,
+          duration: 350,
           useNativeDriver: true,
         }),
         Animated.timing(exitScale, {
-          toValue: 1.08,
-          duration: 300,
+          toValue: 1.15,
+          duration: 350,
           useNativeDriver: true,
         }),
       ]).start(() => {
@@ -93,7 +76,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
     }, 1800);
 
     return () => {
-      clearTimeout(textTimer);
+      clearTimeout(pulseTimer);
       clearTimeout(exitTimer);
     };
   }, []);
@@ -102,7 +85,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
     <Pressable
       style={[
         styles.container,
-        { backgroundColor: mode === 'dark' ? '#121316' : '#F7F5F0' },
+        { backgroundColor: colors.background },
       ]}
       onPress={finishEarly}
       accessibilityRole="button"
@@ -110,7 +93,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
     >
       <Animated.View
         style={[
-          styles.brandContainer,
+          styles.logoContainer,
           {
             opacity: exitOpacity,
             transform: [{ scale: exitScale }],
@@ -122,33 +105,11 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
             styles.logoWrapper,
             {
               opacity: logoOpacity,
-              transform: [
-                { scale: logoScale },
-                { translateX: logoTranslateX },
-              ],
+              transform: [{ scale: logoScale }],
             },
           ]}
         >
           <Image source={LOGO_IMG} style={styles.logo} resizeMode="contain" />
-        </Animated.View>
-
-        <Animated.View
-          style={[
-            styles.textWrapper,
-            {
-              opacity: textOpacity,
-              transform: [{ translateX: textTranslateX }],
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.brandTitle,
-              { color: mode === 'dark' ? '#F1F5F9' : '#1C1917' },
-            ]}
-          >
-            ClockLend
-          </Text>
         </Animated.View>
       </Animated.View>
     </Pressable>
@@ -161,28 +122,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  brandContainer: {
-    flexDirection: 'row',
+  logoContainer: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   logoWrapper: {
-    width: 64,
-    height: 64,
+    width: 108,
+    height: 108,
     justifyContent: 'center',
     alignItems: 'center',
   },
   logo: {
     width: '100%',
     height: '100%',
-  },
-  textWrapper: {
-    marginLeft: 8,
-    justifyContent: 'center',
-  },
-  brandTitle: {
-    fontSize: 34,
-    fontWeight: '900',
-    letterSpacing: -0.5,
   },
 });

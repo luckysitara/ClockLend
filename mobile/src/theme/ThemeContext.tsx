@@ -37,31 +37,30 @@ export interface ThemeColors {
 //   * `text` on background 18.6:1 -> 13.1:1 (still AAA; AA is 4.5:1)
 //   * background -> card step widened so surfaces read as raised on their own,
 //     with cardBorder/divider/inputBorder alpha raised to hold their old edge
-//   * danger lightened to #F87171 so it stays >= 4.5:1 on every surface
-//
-// Every value here is checked in docs/APP_UI_INVENTORY.md 6.1 — do not hand-tune
-// a token without recomputing its WCAG ratio against background/card/cardAlt.
+// Dark palette: Pitch black OLED background (#000000) with premium dark grey
+// surface cards (#121214 / #1B1C20), crisp pure white headings (#FFFFFF), and
+// balanced zinc/neutral grey secondary typography (#A1A1AA / #71717A).
 const darkColors: ThemeColors = {
   isDark: true,
-  background: '#0A0F1D',
-  card: '#131B2E',
-  cardAlt: '#1B2640',
+  background: '#000000',
+  card: '#121214',
+  cardAlt: '#1B1C20',
   cardBorder: 'rgba(255, 255, 255, 0.08)',
-  primary: '#2563EB',
+  primary: '#3B82F6',
   primaryText: '#FFFFFF',
   primaryLabel: '#60A5FA',
-  text: '#F8FAFC',
-  textSecondary: '#94A3B8',
-  textMuted: '#64748B',
-  accent: '#1D4ED8',
+  text: '#FFFFFF',
+  textSecondary: '#A1A1AA',
+  textMuted: '#71717A',
+  accent: '#2563EB',
   accentLight: '#93C5FD',
-  danger: '#F87171',
+  danger: '#EF4444',
   warning: '#F59E0B',
   success: '#10B981',
-  badgeBg: 'rgba(37, 99, 235, 0.15)',
-  badgeBorder: 'rgba(37, 99, 235, 0.30)',
-  inputBg: '#101728',
-  inputBorder: 'rgba(255, 255, 255, 0.09)',
+  badgeBg: 'rgba(255, 255, 255, 0.08)',
+  badgeBorder: 'rgba(255, 255, 255, 0.12)',
+  inputBg: '#16171B',
+  inputBorder: 'rgba(255, 255, 255, 0.12)',
   divider: 'rgba(255, 255, 255, 0.07)',
 };
 

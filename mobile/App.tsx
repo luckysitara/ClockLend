@@ -150,23 +150,7 @@ function MainApp() {
     setActiveTab('BORROW');
   };
 
-  // Show the Judge Briefing Hub once per device, the first time the main shell
-  // is actually on screen — never over the splash, the lock screen or the
-  // onboarding gate. Same SecureStore pattern as the Quick-Start bar.
-  useEffect(() => {
-    if (!session || showSplash || isLocked) return;
-    let cancelled = false;
-    SecureStore.getItemAsync('clocklend_judge_briefing_seen_v1')
-      .then((val) => {
-        if (!cancelled && val !== '1') setShowJudgeBriefing(true);
-      })
-      .catch(() => {
-        if (!cancelled) setShowJudgeBriefing(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [session?.publicKey, showSplash, isLocked]);
+
 
   const handleJudgeBriefingClose = async () => {
     setShowJudgeBriefing(false);

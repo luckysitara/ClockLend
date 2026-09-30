@@ -16,7 +16,6 @@ import { SkrYieldVaultState, UserYieldPositionState, tierDiscountLabel } from '.
 import {
   isLockEnabled,
   setLockEnabled,
-  isBiometricsEnabled,
   getUserPin,
 } from '../services/securityService';
 import { SettingsView } from './SettingsModal';
@@ -94,6 +93,8 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
   const cleanHandle = skrHandle.replace(/^@/, '').replace(/\.skr$/i, '');
   const skrUsername = `${cleanHandle}.skr`;
 
+  const availableToUnstake = Math.max(0, userProfile.stakedSkr - (userProfile.lockedSkr || 0));
+
   if (subView === 'SETTINGS') {
     return (
       <SettingsView
@@ -118,7 +119,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* ── Top Header Row (Matches 703a904b) ── */}
+      {/* ── Top Header Row ── */}
       <View style={styles.topHeaderRow}>
         <View style={styles.brandRow}>
           <Image source={require('../../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
@@ -126,7 +127,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         </View>
         <TouchableOpacity
           onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
             setSubView('SETTINGS');
           }}
           style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
@@ -138,24 +139,203 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* ── 1. Profile Hero Card (Only .skr username, no profile image per user request) ── */}
+      {/* ── 1. Profile Hero Card ── */}
       <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         <View style={styles.skrUserRow}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.skrUsernameText, { color: colors.text }]}>{skrUsername}</Text>
-            <Text style={[styles.skrHandleSub, { color: colors.primaryLabel }]}>Solana Seeker Verified Account</Text>
+            <Text style={[styles.skrHandleSub, { color: colors.primaryLabel }]}>
+              Solana Seeker Verified Profile
+            </Text>
           </View>
           <View style={[styles.skrBadge, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
             <Text style={[styles.skrBadgeText, { color: colors.primaryLabel }]}>.SKR DOMAIN</Text>
           </View>
         </View>
+
+        <View style={[styles.divider, { backgroundColor: colors.divider }]} />
+
+        <View style={styles.heroQuickInfo}>
+          <View style={styles.heroQuickItem}>
+            <Text style={[styles.heroQuickLabel, { color: colors.textMuted }]}>Tier Status</Text>
+            <Text style={[styles.heroQuickValue, { color: colors.text }]}>
+              {userProfile.tier === 'Tier 2' ? 'Tier 2 (50% OFF)' : userProfile.tier === 'Tier 1' ? 'Tier 1 (25% OFF)' : 'Standard'}
+            </Text>
+          </View>
+          <View style={styles.heroQuickItem}>
+            <Text style={[styles.heroQuickLabel, { color: colors.textMuted }]}>Score</Text>
+            <Text style={[styles.heroQuickValue, { color: colors.primaryLabel }]}>
+              {(userProfile.reputationScore / 100).toFixed(0)} pts
+            </Text>
+          </View>
+        </View>
       </View>
 
-      {/* ── 2. Wallet Information Card (Matches 703a904b) ── */}
+      {/* ── 2. On-Chain Credit Standing ── */}
       <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        <Text style={[styles.cardHeading, { color: colors.text }]}>Wallet information</Text>
+        <View style={styles.creditHeaderRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
+            <Text style={[styles.cardHeading, { color: colors.text }]}>On-Chain Standing</Text>
+          </View>
+          <View style={[styles.tierTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
+            <Text style={[styles.tierTagText, { color: colors.primaryLabel }]}>
+              {tierDiscountLabel(userProfile.tier)}
+            </Text>
+          </View>
+        </View>
 
-        {/* ClockLend Tag */}
+        <View style={styles.standingGrid}>
+          <View style={styles.standingItem}>
+            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Reputation Score</Text>
+            <Text style={[styles.metricValue, { color: colors.primaryLabel }]}>
+              {(userProfile.reputationScore / 100).toFixed(1)}%
+            </Text>
+          </View>
+          <View style={styles.standingItem}>
+            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Completed Loans</Text>
+            <Text style={[styles.metricValue, { color: colors.text }]}>
+              {userProfile.totalLoansCompleted} on-time
+            </Text>
+          </View>
+          <View style={styles.standingItem}>
+            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Defaults</Text>
+            <Text style={[styles.metricValue, { color: userProfile.totalLoansDefaulted > 0 ? colors.danger : colors.textSecondary }]}>
+              {userProfile.totalLoansDefaulted}
+            </Text>
+          </View>
+          <View style={styles.standingItem}>
+            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>APR Discount</Text>
+            <Text style={[styles.metricValue, { color: colors.success }]}>
+              {userProfile.aprDiscount > 0 ? `-${(userProfile.aprDiscount / 100).toFixed(0)}%` : '0%'}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* ── 3. SKR Reputation Bond Staking Card ── */}
+      <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <View style={styles.creditHeaderRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="lock-closed" size={18} color={colors.primary} />
+            <Text style={[styles.cardHeading, { color: colors.text }]}>SKR Reputation Bond</Text>
+          </View>
+          <View style={[styles.tierTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
+            <Text style={[styles.tierTagText, { color: colors.primaryLabel }]}>
+              {userProfile.stakedSkr >= 1000 ? 'Tier 2 Active' : userProfile.stakedSkr >= 100 ? 'Tier 1 Active' : 'No Tier Active'}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={[styles.bondExplainer, { color: colors.textSecondary }]}>
+          Stake SKR to unlock interest discounts across all lending desks. 100 SKR unlocks 25% off; 1,000 SKR unlocks 50% off. Bonds backing active loans remain safely locked on-chain.
+        </Text>
+
+        <View style={styles.bondStatsRow}>
+          <View style={[styles.bondStatBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+            <Text style={[styles.bondStatLabel, { color: colors.textMuted }]}>Staked Bond</Text>
+            <Text style={[styles.bondStatValue, { color: colors.text }]}>
+              {userProfile.stakedSkr.toLocaleString()} SKR
+            </Text>
+          </View>
+          <View style={[styles.bondStatBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+            <Text style={[styles.bondStatLabel, { color: colors.textMuted }]}>Loan Locked</Text>
+            <Text style={[styles.bondStatValue, { color: colors.warning }]}>
+              {(userProfile.lockedSkr || 0).toLocaleString()} SKR
+            </Text>
+          </View>
+        </View>
+
+        {/* Quick Stake Preset Buttons */}
+        <View style={styles.presetSection}>
+          <Text style={[styles.presetSectionLabel, { color: colors.textMuted }]}>QUICK STAKE PRESETS</Text>
+          <View style={styles.presetRow}>
+            <TouchableOpacity
+              style={[styles.presetBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
+              onPress={() => {
+                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+                onStakeSkr(100);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.presetBtnText, { color: colors.primaryLabel }]}>+100 SKR</Text>
+              <Text style={[styles.presetBtnSub, { color: colors.textMuted }]}>Tier 1 (25% off)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.presetBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
+              onPress={() => {
+                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+                onStakeSkr(1000);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.presetBtnText, { color: colors.primaryLabel }]}>+1,000 SKR</Text>
+              <Text style={[styles.presetBtnSub, { color: colors.textMuted }]}>Tier 2 (50% off)</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Unstake Action */}
+        {onUnstakeSkr && availableToUnstake > 0 && (
+          <TouchableOpacity
+            style={[styles.unstakeBtn, { borderColor: colors.cardBorder, backgroundColor: colors.cardAlt }]}
+            onPress={() => {
+              Alert.alert(
+                'Unstake SKR Reputation Bond',
+                `You have ${availableToUnstake.toLocaleString()} SKR available to unstake (${(userProfile.lockedSkr || 0).toLocaleString()} SKR is currently locked by active loans).\n\nProceed to withdraw ${availableToUnstake.toLocaleString()} SKR?`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Unstake All', onPress: () => onUnstakeSkr(availableToUnstake) },
+                ]
+              );
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.unstakeBtnText, { color: colors.textSecondary }]}>
+              Unstake Available SKR ({availableToUnstake.toLocaleString()})
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ── 4. Staking Yield Rewards (If Position Exists) ── */}
+      {yieldPosition && accruedUsd > 0 && (
+        <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          <View style={styles.creditHeaderRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="sparkles" size={18} color={colors.success} />
+              <Text style={[styles.cardHeading, { color: colors.text }]}>Staking Yield</Text>
+            </View>
+            <View style={[styles.tierTag, { backgroundColor: 'rgba(16, 185, 129, 0.12)', borderColor: colors.success }]}>
+              <Text style={[styles.tierTagText, { color: colors.success }]}>REWARDS READY</Text>
+            </View>
+          </View>
+          <View style={styles.yieldRow}>
+            <View>
+              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Accrued Protocol Yield</Text>
+              <Text style={[styles.yieldAmountText, { color: colors.text }]}>${accruedUsd.toFixed(4)} USDC</Text>
+            </View>
+            {canClaimYield && (
+              <TouchableOpacity
+                style={[styles.claimYieldBtn, { backgroundColor: colors.success }]}
+                onPress={() => {
+                  try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch {}
+                  onClaimYield();
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.claimYieldText}>Claim Yield</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      )}
+
+      {/* ── 5. Wallet Information Card ── */}
+      <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <Text style={[styles.cardHeading, { color: colors.text }]}>Wallet Information</Text>
+
         <View style={styles.dataField}>
           <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>ClockLend Tag</Text>
           <View style={styles.fieldValueRow}>
@@ -176,7 +356,6 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
 
         <View style={[styles.divider, { backgroundColor: colors.divider }]} />
 
-        {/* Wallet Address */}
         <View style={styles.dataField}>
           <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Wallet Address</Text>
           <View style={styles.fieldValueRow}>
@@ -199,7 +378,6 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
 
         <View style={[styles.divider, { backgroundColor: colors.divider }]} />
 
-        {/* Powered By Solana Badge (Genuine Solana Token Logo) */}
         <View style={styles.poweredByRow}>
           <Text style={[styles.poweredByText, { color: colors.textMuted }]}>Powered By</Text>
           <View style={[styles.solanaPill, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
@@ -208,39 +386,12 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
               style={styles.solanaLogo}
               resizeMode="contain"
             />
-            <Text style={[styles.solanaPillText, { color: colors.text }]}>SOLANA</Text>
+            <Text style={[styles.solanaPillText, { color: colors.text }]}>SOLANA MAINNET</Text>
           </View>
         </View>
       </View>
 
-      {/* ── 4. On-Chain Credit Standing ── */}
-      <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        <View style={styles.creditHeaderRow}>
-          <Text style={[styles.cardHeading, { color: colors.text }]}>On-Chain Standing</Text>
-          <View style={[styles.tierTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
-            <Text style={[styles.tierTagText, { color: colors.primaryLabel }]}>
-              {tierDiscountLabel(userProfile.tier)}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.standingGrid}>
-          <View style={styles.standingItem}>
-            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Reputation Score</Text>
-            <Text style={[styles.metricValue, { color: colors.primaryLabel }]}>
-              {(userProfile.reputationScore / 100).toFixed(1)}%
-            </Text>
-          </View>
-          <View style={styles.standingItem}>
-            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Completed Loans</Text>
-            <Text style={[styles.metricValue, { color: colors.text }]}>
-              {userProfile.totalLoansCompleted} on-time
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      {/* ── 5. Disconnect Wallet Button (Matches 703a904b red action) ── */}
+      {/* ── 6. Disconnect Wallet Button ── */}
       <TouchableOpacity
         style={[styles.disconnectBtn, { borderColor: colors.danger, backgroundColor: colors.card }]}
         onPress={() => {
@@ -299,50 +450,198 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   profileCard: {
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 1,
-    padding: 20,
+    padding: 18,
     marginBottom: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
   },
   skrUserRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 12,
   },
   skrUsernameText: {
     fontSize: 22,
     fontWeight: '900',
     letterSpacing: -0.3,
-    marginBottom: 4,
   },
   skrHandleSub: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
+    marginTop: 3,
   },
   skrBadge: {
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 4,
     borderRadius: 10,
     borderWidth: 1,
   },
   skrBadgeText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
+  heroQuickInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 4,
+  },
+  heroQuickItem: {
+    flex: 1,
+  },
+  heroQuickLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  heroQuickValue: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
   infoCard: {
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 1,
     padding: 18,
     marginBottom: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
   },
   cardHeading: {
     fontSize: 16,
     fontWeight: '800',
+  },
+  creditHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 14,
   },
+  tierTag: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  tierTagText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  standingGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  standingItem: {
+    width: '47%',
+  },
+  metricLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 3,
+  },
+  metricValue: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  bondExplainer: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '500',
+    marginBottom: 14,
+  },
+  bondStatsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  bondStatBox: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  bondStatLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  bondStatValue: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  presetSection: {
+    marginBottom: 10,
+  },
+  presetSectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  presetRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  presetBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  presetBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  presetBtnSub: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  unstakeBtn: {
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  unstakeBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  yieldRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  yieldAmountText: {
+    fontSize: 20,
+    fontWeight: '900',
+    marginTop: 4,
+  },
+  claimYieldBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  claimYieldText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
   dataField: {
-    marginBottom: 6,
+    paddingVertical: 4,
   },
   fieldLabel: {
     fontSize: 12,
@@ -361,12 +660,12 @@ const styles = StyleSheet.create({
   addressFullText: {
     fontSize: 14,
     fontWeight: '600',
-    letterSpacing: 0.2,
+    fontFamily: 'monospace',
   },
   copyBtn: {
     width: 32,
     height: 32,
-    borderRadius: 8,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -378,72 +677,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 4,
+    paddingTop: 2,
   },
   poweredByText: {
-    fontSize: 13,
-    fontWeight: '500',
+    fontSize: 12,
+    fontWeight: '600',
   },
   solanaPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 12,
     borderWidth: 1,
+    gap: 6,
   },
   solanaLogo: {
-    width: 16,
-    height: 16,
+    width: 14,
+    height: 14,
   },
   solanaPillText: {
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-  creditHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  tierTag: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  tierTagText: {
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  standingGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
-  },
-  standingItem: {
-    flex: 1,
-  },
-  metricLabel: {
-    fontSize: 11,
-    fontWeight: '500',
-    marginBottom: 4,
-  },
-  metricValue: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
   disconnectBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 52,
-    borderRadius: 16,
-    borderWidth: 1.5,
     gap: 8,
-    marginTop: 4,
-    marginBottom: 20,
+    paddingVertical: 14,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    marginTop: 6,
   },
   disconnectBtnText: {
     fontSize: 15,

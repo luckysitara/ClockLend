@@ -120,7 +120,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                 <Ionicons name="trophy" size={20} color={colors.warning} />
               </View>
               <View>
-                <Text style={[styles.title, { color: colors.text }]}>Seeker Hall of Fame</Text>
+                <Text style={[styles.title, { color: colors.text }]}>Reputation Leaderboard</Text>
                 <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
                   On-Chain Credit & Reputation Rankings
                 </Text>
@@ -253,7 +253,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                   <Text style={styles.emptyIcon}>🏆</Text>
                   <Text style={[styles.emptyTitle, { color: colors.text }]}>No On-Chain Profiles Found</Text>
                   <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
-                    No registered borrower or staker profiles found on Solana Mainnet for this tier yet. Complete your first loan or stake an SKR reputation bond to rank on the Hall of Fame!
+                    No registered borrower or staker profiles found on Solana Mainnet for this tier yet. Complete your first loan or stake an SKR reputation bond to rank on the leaderboard!
                   </Text>
                 </View>
               ) : (

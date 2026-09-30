@@ -55,8 +55,10 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
   initialAmount,
 }) => {
   const { colors, mode } = useTheme();
-  const [amountStr, setAmountStr] = useState<string>(initialAmount ?? '50');
+  // Use placeholder instead of hardcoded '50'
+  const [amountStr, setAmountStr] = useState<string>(initialAmount ?? '');
   const [collateralType, setCollateralType] = useState<'SKR' | 'SOL'>('SKR');
+  const [showCollateralModal, setShowCollateralModal] = useState<boolean>(false);
   const [durationDays, setDurationDays] = useState<number>(7);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
@@ -115,7 +117,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
   const isDecimal = collateralType === 'SOL';
   const requiredCollateralUnits = isDecimal ? rawCollateral : Math.ceil(rawCollateral);
 
-  const isInsufficientCollateral = requiredCollateralUnits > userBalance;
+  const isInsufficientCollateral = numAmount > 0 && requiredCollateralUnits > userBalance;
   const poolLiquidity = bestPool ? bestPool.totalLiquidity : 0;
   const hasNoLiquidity = fundedPools.length === 0;
   const exceedsLiquidity = !!bestPool && numAmount > poolLiquidity;
@@ -215,27 +217,23 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
-      {/* ── Top Header Row ── */}
+      {/* ── Top Header Row with Wallet Icon ── */}
       <View style={styles.topHeaderRow}>
         <View style={styles.brandRow}>
           <Image source={require('../../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
           <Text style={[styles.headerTitle, { color: colors.text }]}>Instant Borrow</Text>
         </View>
-        {walletAssets && (
-          <View style={[styles.balancePill, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <Text style={[styles.balancePillText, { color: colors.primaryLabel }]}>
-              {walletAssets.solBalance.toFixed(3)} SOL
-            </Text>
-          </View>
-        )}
+        <View style={[styles.walletChip, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          <Ionicons name="wallet-outline" size={18} color={colors.textSecondary} />
+        </View>
       </View>
 
-      {/* ── Jupiter-Style Main Card ── */}
+      {/* ── Main Card ── */}
       <View style={[styles.mainCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        {/* Section 1: You Borrow */}
+        {/* Section 1: Borrow Amount */}
         <View style={[styles.inputBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
           <View style={styles.inputHeaderRow}>
-            <Text style={[styles.inputHeaderLabel, { color: colors.textSecondary }]}>YOU BORROW</Text>
+            <Text style={[styles.inputHeaderLabel, { color: colors.textSecondary }]}>BORROW AMOUNT</Text>
             {poolLiquidity > 0 && (
               <Text style={[styles.poolAvailText, { color: colors.textMuted }]}>
                 Avail: ${poolLiquidity.toLocaleString()} USDC
@@ -249,7 +247,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
               value={amountStr}
               onChangeText={setAmountStr}
               keyboardType="numeric"
-              placeholder="0"
+              placeholder="0.00"
               placeholderTextColor={colors.textMuted}
             />
             <View style={[styles.tokenTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
@@ -259,15 +257,15 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
           </View>
         </View>
 
-        {/* Section 2: Collateral Locked */}
+        {/* Section 2: Collateral in Escrow */}
         <View style={[styles.inputBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder, marginTop: 12 }]}>
           <View style={styles.inputHeaderRow}>
-            <Text style={[styles.inputHeaderLabel, { color: colors.textSecondary }]}>YOU LOCK IN ESCROW</Text>
+            <Text style={[styles.inputHeaderLabel, { color: colors.textSecondary }]}>COLLATERAL IN ESCROW</Text>
             <TouchableOpacity
               onPress={() => {
                 if (collateralPrice > 0) {
                   const maxAmt = Math.floor(userBalance * ltv * collateralPrice);
-                  setAmountStr(maxAmt > 0 ? String(maxAmt) : '0');
+                  setAmountStr(maxAmt > 0 ? String(maxAmt) : '');
                 }
               }}
               activeOpacity={0.7}
@@ -280,52 +278,40 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
           </View>
 
           <View style={styles.inputRow}>
-            <Text style={[styles.collateralAmountText, { color: colors.text }]}>
+            <Text
+              style={[
+                styles.collateralAmountText,
+                { color: requiredCollateralUnits > 0 ? colors.text : colors.textMuted },
+              ]}
+            >
               {requiredCollateralUnits > 0
                 ? requiredCollateralUnits.toFixed(isDecimal ? 3 : 0)
                 : '0.00'}
             </Text>
 
-            {/* Collateral Selector (SKR / SOL) */}
-            <View style={styles.tokenSelectorGroup}>
-              {(['SKR', 'SOL'] as const).map((t) => {
-                const isSelected = collateralType === t;
-                return (
-                  <TouchableOpacity
-                    key={t}
-                    style={[
-                      styles.tokenSelectBtn,
-                      { backgroundColor: colors.card, borderColor: colors.cardBorder },
-                      isSelected && { backgroundColor: colors.badgeBg, borderColor: colors.primary },
-                    ]}
-                    onPress={() => {
-                      try { Haptics.selectionAsync(); } catch {}
-                      setCollateralType(t);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Image
-                      source={t === 'SOL' ? SOL_LOGO : SKR_LOGO}
-                      style={styles.tokenIcon}
-                      resizeMode="contain"
-                    />
-                    <Text
-                      style={[
-                        styles.tokenSelectText,
-                        { color: colors.text },
-                        isSelected && { color: colors.primaryLabel, fontWeight: '800' },
-                      ]}
-                    >
-                      {t}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            {/* Dropdown Trigger for Collateral Currency */}
+            <TouchableOpacity
+              style={[styles.dropdownTrigger, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+              onPress={() => {
+                try { Haptics.selectionAsync(); } catch {}
+                setShowCollateralModal(true);
+              }}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`Select collateral: currently ${collateralType}`}
+            >
+              <Image
+                source={collateralType === 'SOL' ? SOL_LOGO : SKR_LOGO}
+                style={styles.dropdownIcon}
+                resizeMode="contain"
+              />
+              <Text style={[styles.dropdownText, { color: colors.text }]}>{collateralType}</Text>
+              <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Section 3: Duration Selector */}
+        {/* Section 3: Duration Selector with Smaller Pills */}
         <View style={styles.durationSection}>
           <Text style={[styles.durationLabel, { color: colors.textSecondary }]}>LOAN DURATION</Text>
           <View style={styles.durationPillsRow}>
@@ -391,30 +377,112 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
           </View>
         </View>
 
-        {/* Primary Action Button */}
+        {/* Primary Action Button: Solid color when active, border with blank background when inactive */}
         <TouchableOpacity
-          style={[styles.borrowBtnContainer, isDisabled && styles.borrowBtnDisabled]}
+          style={[
+            styles.borrowBtn,
+            isDisabled
+              ? [styles.borrowBtnInactive, { borderColor: colors.cardBorder }]
+              : [styles.borrowBtnActive, { backgroundColor: colors.primary }],
+          ]}
           onPress={handleOpenConfirm}
           disabled={isDisabled}
           activeOpacity={0.88}
         >
-          <LinearGradient
-            colors={mode === 'dark' ? ['#172554', '#1E40AF', '#2563EB'] : ['#1E3A8A', '#1D4ED8', '#2563EB']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.borrowBtnGradient}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <>
-                <Ionicons name="flash" size={18} color="#FFFFFF" />
-                <Text style={styles.borrowBtnText}>{getCtaLabel()}</Text>
-              </>
-            )}
-          </LinearGradient>
+          {isSubmitting ? (
+            <ActivityIndicator size="small" color={isDisabled ? colors.textMuted : '#FFFFFF'} />
+          ) : (
+            <View style={styles.borrowBtnInner}>
+              <Ionicons
+                name="flash"
+                size={18}
+                color={isDisabled ? colors.textMuted : '#FFFFFF'}
+              />
+              <Text
+                style={[
+                  styles.borrowBtnText,
+                  { color: isDisabled ? colors.textMuted : '#FFFFFF' },
+                ]}
+              >
+                {getCtaLabel()}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
+
+      {/* ── Dropdown Modal to Choose Collateral Currency ── */}
+      <Modal
+        visible={showCollateralModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCollateralModal(false)}
+      >
+        <View style={styles.dropdownModalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowCollateralModal(false)}
+          />
+          <View style={[styles.dropdownModalContent, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <View style={styles.dropdownModalHeader}>
+              <Text style={[styles.dropdownModalTitle, { color: colors.text }]}>Select Collateral Asset</Text>
+              <TouchableOpacity onPress={() => setShowCollateralModal(false)}>
+                <Ionicons name="close" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {([
+              {
+                id: 'SKR' as const,
+                name: 'Seeker Reputation Bond (SKR)',
+                price: skrPrice,
+                balance: skrBalance,
+                logo: SKR_LOGO,
+              },
+              {
+                id: 'SOL' as const,
+                name: 'Native Solana (SOL)',
+                price: solPrice,
+                balance: solBalance,
+                logo: SOL_LOGO,
+              },
+            ]).map((asset) => {
+              const isSelected = collateralType === asset.id;
+              return (
+                <TouchableOpacity
+                  key={asset.id}
+                  style={[
+                    styles.assetItem,
+                    { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder },
+                    isSelected && { borderColor: colors.primary, backgroundColor: colors.badgeBg },
+                  ]}
+                  onPress={() => {
+                    try { Haptics.selectionAsync(); } catch {}
+                    setCollateralType(asset.id);
+                    setShowCollateralModal(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Image source={asset.logo} style={styles.assetItemLogo} resizeMode="contain" />
+                  <View style={styles.assetItemInfo}>
+                    <Text style={[styles.assetItemSymbol, { color: colors.text }]}>{asset.id}</Text>
+                    <Text style={[styles.assetItemName, { color: colors.textMuted }]}>{asset.name}</Text>
+                  </View>
+                  <View style={styles.assetItemRight}>
+                    <Text style={[styles.assetItemBalance, { color: colors.text }]}>
+                      {asset.balance.toFixed(asset.id === 'SOL' ? 3 : 0)}
+                    </Text>
+                    <Text style={[styles.assetItemPrice, { color: colors.textMuted }]}>
+                      ${asset.price.toFixed(asset.id === 'SOL' ? 2 : 4)}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Sleek Loan Confirmation Modal / Bottom Sheet ── */}
       <Modal
@@ -542,15 +610,13 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '800',
   },
-  balancePill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
+  walletChip: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
-  },
-  balancePillText: {
-    fontSize: 12,
-    fontWeight: '700',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   mainCard: {
     borderRadius: 24,
@@ -620,26 +686,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
   },
-  tokenSelectorGroup: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  tokenSelectBtn: {
+  dropdownTrigger: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
     borderWidth: 1,
-    gap: 6,
+    gap: 8,
   },
-  tokenIcon: {
-    width: 18,
-    height: 18,
+  dropdownIcon: {
+    width: 20,
+    height: 20,
   },
-  tokenSelectText: {
-    fontSize: 13,
-    fontWeight: '700',
+  dropdownText: {
+    fontSize: 14,
+    fontWeight: '800',
   },
   durationSection: {
     marginTop: 18,
@@ -648,7 +710,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.5,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   durationPillsRow: {
     flexDirection: 'row',
@@ -656,14 +718,15 @@ const styles = StyleSheet.create({
   },
   durationPill: {
     flex: 1,
-    paddingVertical: 10,
-    borderRadius: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   durationPillText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
   },
   summaryPanel: {
@@ -686,31 +749,99 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  borrowBtnContainer: {
+  borrowBtn: {
     marginTop: 20,
     borderRadius: 20,
-    overflow: 'hidden',
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  borrowBtnActive: {
     shadowColor: '#1D4ED8',
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.28,
     shadowRadius: 10,
     elevation: 4,
   },
-  borrowBtnGradient: {
+  borrowBtnInactive: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+  },
+  borrowBtnInner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 54,
     gap: 8,
-  },
-  borrowBtnDisabled: {
-    opacity: 0.5,
   },
   borrowBtnText: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#FFFFFF',
     letterSpacing: 0.3,
+  },
+  dropdownModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  dropdownModalContent: {
+    width: '100%',
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 6,
+  },
+  dropdownModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  dropdownModalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  assetItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 10,
+    gap: 12,
+  },
+  assetItemLogo: {
+    width: 32,
+    height: 32,
+  },
+  assetItemInfo: {
+    flex: 1,
+  },
+  assetItemSymbol: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  assetItemName: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  assetItemRight: {
+    alignItems: 'flex-end',
+  },
+  assetItemBalance: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  assetItemPrice: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
   },
   modalOverlay: {
     flex: 1,

@@ -67,16 +67,10 @@ export const QuickHubView: React.FC<QuickHubViewProps> = ({
       onPress: onNavigateProfile,
     },
     {
-      id: 'hall_of_fame',
-      title: 'Hall of Fame',
+      id: 'leaderboard',
+      title: 'Leaderboard',
       icon: 'trophy-outline' as const,
       onPress: onOpenLeaderboard,
-    },
-    {
-      id: 'briefing',
-      title: 'Briefing',
-      icon: 'sparkles-outline' as const,
-      onPress: onOpenJudgeBriefing,
     },
     {
       id: 'security',

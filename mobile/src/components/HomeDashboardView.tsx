@@ -55,7 +55,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
 
   const availableUsdc = walletAssets?.usdcBalance || 0;
 
-  // 3 Dynamic Rotating Showcase Banners (Matches 8febc333 Dangote banner layout)
+  // Dynamic Rotating Showcase Banners (Verified on-chain data & features only)
   const BANNER_CARDS = [
     {
       id: 'lowest_apr',
@@ -67,10 +67,10 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
       gradient: ['#1E3A8A', '#1D4ED8', '#2563EB'] as const,
     },
     {
-      id: 'leaderboard',
-      badge: 'SEEKER HALL OF FAME',
-      title: 'Top 3 Borrowers',
-      sub: '1. @sol_whale • 2. @alpha_dev • 3. @crypto_king',
+      id: 'reputation',
+      badge: 'ON-CHAIN REPUTATION',
+      title: 'Seeker Credit Rankings',
+      sub: 'Transparent on-chain reputation and bond-based tier discounts',
       cta: 'View Rankings →',
       onPress: onOpenLeaderboard,
       gradient: ['#0F172A', '#1E3A8A', '#2563EB'] as const,
@@ -122,7 +122,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
         ) : undefined
       }
     >
-      {/* ── Top Header Row (Matches 8febc333) ── */}
+      {/* ── Top Header Row ── */}
       <View style={styles.topHeader}>
         <View style={styles.userSection}>
           <View style={[styles.avatar, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
@@ -162,7 +162,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
         </View>
       </View>
 
-      {/* ── Deep Blue Gradient Hero Balance Card (Matches 8febc333) ── */}
+      {/* ── Deep Blue Gradient Hero Balance Card ── */}
       <LinearGradient
         colors={mode === 'dark' ? ['#172554', '#1E40AF', '#2563EB'] : ['#1E3A8A', '#1D4ED8', '#2563EB']}
         start={{ x: 0, y: 0 }}
@@ -202,7 +202,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
         </Text>
       </LinearGradient>
 
-      {/* ── 3 Action Buttons (Matches 8febc333) ── */}
+      {/* ── 3 Action Buttons: Icon Centered, Small Gray Text Underneath ── */}
       <View style={styles.actionRow}>
         <TouchableOpacity
           style={[styles.actionBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
@@ -214,8 +214,10 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
           accessibilityRole="button"
           accessibilityLabel="Borrow funds"
         >
-          <Ionicons name="add" size={18} color={colors.primary} />
-          <Text style={[styles.actionBtnText, { color: colors.text }]}>Borrow</Text>
+          <View style={[styles.actionIconBox, { backgroundColor: colors.badgeBg }]}>
+            <Ionicons name="arrow-down-outline" size={24} color={colors.primary} />
+          </View>
+          <Text style={[styles.actionBtnText, { color: colors.textSecondary }]}>Borrow</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -228,8 +230,10 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
           accessibilityRole="button"
           accessibilityLabel="Repay loan"
         >
-          <Ionicons name="paper-plane-outline" size={16} color={colors.primary} />
-          <Text style={[styles.actionBtnText, { color: colors.text }]}>Repay</Text>
+          <View style={[styles.actionIconBox, { backgroundColor: colors.badgeBg }]}>
+            <Ionicons name="arrow-up-outline" size={24} color={colors.primary} />
+          </View>
+          <Text style={[styles.actionBtnText, { color: colors.textSecondary }]}>Repay</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -242,8 +246,10 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
           accessibilityRole="button"
           accessibilityLabel="Explore desks"
         >
-          <Ionicons name="business-outline" size={16} color={colors.primary} />
-          <Text style={[styles.actionBtnText, { color: colors.text }]}>Desks</Text>
+          <View style={[styles.actionIconBox, { backgroundColor: colors.badgeBg }]}>
+            <Ionicons name="storefront-outline" size={24} color={colors.primary} />
+          </View>
+          <Text style={[styles.actionBtnText, { color: colors.textSecondary }]}>Desks</Text>
         </TouchableOpacity>
       </View>
 
@@ -557,26 +563,35 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 16,
+    marginBottom: 18,
   },
   actionBtn: {
     flex: 1,
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 14,
-    borderRadius: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 8,
+    borderRadius: 20,
     borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
     elevation: 2,
   },
+  actionIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   actionBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   bannerWrapper: {
     borderRadius: 20,
