@@ -1083,6 +1083,8 @@ export let livePrices = {
   usdc: 1.0,
 };
 let lastPriceFetchTime = 0;
+/** When fetchLivePrices last actually ran its fallback chain (throttle). */
+let lastPriceFetchAttempt = 0;
 
 export interface OnChainPriceFeed {
   isInitialized: boolean;
@@ -1117,21 +1119,93 @@ export function isFeedFresh(feed: OnChainPriceFeed | null): boolean {
  * H-2: only a feed the program itself would accept may back a price-derived
  * figure. Holds for both the RPC read and the Helius WSS push (both funnel
  * through isFeedFresh, which clamps to 600s).
+ *
+ * Takes an explicit source: there is deliberately no default. Deciding this
+ * from one global "current source" string is what let a fresh SOL feed vouch
+ * for a stale SKR leg — ask per asset instead (isAssetPriceUsable).
  */
-export function isPriceSourceTrusted(source: PriceSource = currentPriceSource): boolean {
+export function isPriceSourceTrusted(source: PriceSource): boolean {
   return source === 'on-chain-rpc' || source === 'helius-wss';
 }
 
-/** Age of the last accepted price update in seconds (null if never updated). */
-export function getPriceAgeSeconds(): number | null {
-  if (!lastPriceFetchTime) return null;
-  return Math.floor((Date.now() - lastPriceFetchTime) / 1000);
+/** The assets this client prices and sizes collateral against. */
+export type PriceAsset = 'sol' | 'skr';
+
+// H-2 freshness/trust is tracked PER ASSET. SOL and SKR are independent
+// on-chain PriceFeed PDAs and either can stall on its own; a single global flag
+// meant a fresh SOL feed marked the whole price set trusted even when the SKR
+// leg was stale or unreadable — and that leg then silently fell back to the
+// hardcoded baseline in `livePrices` (`skr: 0.0205`), under-collateralising any
+// loan sized against it.
+const priceSourceByAsset: Record<PriceAsset, PriceSource> = {
+  sol: 'fallback-baseline',
+  skr: 'fallback-baseline',
+};
+const priceUpdatedAtByAsset: Record<PriceAsset, number> = { sol: 0, skr: 0 };
+
+/** Least-trusted first; only the top two are trusted (isPriceSourceTrusted). */
+const PRICE_SOURCE_RANK: Record<PriceSource, number> = {
+  'fallback-baseline': 0,
+  coingecko: 1,
+  jupiter: 2,
+  'helius-wss': 3,
+  'on-chain-rpc': 4,
+};
+
+/** Record an accepted price for ONE asset, with the source that produced it. */
+function recordPriceUpdate(asset: PriceAsset, source: PriceSource, at: number): void {
+  priceSourceByAsset[asset] = source;
+  priceUpdatedAtByAsset[asset] = at;
+  lastPriceFetchTime = at;
 }
 
-/** Trusted source AND within the 600s window the program enforces. */
+function getAssetPriceAgeSeconds(asset: PriceAsset): number | null {
+  const at = priceUpdatedAtByAsset[asset];
+  if (!at) return null;
+  return Math.floor((Date.now() - at) / 1000);
+}
+
+/**
+ * H-2/M-5: a price-derived figure may only be computed for the SPECIFIC asset
+ * it is about to value, from that asset's own trusted source and inside the
+ * 600s window the program enforces. Never ask this in the aggregate.
+ */
+export function isAssetPriceUsable(asset: PriceAsset): boolean {
+  const age = getAssetPriceAgeSeconds(asset);
+  return isPriceSourceTrusted(priceSourceByAsset[asset]) && age !== null && age <= PRICE_MAX_AGE_SECS;
+}
+
+/**
+ * Worst-case (oldest) age across the assets the aggregate check covers, so a
+ * figure shown next to isLivePriceUsable() can never look fresher than the
+ * least-fresh leg.
+ */
+export function getPriceAgeSeconds(): number | null {
+  const sol = getAssetPriceAgeSeconds('sol');
+  const skr = getAssetPriceAgeSeconds('skr');
+  if (sol === null || skr === null) return null;
+  return Math.max(sol, skr);
+}
+
+/**
+ * Conservative aggregate for screens that value more than one asset: true only
+ * when EVERY priced asset has its own fresh trusted feed. A screen that sizes
+ * against a single asset must use isAssetPriceUsable(asset) instead.
+ */
 export function isLivePriceUsable(): boolean {
-  const age = getPriceAgeSeconds();
-  return isPriceSourceTrusted() && age !== null && age <= PRICE_MAX_AGE_SECS;
+  return isAssetPriceUsable('sol') && isAssetPriceUsable('skr');
+}
+
+/**
+ * Legacy single-value view. Once freshness is per asset, the only honest
+ * aggregate is the weakest leg: a fresh SOL must never make the pair look
+ * trusted while SKR is stale. Nothing sizes a loan off this string —
+ * isAssetPriceUsable() decides trust.
+ */
+function aggregatePriceSource(): PriceSource {
+  return PRICE_SOURCE_RANK[priceSourceByAsset.sol] <= PRICE_SOURCE_RANK[priceSourceByAsset.skr]
+    ? priceSourceByAsset.sol
+    : priceSourceByAsset.skr;
 }
 
 /**
@@ -1252,8 +1326,10 @@ export function initOracleWebSocketListener(network: SolanaNetwork = 'mainnet-be
         const feed = unpackPriceFeed(accountInfo.data);
         if (isFeedFresh(feed)) {
           livePrices.sol = feed!.priceUsd;
-          lastPriceFetchTime = Date.now();
-          currentPriceSource = 'helius-wss';
+          recordPriceUpdate('sol', 'helius-wss', Date.now());
+          // One leg moving does not make the pair trusted: report the weakest
+          // recorded leg, never "helius-wss" for the whole price set.
+          currentPriceSource = aggregatePriceSource();
           console.log(`[Helius WSS] Live SOL Oracle pushed: $${feed!.priceUsd}`);
           notifyPriceListeners();
         }
@@ -1271,8 +1347,9 @@ export function initOracleWebSocketListener(network: SolanaNetwork = 'mainnet-be
         const feed = unpackPriceFeed(accountInfo.data);
         if (isFeedFresh(feed)) {
           livePrices.skr = feed!.priceUsd;
-          lastPriceFetchTime = Date.now();
-          currentPriceSource = 'helius-wss';
+          recordPriceUpdate('skr', 'helius-wss', Date.now());
+          // Weakest leg, as above — a fresh SKR push must not vouch for SOL.
+          currentPriceSource = aggregatePriceSource();
           console.log(`[Helius WSS] Live SKR Oracle pushed: $${feed!.priceUsd}`);
           notifyPriceListeners();
         }
@@ -1299,9 +1376,18 @@ export async function fetchLivePrices(
   // Ensure real-time WebSocket stream is active
   initOracleWebSocketListener(network);
 
-  if (now - lastPriceFetchTime < 10_000 && livePrices.sol > 0 && livePrices.skr > 0 && currentPriceSource !== 'fallback-baseline') {
+  // Only skip the refetch when EVERY leg is already usable from its own
+  // trusted, unexpired feed: a stale/unreadable leg is exactly what a refetch
+  // can repair, so it must not be short-circuited by the other leg's freshness.
+  if (now - lastPriceFetchTime < 10_000 && isAssetPriceUsable('sol') && isAssetPriceUsable('skr')) {
     return livePrices;
   }
+  // Refetch attempts (any outcome) stay rate-limited so an asset that is
+  // genuinely unavailable cannot turn this into a 3-API call on every caller.
+  if (now - lastPriceFetchAttempt < 10_000) {
+    return livePrices;
+  }
+  lastPriceFetchAttempt = now;
 
   let freshSol = false;
   let freshSkr = false;
@@ -1318,6 +1404,7 @@ export async function fetchLivePrices(
       const feed = unpackPriceFeed(accounts[0].data);
       if (isFeedFresh(feed)) {
         livePrices.sol = feed!.priceUsd;
+        recordPriceUpdate('sol', 'on-chain-rpc', now);
         freshSol = true;
       }
     }
@@ -1326,12 +1413,12 @@ export async function fetchLivePrices(
       const feed = unpackPriceFeed(accounts[1].data);
       if (isFeedFresh(feed)) {
         livePrices.skr = feed!.priceUsd;
+        recordPriceUpdate('skr', 'on-chain-rpc', now);
         freshSkr = true;
       }
     }
 
     if (freshSol && freshSkr) {
-      lastPriceFetchTime = now;
       currentPriceSource = 'on-chain-rpc';
       notifyPriceListeners();
       return livePrices;
@@ -1377,6 +1464,10 @@ export async function fetchLivePrices(
       }
       if (!freshSol && byId['So11111111111111111111111111111111111111112']) {
         livePrices.sol = byId['So11111111111111111111111111111111111111112'];
+        // Attributed to Jupiter, NOT to the on-chain feed: this leg is not one
+        // the program would accept (only 'on-chain-rpc'/'helius-wss' are), so a
+        // Jupiter-priced SOL must not read as trusted.
+        recordPriceUpdate('sol', 'jupiter', now);
         freshSol = true;
       }
       if (byId['EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v']) {
@@ -1384,10 +1475,10 @@ export async function fetchLivePrices(
       }
       if (!freshSkr && byId['SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3']) {
         livePrices.skr = byId['SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3'];
+        recordPriceUpdate('skr', 'jupiter', now);
         freshSkr = true;
       }
       if (freshSol && freshSkr) {
-        lastPriceFetchTime = now;
         currentPriceSource = 'jupiter';
         notifyPriceListeners();
         return livePrices;
@@ -1408,17 +1499,18 @@ export async function fetchLivePrices(
       const data = await res.json();
       if (!freshSol && data?.solana?.usd) {
         livePrices.sol = Number(data.solana.usd);
+        recordPriceUpdate('sol', 'coingecko', now);
         freshSol = true;
       }
       if (!freshSkr && data?.seeker?.usd) {
         livePrices.skr = Number(data.seeker.usd);
+        recordPriceUpdate('skr', 'coingecko', now);
         freshSkr = true;
       }
       if (data?.['usd-coin']?.usd) {
         livePrices.usdc = Number(data['usd-coin'].usd);
       }
       if (freshSol && freshSkr) {
-        lastPriceFetchTime = now;
         currentPriceSource = 'coingecko';
         notifyPriceListeners();
         return livePrices;
@@ -1428,13 +1520,12 @@ export async function fetchLivePrices(
     // fall through
   }
 
-  // If at least one asset was refreshed, classify source accordingly; otherwise baseline fallback
-  if (freshSol || freshSkr) {
-    currentPriceSource = freshSol ? 'on-chain-rpc' : 'jupiter';
-    lastPriceFetchTime = now;
-  } else {
-    currentPriceSource = 'fallback-baseline';
-  }
+  // Per-asset trust was already recorded at each accept point above; this only
+  // derives the legacy single value. It never upgrades a leg: it reports the
+  // WEAKEST of the two, so a fresh SOL cannot make the pair look trusted while
+  // SKR is stale or was never read. Anything that sizes a loan asks
+  // isAssetPriceUsable(asset) for the asset it is about to value.
+  currentPriceSource = freshSol || freshSkr ? aggregatePriceSource() : 'fallback-baseline';
   notifyPriceListeners();
   return livePrices;
 }
@@ -1508,6 +1599,12 @@ export async function fetchLiveWalletAssets(
   const tokenList: TokenAssetItem[] = [];
   const prices = await fetchLivePrices(network);
 
+  // USDC is selected strictly by cluster: a mainnet wallet's USDC is the
+  // mainnet mint ONLY, a devnet wallet's is the devnet mint ONLY. Accepting
+  // both let an unrelated account carrying the other cluster's mint inflate
+  // the balance (and the portfolio total / credit-profile figure built on it).
+  const usdcMint = (network === 'devnet' ? USDC_DEVNET_MINT : USDC_MAINNET_MINT).toBase58();
+
   try {
     const allAccounts = await queryRpcWithFallback(network, async (conn) => {
       const [standardResult, token2022Result] = await Promise.allSettled([
@@ -1539,22 +1636,19 @@ export async function fetchLiveWalletAssets(
         hasSeekerGenesisToken = true;
       }
 
-      // Check for USDC
-      if (
-        mint === 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' ||
-        mint === '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU'
-      ) {
+      // Check for USDC (this cluster's mint only — see usdcMint above)
+      if (mint === usdcMint) {
         usdcBalance += amount;
       }
       // Check for SKR (exact canonical mint only)
       else if (mint === SKR_MINT.toBase58()) {
         skrBalance += amount;
       }
-      // Check for BONK
-      else if (
-        mint === 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263' ||
-        mint.toLowerCase().includes('bonk')
-      ) {
+      // Check for BONK: exact canonical mint only. A substring match on
+      // "bonk" was trivially satisfiable by a grindable junk mint address and
+      // let an attacker inflate the total. BONK is display-only here — the
+      // program supports neither BONK collateral nor a BONK pool asset.
+      else if (mint === 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263') {
         bonkBalance += amount;
       }
 
@@ -2171,7 +2265,13 @@ export async function buildRepayPawnOfferTx(
   if (!offer.funder) {
     throw new Error('Offer has not been funded yet');
   }
-  const [offerPDA] = getP2POfferPDA(borrower, offer.id);
+  // The P2P offer PDA is [b"p2p_offer", offer.creator, offer_id] — the CREATOR
+  // (program/src/state.rs:11; asserted in this repay path at
+  // processor.rs:2675-2683). Create and fund derive from the creator, so
+  // deriving from the connected wallet here yielded a different, unrelated
+  // account whenever the repayer was not the offer's creator.
+  const creator = new PublicKey(offer.creator);
+  const [offerPDA] = getP2POfferPDA(creator, offer.id);
   const [escrowPDA] = getEscrowPDA(offerPDA);
   const funder = new PublicKey(offer.funder);
   const offerMint = offer.liquidityMint ? new PublicKey(offer.liquidityMint) : USDC_MAINNET_MINT;

@@ -594,9 +594,10 @@ function MainApp() {
         };
       });
 
-      // L-6/C-2: no local reputation or discount arithmetic. The program
-      // grants +50 reputation (and releases the loan's SKR bond, changing the
-      // loan tier), so the profile is re-read from its PDA instead.
+      // L-6/C-2: no local reputation or discount arithmetic. The program bumps
+      // reputation by 50, capped at 10000 (processor.rs:2644) — and a profile
+      // STARTS at 10000 (processor.rs:709), so the real gain can be zero. The
+      // profile is re-read from its PDA and the notice states no delta.
       const freshProfile = await fetchLiveUserProfile(
         session.publicKey,
         session.skrHandle,
@@ -610,11 +611,14 @@ function MainApp() {
       setTransactionNotice({
         type: 'repay',
         title: 'Loan Repaid & Released!',
-        subtitle: `Successfully repaid $${totalDue} USDC. Your ${order.collateralName} has been unlocked from escrow back to your wallet.`,
+        subtitle: `Successfully repaid $${totalDue} USDC. Your ${order.collateralName} has been unlocked from escrow back to your wallet. Loan completed — your on-chain credit profile was updated.`,
         amount: `$${totalDue} USDC`,
         collateral: order.collateralName,
-        // program grants +50 (processor.rs:2546-2548)
-        reputationGain: 50,
+        // No reputationGain here: the program applies
+        // `reputation_score.saturating_add(50).min(10000)` (processor.rs:2644,
+        // :2656) to a score that starts at 10000, so for a user at the starting
+        // score the gain is exactly ZERO. Asserting "+50 pts" (or any fixed
+        // number) would state a gain the program may never apply.
         txSignature: sig,
         escrowAddress: order.escrowAddress,
         solscanUrl,
@@ -828,7 +832,8 @@ function MainApp() {
       });
 
       // Funding a pawn offer does NOT move reputation on-chain (the program
-      // only credits +50 on a completed loan repayment, processor.rs:2546-2548),
+      // only credits +50 on a completed loan repayment — saturating_add(50).min(10000),
+      // processor.rs:2644 and :2656 — so a fresh 10,000 profile gains nothing),
       // so no local score bump is applied — the profile is re-read instead.
       const freshProfile = await fetchLiveUserProfile(
         session.publicKey,

@@ -18,7 +18,6 @@ export interface TransactionNoticeData {
   subtitle?: string;
   amount?: string;
   collateral?: string;
-  reputationGain?: number;
   txSignature?: string;
   solscanUrl?: string;
   escrowAddress?: string;
@@ -111,7 +110,7 @@ export const TransactionNoticeModal: React.FC<TransactionNoticeModalProps> = ({
             ) : null}
 
             {/* Key Metrics / Breakdown Box */}
-            {(data.amount || data.collateral || data.reputationGain) && (
+            {(data.amount || data.collateral) && (
               <View style={[styles.statsCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
                 {data.amount && (
                   <View style={styles.statRow}>
@@ -129,12 +128,12 @@ export const TransactionNoticeModal: React.FC<TransactionNoticeModalProps> = ({
                     <Text style={[styles.statValue, { color: colors.accentLight }]}>{data.collateral}</Text>
                   </View>
                 )}
-                {data.reputationGain ? (
-                  <View style={styles.statRow}>
-                    <Text style={[styles.statLabel, { color: colors.textMuted }]}>Credit Boost</Text>
-                    <Text style={[styles.statValue, { color: '#F59E0B' }]}>+{data.reputationGain} pts ⭐</Text>
-                  </View>
-                ) : null}
+                {/* No "Credit Boost +N pts" row: the program applies
+                    `reputation_score.saturating_add(50).min(10000)`
+                    (processor.rs:2644, :2656) to a score that STARTS at 10000
+                    (processor.rs:709), so a blanket "+50 pts" would claim a
+                    gain the program may never apply. Reputation changes are
+                    read from the profile PDA and shown there. */}
               </View>
             )}
 

@@ -60,7 +60,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
   const [deskName, setDeskName] = useState<string>('Solana Chad Vault');
   const [deskType, setDeskType] = useState<'Individual' | 'Circle'>('Individual');
   const [deskApr, setDeskApr] = useState<string>('8.0');
-  const [deskLtv, setDeskLtv] = useState<string>('85');
+  const [deskLtv, setDeskLtv] = useState<string>('70');
   const [deskMinDays, setDeskMinDays] = useState<string>('7');
   const [deskMaxDays, setDeskMaxDays] = useState<string>('30');
   const [deskLiquidity, setDeskLiquidity] = useState<string>('500');
@@ -80,8 +80,10 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
       Alert.alert('Invalid APR', 'Please enter a valid fixed APR between 1% and 100%.');
       return;
     }
-    if (isNaN(ltv) || ltv <= 10 || ltv > 95) {
-      Alert.alert('Invalid LTV', 'Max LTV must be between 10% and 95%.');
+    // The on-chain program rejects max_ltv_bps > 7000 in process_initialize_pool,
+    // so a desk created above 70% always reverts with InvalidCollateralRatio (26).
+    if (isNaN(ltv) || ltv <= 10 || ltv > 70) {
+      Alert.alert('Invalid LTV', 'Max LTV must be between 10% and 70% (program cap).');
       return;
     }
     if (isNaN(minD) || isNaN(maxD) || minD < 1 || maxD < minD) {
@@ -132,7 +134,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
       setIsNfcActive(false);
       setNfcModal(false);
       onNfcBumpCircle();
-      Alert.alert('🤝 Circle Synced!', 'Connected via Seeker NFC. Joined "Seeker Genesis Circle" with 90% LTV.');
+      Alert.alert('🤝 Circle Synced!', 'Connected via Seeker NFC. Desk data refreshed.');
     }, 1200);
   };
 
@@ -777,7 +779,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                     keyboardType="numeric"
                   />
                   <View style={styles.quickChipsRow}>
-                    {['75', '85', '90'].map((ltv) => (
+                    {['50', '60', '70'].map((ltv) => (
                       <TouchableOpacity
                         key={ltv}
                         style={[

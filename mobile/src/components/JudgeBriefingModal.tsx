@@ -97,14 +97,14 @@ export const JudgeBriefingModal: React.FC<JudgeBriefingModalProps> = ({
                   <Text style={[styles.bulletDot, { color: colors.primary }]}>•</Text>
                   <Text style={[styles.bulletText, { color: colors.textSecondary }]}>
                     <Text style={{ fontWeight: '800', color: colors.text }}>Gamified Credit Progression: </Text>
-                    5 reputation tiers (Bronze to Diamond) reward timely loan repayments with up to 50% APR interest discounts.
+                    Your on-chain reputation score starts at 10,000, gains 50 per repaid loan (capped at 10,000, so it cannot rise from a fresh profile) and drops 1,000 on default. Separately, staking SKR cuts your interest rate by up to 50% (two tiers: ≥100 SKR, ≥1,000 SKR).
                   </Text>
                 </View>
                 <View style={styles.bulletItem}>
                   <Text style={[styles.bulletDot, { color: colors.primary }]}>•</Text>
                   <Text style={[styles.bulletText, { color: colors.textSecondary }]}>
                     <Text style={{ fontWeight: '800', color: colors.text }}>Daily Fee Dividends: </Text>
-                    Reputation bond stakers harvest real USDC dividends collected from borrower interest fees.
+                    SKR stakers may claim dividends funded by the protocol's share of loan origination fees. The yield vault is not yet funded: no protocol fee has been collected to date.
                   </Text>
                 </View>
               </View>

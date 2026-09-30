@@ -11,7 +11,7 @@ import {
   calculateExactInterestDue,
   calculateOriginationFee,
   formatUsdcMicro,
-  isLivePriceUsable,
+  isAssetPriceUsable,
   tierDiscountLabel,
 } from '../solana/onChainService';
 
@@ -47,25 +47,36 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
   // Collateral sizing MUST use a live price: sizing with a hardcoded price
   // reverts the borrow when the market moves up and silently over-locks when
   // it moves down. If the price source is unavailable or only baseline-fallback, borrowing is disabled.
-  const [priceAvailable, setPriceAvailable] = useState<boolean>(false);
+  //
+  // H-2/M-5: tracked PER ASSET, because this screen sizes the escrow against
+  // exactly one of them. The two legs are independent feeds — a fresh SOL feed
+  // says nothing about SKR, whose stale/unreadable leg silently falls back to
+  // the hardcoded baseline price.
+  const [usableAssets, setUsableAssets] = useState<{ sol: boolean; skr: boolean }>({
+    sol: false,
+    skr: false,
+  });
 
   useEffect(() => {
+    const syncPriceTrust = () =>
+      setUsableAssets({ sol: isAssetPriceUsable('sol'), skr: isAssetPriceUsable('skr') });
+
     fetchLivePrices()
       .then((p) => {
         setPrices({ ...p });
-        // H-2/M-5: only a feed the program itself would accept counts as a
-        // price — an on-chain/WSS source inside the 600s window.
-        setPriceAvailable(isLivePriceUsable());
+        // Only a feed the program itself would accept counts as a price — an
+        // on-chain/WSS source inside the 600s window, per asset.
+        syncPriceTrust();
       })
-      .catch(() => setPriceAvailable(false));
+      .catch(() => setUsableAssets({ sol: false, skr: false }));
 
     // Real-time Helius LaserStream WebSocket subscription
     const unsubscribe = subscribeToPriceUpdates((updated) => {
       setPrices({ ...updated });
-      setPriceAvailable(isLivePriceUsable());
+      syncPriceTrust();
     });
     // The trust window is time-based, so re-evaluate it while the screen is open.
-    const freshnessTimer = setInterval(() => setPriceAvailable(isLivePriceUsable()), 15_000);
+    const freshnessTimer = setInterval(syncPriceTrust, 15_000);
     return () => {
       unsubscribe();
       clearInterval(freshnessTimer);
@@ -98,6 +109,9 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
   const skrPrice = prices.skr;
 
   const collateralPrice = collateralType === 'SOL' ? solPrice : skrPrice;
+  // H-2/M-5: gate the CTA on the SELECTED collateral asset's own fresh trusted
+  // feed — never on the other leg's freshness.
+  const priceAvailable = collateralType === 'SOL' ? usableAssets.sol : usableAssets.skr;
   const userBalance = collateralType === 'SOL' ? solBalance : skrBalance;
 
   const ltv = (bestPool ? bestPool.maxLtvBps : 8500) / 10000;

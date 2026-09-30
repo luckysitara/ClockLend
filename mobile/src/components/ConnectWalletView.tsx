@@ -44,8 +44,8 @@ const ONBOARDING_SLIDES: OnboardingSlide[] = [
     iconColor: '#6366F1',
     badge: '1-TAP MICRO-CREDIT',
     title: 'Micro-Credit in Seconds',
-    description: 'Draw instant USDC against your SOL or SKR at up to 90% LTV. Zero paperwork, atomic on-chain settlement.',
-    chips: ['⚡ Instant Settlement', '📈 Up to 90% LTV', '🪙 Real USDC'],
+    description: 'Draw instant USDC against your SOL or SKR at up to 70% LTV. Zero paperwork, atomic on-chain settlement.',
+    chips: ['⚡ Instant Settlement', '📈 Up to 70% LTV', '🪙 Real USDC'],
   },
   {
     id: '2',
@@ -53,7 +53,7 @@ const ONBOARDING_SLIDES: OnboardingSlide[] = [
     iconColor: '#10B981',
     badge: 'ZERO INSTANT LIQUIDATION',
     title: '24-Hour Social Grace',
-    description: 'Borrow with peace of mind. When your term ends, ClockLend grants an automatic 24h grace window to repay before any collateral action.',
+    description: 'Borrow with peace of mind. ClockLend never runs an instant auction: a 24-hour grace window must be opened on-chain at or after your due date before any collateral can be claimed.',
     chips: ['🛡️ 24h Grace Shield', '🤝 Peer-Funded Desks', '🚫 No Instant Liquidation'],
   },
   {

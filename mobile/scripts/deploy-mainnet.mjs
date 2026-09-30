@@ -465,7 +465,7 @@ async function main() {
     const name = Buffer.alloc(32);
     Buffer.from('Seeker Genesis Circle').copy(name);
     const data = Buffer.concat([
-      Buffer.from([0]), w64(poolId), Buffer.from([1]), u16(350), u16(9000),
+      Buffer.from([0]), w64(poolId), Buffer.from([1]), u16(350), u16(7000),
       w64s(3 * 86400), w64s(30 * 86400), name,
       Buffer.from([0]), // is_oracle_free: false — require a live oracle (63rd byte, added in F7)
     ]);
