@@ -59,6 +59,8 @@ export const JudgeBriefingModal: React.FC<JudgeBriefingModalProps> = ({
                 onClose();
               }}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Close judge briefing modal"
             >
               <Ionicons name="close" size={20} color={colors.text} />
             </TouchableOpacity>

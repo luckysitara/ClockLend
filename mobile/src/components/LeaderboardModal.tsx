@@ -133,6 +133,8 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                 onClose();
               }}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Close leaderboard modal"
             >
               <Ionicons name="close" size={20} color={colors.text} />
             </TouchableOpacity>

@@ -1500,6 +1500,9 @@ function MainApp() {
           style={styles.tabItem}
           onPress={() => setActiveTab('BORROW')}
           activeOpacity={0.7}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'BORROW' }}
+          accessibilityLabel="Borrow tab"
         >
           <Ionicons
             name={activeTab === 'BORROW' ? 'flash' : 'flash-outline'}
@@ -1521,6 +1524,9 @@ function MainApp() {
           style={styles.tabItem}
           onPress={() => setActiveTab('MARKET')}
           activeOpacity={0.7}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'MARKET' }}
+          accessibilityLabel="P2P Desks tab"
         >
           <Ionicons
             name={activeTab === 'MARKET' ? 'storefront' : 'storefront-outline'}
@@ -1542,6 +1548,9 @@ function MainApp() {
           style={styles.tabItem}
           onPress={() => setActiveTab('LOANS')}
           activeOpacity={0.7}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'LOANS' }}
+          accessibilityLabel={activeCount > 0 ? `Active Loans tab, ${activeCount} active loans` : 'Active Loans tab'}
         >
           <View style={{ position: 'relative' }}>
             <Ionicons
@@ -1570,6 +1579,9 @@ function MainApp() {
           style={styles.tabItem}
           onPress={() => setActiveTab('PROFILE')}
           activeOpacity={0.7}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'PROFILE' }}
+          accessibilityLabel="Account profile tab"
         >
           <Ionicons
             name={activeTab === 'PROFILE' ? 'person-circle' : 'person-circle-outline'}

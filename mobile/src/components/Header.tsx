@@ -39,7 +39,13 @@ export const Header: React.FC<HeaderProps> = ({
           <Text style={[styles.screenSubtitle, { color: colors.textSecondary }]}>Identity & Credit Profile</Text>
         </View>
       ) : (
-        <TouchableOpacity style={styles.profileButton} onPress={onPressProfile} activeOpacity={0.7}>
+        <TouchableOpacity
+          style={styles.profileButton}
+          onPress={onPressProfile}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={`Account profile for ${skrHandle}`}
+        >
           <View style={[styles.avatar, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
             <Image source={require('../../assets/logo.png')} style={styles.logoImg} resizeMode="contain" />
           </View>
@@ -64,6 +70,9 @@ export const Header: React.FC<HeaderProps> = ({
               onOpenJudgeBriefing();
             }}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Judge briefing and architecture audit"
+            accessibilityHint="Opens protocol overview and verification info"
           >
             <Ionicons name="sparkles" size={16} color={colors.primary} />
           </TouchableOpacity>
@@ -82,6 +91,9 @@ export const Header: React.FC<HeaderProps> = ({
               onOpenLeaderboard();
             }}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Seeker Hall of Fame leaderboard"
+            accessibilityHint="View on-chain top borrowers and lenders"
           >
             <Ionicons name="trophy-outline" size={17} color={colors.warning} />
           </TouchableOpacity>
@@ -94,6 +106,8 @@ export const Header: React.FC<HeaderProps> = ({
             toggleTheme();
           }}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel={`Toggle color theme, currently ${mode} mode`}
         >
           <Ionicons name={mode === 'dark' ? 'sunny-outline' : 'moon-outline'} size={17} color={colors.text} />
         </TouchableOpacity>
@@ -102,6 +116,9 @@ export const Header: React.FC<HeaderProps> = ({
           style={[styles.walletChip, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
           onPress={onPressBalance || onDisconnectWallet}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Wallet assets and balances"
+          accessibilityHint="View token accounts and balances"
         >
           <Ionicons name="wallet-outline" size={17} color={colors.text} />
         </TouchableOpacity>

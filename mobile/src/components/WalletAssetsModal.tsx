@@ -136,6 +136,8 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
               style={[styles.closeBtn, { backgroundColor: colors.cardAlt }]}
               onPress={onClose}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Close wallet assets modal"
             >
               <Text style={[styles.closeText, { color: colors.textSecondary }]}>✕</Text>
             </TouchableOpacity>
@@ -153,6 +155,8 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
               style={[styles.copyBtn, { backgroundColor: colors.badgeBg }]}
               onPress={() => Alert.alert('Connected Address', base58)}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Copy connected public key"
             >
               <Text style={[styles.copyBtnText, { color: colors.primaryLabel }]}>Copy</Text>
             </TouchableOpacity>
@@ -161,6 +165,8 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
                 style={[styles.switchAddrBtn, { backgroundColor: colors.badgeBg }]}
                 onPress={() => setShowSwitchInput(!showSwitchInput)}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Switch wallet address"
               >
                 <Text style={[styles.switchAddrBtnText, { color: colors.primaryLabel }]}>
                   {showSwitchInput ? 'Hide' : 'Switch'}

@@ -279,7 +279,13 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
       {/* Top Bar with Cancel (if available in setup/change mode) */}
       <View style={styles.topBar}>
         {onCancel && (
-          <TouchableOpacity onPress={onCancel} style={styles.cancelBtn} activeOpacity={0.7}>
+          <TouchableOpacity
+            onPress={onCancel}
+            style={styles.cancelBtn}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel PIN entry"
+          >
             <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
           </TouchableOpacity>
         )}
@@ -367,6 +373,8 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
                 style={[styles.keyBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
                 onPress={() => handleKeyPress(digit)}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`Number ${digit}`}
               >
                 <Text style={[styles.keyText, { color: colors.text }]}>{digit}</Text>
               </TouchableOpacity>
@@ -381,6 +389,8 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
               style={[styles.keyBtnSpecial, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}
               onPress={triggerBiometric}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Unlock with biometrics"
             >
               <Ionicons name="finger-print" size={28} color={colors.primary} />
             </TouchableOpacity>
@@ -392,6 +402,8 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
             style={[styles.keyBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
             onPress={() => handleKeyPress('0')}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Number 0"
           >
             <Text style={[styles.keyText, { color: colors.text }]}>0</Text>
           </TouchableOpacity>
@@ -400,6 +412,8 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
             style={[styles.keyBtnSpecial, { backgroundColor: colors.cardAlt }]}
             onPress={handleDelete}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Delete last PIN digit"
           >
             <Ionicons name="backspace-outline" size={24} color={colors.textSecondary} />
           </TouchableOpacity>

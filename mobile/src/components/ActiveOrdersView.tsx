@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  RefreshControl,
   ActivityIndicator,
   Alert,
   Linking,
@@ -144,6 +145,16 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        onRetry ? (
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={onRetry}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        ) : undefined
+      }
     >
       {/* Loading — only when there is nothing to show yet. Cached rows (marked
           "not confirmed on-chain") are deliberately left visible underneath
@@ -283,7 +294,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                         ? { color: colors.warning }
                         : isOverdue
                         ? { color: colors.danger }
-                        : { color: colors.primary },
+                        : { color: colors.primaryLabel },
                     ]}
                   >
                     {inGrace
@@ -399,7 +410,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
 
                 <View style={[styles.detailRow, styles.totalRow, { borderTopColor: colors.cardBorder }]}>
                   <Text style={[styles.totalLabel, { color: colors.text }]}>Total to Repay</Text>
-                  <Text style={[styles.totalValue, { color: colors.primary }]}>${totalDue} USDC</Text>
+                  <Text style={[styles.totalValue, { color: colors.primaryLabel }]}>${totalDue} USDC</Text>
                 </View>
               </View>
 
@@ -411,7 +422,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                     <Text style={[styles.evidenceTitle, { color: colors.text }]}>ON-CHAIN VERIFICATION</Text>
                   </View>
                   <View style={[styles.networkBadge, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
-                    <Text style={[styles.networkBadgeText, { color: colors.primary }]}>Solana Mainnet</Text>
+                    <Text style={[styles.networkBadgeText, { color: colors.primaryLabel }]}>Solana Mainnet</Text>
                   </View>
                 </View>
 

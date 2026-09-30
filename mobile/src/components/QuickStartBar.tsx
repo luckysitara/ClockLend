@@ -40,7 +40,13 @@ export const QuickStartBar: React.FC<QuickStartBarProps> = ({
             24H GRACE SHIELD · NO INSTANT LIQUIDATION
           </Text>
         </View>
-        <TouchableOpacity onPress={tap(onDismiss)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} activeOpacity={0.6}>
+        <TouchableOpacity
+          onPress={tap(onDismiss)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          activeOpacity={0.6}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss quick start guide"
+        >
           <Ionicons name="close" size={16} color={colors.textMuted} />
         </TouchableOpacity>
       </View>
@@ -54,6 +60,8 @@ export const QuickStartBar: React.FC<QuickStartBarProps> = ({
             style={[styles.presetChip, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
             onPress={tap(() => onPresetAmount(amt))}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={`Quick borrow ${amt} dollars`}
           >
             <Text style={[styles.presetChipText, { color: colors.primaryLabel }]}>Borrow ${amt}</Text>
           </TouchableOpacity>

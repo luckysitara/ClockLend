@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  RefreshControl,
   Modal,
   TextInput,
   ActivityIndicator,
@@ -250,7 +251,20 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
         )}
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          onRetry ? (
+            <RefreshControl
+              refreshing={isLoading}
+              onRefresh={onRetry}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          ) : undefined
+        }
+      >
         {/* SUBTAB 1: LENDING DESKS */}
         {subTab === 'POOLS' && (
           <View>
