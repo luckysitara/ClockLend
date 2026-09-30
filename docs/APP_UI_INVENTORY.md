@@ -519,19 +519,37 @@ A source comment at 131–136 records that no reputation-delta row exists — qu
 
 ### 3.16 Connect wallet — `ConnectWalletView.tsx`
 
-Header: 278 `ClockLend` (plus an unlabelled green 6 px "mainnet" dot).
+Header: `ClockLend` (plus an unlabelled green 6 px "mainnet" dot) and the theme toggle pill.
 
-**Slide 1** (badge `1-TAP MICRO-CREDIT`): title `Micro-Credit in Seconds`; body `Draw instant USDC against your SOL or SKR at up to 70% LTV. Zero paperwork, atomic on-chain settlement.`; chips `⚡ Instant Settlement` · `📈 Up to 70% LTV` · `🪙 Real USDC`
+The four slides deliberately use **four different compositions** — no badge/title/paragraph/chip skeleton, no emoji, left-aligned body copy. Each slide opens with a 10 px uppercase kicker; the shared type roles are kicker 10 / display 28 / body 14 / caption 11–12, and on slide 4 the answer (34 px) is larger than anything else on screen.
 
-**Slide 2** (badge `ZERO INSTANT LIQUIDATION`): title `24-Hour Social Grace`; body `Borrow with peace of mind. ClockLend never runs an instant auction: a 24-hour grace window must be opened on-chain at or after your due date before any collateral can be claimed.`; chips `🛡️ 24h Grace Shield` · `🤝 Peer-Funded Desks` · `🚫 No Instant Liquidation`
+**Slide 1** (`variant: 'terms'`, kicker `THE LOAN`): title `USDC against your SOL or SKR`; body `Post collateral to a program-owned escrow and receive USDC. Repay principal plus interest by the due date to get it back.`; then a three-row ledger of `label` · `value` / `detail` separated by hairline rules:
 
-**Slide 3** (badge `SEEKER ENCLAVE`): title `Hardware Seed Vault`; body `Private keys remain permanently sealed within your Seeker SPU hardware enclave. 100% non-custodial.`; chips `🔐 SPU Hardware Enclave` · `📱 Solana Seeker Native` · `🔒 100% Non-Custodial`
+- `LTV cap` · `7000 bps (70%)` / `Fixed per pool at creation; new pools cannot exceed it.`
+- `Origination fee` · `0.25% SOL / 0.50% SKR` / `Withheld up front, not added to your repayment.`
+- `Interest` · `Simple, over a 365-day year` / `The program accepts no partial repayment.`
 
-**Slide 4** (badge `TRY BEFORE YOU CONNECT`): title `Preview Your Borrow`; body `Simulate a loan at the live mainnet pool rate. No wallet needed — just tap.`; `chips: []` (renders the calculator instead).
+**Slide 2** (`variant: 'timeline'`, kicker `IF YOU RUN LATE`): title `The 24-hour grace window`; then three dot-and-rail timeline steps (`label` / `detail`):
 
-Calculator: 177 `BORROW AMOUNT` · 197 `$10` `$25` `$50` `$100` · 204 `LOAN TERM` · 224 `7d` `14d` `30d` · 236 `AT {(liveRateBps/100).toFixed(2)}% APR — LIVE MAINNET RATE` · 239 `Repay ${calcRepayUsd.toFixed(2)} in {calcDays} days` · 242 `Interest ${calcInterestUsd.toFixed(2)} · up to 50% lower with 1,000+ SKR staked` · 248 `Fetching live mainnet rate…` · 249 `Live rate unavailable — connect to see your exact offer.`
+- `Due date` / `Repayment is due in full.`
+- `Window opened` / `You or the desk submit the on-chain instruction that starts a 24-hour window. It is not automatic.`
+- `Claim possible` / `Only once the window has expired can the escrowed collateral be claimed.`
 
-Bottom: 350 `Connect Seeker Wallet` · 359 `Protected by Solana Seeker Seed Vault`
+note `While the window is open, the program rejects any claim against your escrow.`
+
+**Slide 3** (`variant: 'statement'`, kicker `BEFORE YOU CONNECT`): statement `Your key stays in the Seeker Seed Vault.` (set against a primary-coloured left rule); body `Signing happens on the device. This app holds no key material and cannot move your funds on its own.`; then caveat title `WHAT THIS DOES NOT CLAIM` with three plain-text rows:
+
+- `Staking SKR discounts the interest rate only — 25% off at 100 SKR, 50% at 1,000 SKR. It never raises your LTV.`
+- `No insurance, no principal protection, no guaranteed return.`
+- `The program is upgradeable by its authority key; prices are admin-fed and rejected past 600 seconds.`
+
+**Slide 4** (`variant: 'calculator'`, kicker `NO WALLET NEEDED`): title `What would you repay?`; then the pre-auth calculator.
+
+Calculator: `BORROW AMOUNT` · `$10` `$25` `$50` `$100` · `LOAN TERM` · `7d` `14d` `30d` · `REPAYMENT · {(liveRateBps/100).toFixed(2)}% APR, LIVE POOL RATE` · `$${calcRepayUsd.toFixed(2)}` · `in {calcDays} days · interest $${calcInterestUsd.toFixed(2)}` · `Estimate only. Collateral price movement and the origination fee withheld at disbursement are not included.` · `Fetching the live mainnet pool rate…` · `Live rate unavailable — connect to see your own terms.`
+
+Pagination: dots (left-aligned with the slide copy) plus a `Next` control, shown on slides 1–3 only.
+
+Bottom: `Connect Seeker Wallet` · `Signed in the Seeker Seed Vault`
 
 Alert (136–139): title `Seeker Hardware Wallet`, body `err?.message || 'Could not connect to Seeker Seed Vault. Please ensure your device is unlocked and authorized to proceed.'`
 
@@ -641,31 +659,61 @@ Recorded for completeness only — **no call sites**. `Circle Pawn Deck` · `1-o
 
 ### 6.1 Colour tokens — `src/theme/ThemeContext.tsx`
 
-| Token | Dark (`darkColors`, L27–47) | Light (`lightColors`, L49–69) |
+| Token | Dark (`darkColors`) | Light (`lightColors`) |
 |---|---|---|
 | `isDark` | `true` | `false` |
-| `background` | `#0A0D14` | `#F8FAFC` |
-| `card` | `#121622` | `#FFFFFF` |
-| `cardAlt` | `#181E2E` | `#F1F5F9` |
-| `cardBorder` | `rgba(255, 255, 255, 0.05)` | `#E2E8F0` |
+| `background` | `#171E2B` | `#F8FAFC` |
+| `card` | `#202838` | `#FFFFFF` |
+| `cardAlt` | `#242E42` | `#F1F5F9` |
+| `cardBorder` | `rgba(255, 255, 255, 0.08)` | `#E2E8F0` |
 | `primary` | `#6366F1` | `#572DFD` |
 | `primaryText` | `#FFFFFF` | `#FFFFFF` |
-| `text` | `#F8FAFC` | `#0F172A` |
-| `textSecondary` | `#94A3B8` | `#475569` |
-| `textMuted` | `#64748B` | `#94A3B8` |
+| `text` | `#DEE4EE` | `#0F172A` |
+| `textSecondary` | `#B6C1D2` | `#475569` |
+| `textMuted` | `#95A3B8` | `#94A3B8` |
 | `accent` | `#38BDF8` | `#0284C7` |
 | `accentLight` | `#7DD3FC` | `#38BDF8` |
-| `danger` | `#EF4444` | `#DC2626` |
+| `danger` | `#F87171` | `#DC2626` |
 | `warning` | `#F59E0B` | `#D97706` |
-| `badgeBg` | `rgba(99, 102, 241, 0.10)` | `rgba(87, 45, 253, 0.08)` |
-| `badgeBorder` | `rgba(99, 102, 241, 0.18)` | `rgba(87, 45, 253, 0.20)` |
-| `inputBg` | `#0D111A` | `#FFFFFF` |
-| `inputBorder` | `rgba(255, 255, 255, 0.07)` | `#CBD5E1` |
-| `divider` | `rgba(255, 255, 255, 0.05)` | `#E2E8F0` |
+| `badgeBg` | `rgba(99, 102, 241, 0.14)` | `rgba(87, 45, 253, 0.08)` |
+| `badgeBorder` | `rgba(99, 102, 241, 0.28)` | `rgba(87, 45, 253, 0.20)` |
+| `inputBg` | `#1B2230` | `#FFFFFF` |
+| `inputBorder` | `rgba(255, 255, 255, 0.09)` | `#CBD5E1` |
+| `divider` | `rgba(255, 255, 255, 0.07)` | `#E2E8F0` |
+
+**Dark palette, 2026-09 rebalance.** The original dark mode was a near-black void with near-white text — 18.6:1, 2.5x past WCAG AAA, which is what read as harsh on an OLED phone at night. Measured WCAG 2.1 ratios now:
+
+| | old dark | new dark |
+|---|---|---|
+| background relative luminance | 0.0040 | **0.0129** |
+| `text` on `background` | 18.57:1 | **13.08:1** |
+| `text` on `card` / `cardAlt` | 17.25 / 15.88 | **11.56 / 10.64** |
+| `textSecondary` on `background` / `card` / `cardAlt` | 7.58 / 7.04 / 6.48 | **9.19 / 8.12 / 7.48** |
+| `textMuted` on `background` / `card` / `cardAlt` | 4.08 / 3.79 / 3.49 | **6.53 / 5.77 / 5.32** |
+| `danger` on `background` / `card` / `cardAlt` | 5.16 / 4.80 / 4.41 | **6.04 / 5.34 / 4.92** |
+| `warning` on `background` / `card` | 9.05 / 8.40 | 7.78 / 6.88 |
+| `accent` on `background` / `card` | 9.07 / 8.42 | 7.80 / 6.89 |
+| `accentLight` on `background` / `card` | 11.66 / 10.82 | 10.02 / 8.86 |
+| background → `card` surface step | 1.08:1 | **1.13:1** |
+| `card` → `cardAlt` surface step | 1.09:1 | 1.09:1 |
+| `primaryText` on a `primary` fill | 4.47:1 | 4.47:1 |
+
+Every remaining dark token is >= 4.5:1 (AA) on `background`/`card`/`cardAlt`, and every one the app sets body copy in (`text`, `textSecondary`) is >= 7:1 (AAA). The three alpha surfaces (`cardBorder`, `inputBorder`, `divider`) were raised by ~0.02–0.03 alpha to hold the same edge contrast against the lighter base.
+
+Two known gaps, both pre-existing and both structural rather than palette bugs:
+- **`primary` as a text colour is 3.74:1 on the new dark `background`** (4.35:1 before). `#6366F1` is already at the ceiling for a fill that carries white label text (4.47:1 — lightening it further drops `primaryText` on every CTA below AA), so the same token cannot serve both roles. Fixing this needs the token split into a fill (`primary`) and an on-surface text variant, which means touching ~79 `color: colors.primary` call sites.
+- **White text on a solid `danger` fill** (`ActiveOrdersView` rescue button, `SecurityLockdownView` exit button): 2.77:1 against `#F87171`. Those two buttons take a documented local `#DC2626` fill instead (4.83:1), because they are the only places `danger` is a fill rather than text.
 
 **Theme behaviour:** `ThemeProvider` initialises `useState<ThemeMode>('light')` — despite `app.json` declaring `"userInterfaceStyle": "dark"` — and the choice is **not persisted** across launches. Toggle: `toggleTheme()` (Header chip, ConnectWalletView pill) flips dark↔light.
 
-**Hard-coded colours outside the theme** (do not respond to the toggle): `SecurityLockdownView` uses an entirely hard-coded dark palette (`#08090C`, `#12151C`, `#1C1517`, `#FF3B30`, `#FF453A`, `#30D158`, `#8E8E93`); `SplashScreenView` background `#0A0D14`; `CircleDeckView` all-dark; `QuickStartBar` `#10B981`; `Header` leaderboard gold `#eab308`; `MerchantDesksView` `#c084fc`/`#60a5fa`/`#22c55e`/`#3b82f6`; `LeaderboardModal` `#38bdf8`/`#f59e0b`/`#eab308`/`#94a3b8`/`#b45309`; `ConnectWalletView` slide icon colours `#6366F1`/`#10B981`/`#38BDF8`/`#F59E0B` and gradient `['#6366F1','#4F46E5']`; `ActiveOrdersView` `#ef4444`.
+**Hard-coded colours outside the theme** (do not respond to the toggle). **Now themed:** `SecurityLockdownView` (was an entirely hard-coded dark palette — `#08090C`, `#12151C`, `#1C1517`, `#FF3B30`, `#FF453A`, `#30D158`, `#8E8E93` — and rendered as a black slab on the light theme; it now reads every surface, text and status colour from the theme, including the `StatusBar` bar style); `SplashScreenView` background (was `#0A0D14`, now `colors.background`); `Header` leaderboard gold `#eab308` → `colors.warning`; `MerchantDesksView` `#f59e0b` → `colors.warning`, `#ef4444` → `colors.danger`, desk-crown gold → `colors.warning`; `LeaderboardModal` `#38bdf8` → `colors.accent`, `#f59e0b` → `colors.warning`, `#94a3b8` → `colors.textSecondary`, gold → `colors.warning`; `ActiveOrdersView` `#ef4444` → `colors.danger` (fill and shadow); `ConnectWalletView` CTA gradient first stop `[colors.primary, '#4F46E5']`.
+
+**Still hard-coded, deliberately:**
+- `CircleDeckView` — all-dark. Dead code, no call sites; left alone on purpose.
+- Colours with **no matching token** in `ThemeColors`: success greens (`QuickStartBar` `#10B981`, `MerchantDesksView` `#22c55e`, `JudgeBriefingModal` `#22c55e`, `ConnectWalletView` 6 px mainnet dot `#10B981`, `SecurityLockdownView` PASS pill `#4ADE80`/`#15803D`), pool-type violets/blues (`#c084fc`, `#60a5fa`), the "FUNDED" info blue `#3b82f6`, TARDIS teal `#32D4DE`, bronze `#b45309`, and the CTA gradient's second stop `#4F46E5`. Several of these are unreadable on the light theme (e.g. `#22c55e` is 2.28:1 on white); adding `success`/`info` tokens is the follow-up.
+- Solid `danger` fills take a documented local `#DC2626` (white on it is 4.83:1) rather than `colors.danger`, which is tuned for danger *text* on each theme's surfaces — see the note under §6.1.
+- `#FFFFFF` labels/shadows in static `StyleSheet`s (e.g. `ActiveOrdersView` rescue-button text) are left as-is: `primaryText` is `#FFFFFF` in both themes, so they are already correct.
+- Not in this pass's scope: `JudgeBriefingModal` `#c084fc`/`#22c55e`, `CreditProfileView` `#eab308`/`#ff6b6b`/`#FFFFFF`, `SecurityLockScreen` `shadowColor '#6366F1'`, `WalletAssetsModal` `#6366F1`.
 
 ### 6.2 Typography
 
@@ -690,7 +738,7 @@ Conventional roles: cards `14–16`; chips/badges `8–12`; inputs `12–14`; mo
 Only four places use shadows — the app is otherwise flat:
 - `App.tsx:1596` toast — `shadowColor '#000'`, offset `{0,4}`, opacity 0.25, radius 8, `elevation: 8`
 - `SecurityLockScreen.tsx:442` — `shadowColor '#6366F1'`, opacity 0.4, `elevation: 8` (glow)
-- `ActiveOrdersView.tsx:471` — `shadowColor '#ef4444'`, opacity 0.4, `elevation: 4` (danger glow)
+- `ActiveOrdersView.tsx` rescue button — `shadowColor: colors.danger` (applied at the call site, since the static sheet cannot read the theme), opacity 0.4, `elevation: 4` (danger glow)
 - `WalletAssetsModal.tsx:442` — `shadowColor '#000'`, opacity 0.06, `elevation: 1`
 
 ### 6.6 Reusable conventions
@@ -698,8 +746,8 @@ Only four places use shadows — the app is otherwise flat:
 - **Cards:** `colors.card` + `borderRadius` 14–16 + `borderWidth: 1` + `colors.cardBorder`.
 - **Badges/chips:** `colors.badgeBg` + `colors.badgeBorder`, or a coloured `rgba(...,0.12–0.15)` tint with a matching 0.25–0.3 border; 9–11 px at 700–800.
 - **Selected/active state:** `borderColor: colors.primary` + `backgroundColor: colors.badgeBg` + label `colors.primary` at `fontWeight: '800'`.
-- **Primary CTA:** full-width, height 52–56, `borderRadius` 16–18, gradient `['#6366F1','#4F46E5']` (ConnectWalletView) or solid `colors.primary`.
-- **Destructive:** `colors.danger` text/background at `rgba(239, 68, 68, 0.1)`.
+- **Primary CTA:** full-width, height 52–56, `borderRadius` 16–18, gradient `[colors.primary, '#4F46E5']` (ConnectWalletView) or solid `colors.primary`.
+- **Destructive:** `colors.danger` as text on a `rgba(239, 68, 68, 0.1)` wash. Solid destructive fills cannot use `colors.danger` (see §6.1).
 - **Empty state:** centred large emoji glyph (fontSize 40) + 16 px/800 title + 12 px muted body, optionally a CTA.
 - **Modals:** two presentations — bottom sheet (`justifyContent: 'flex-end'`, height 88–90 %, top radius 28) for Judge/Leaderboard/Assets, and centred dialog (maxHeight 85 %, radius 24) for TransactionNotice.
 - **Button feedback:** `activeOpacity` 0.7 (secondary), 0.8, 0.85 (primary), 0.88 (Connect CTA).
@@ -766,7 +814,7 @@ Launch
 
 | Failure | Where handled | User sees |
 |---|---|---|
-| Wallet connect throws | `ConnectWalletView` 136–139 | Alert `Seeker Hardware Wallet` + `err.message` or the Seed Vault fallback text; button re-enables in `finally` (retry = tap again) |
+| Wallet connect throws | `ConnectWalletView` (`handleMwaConnect`) | Alert `Seeker Hardware Wallet` + `err.message` or the Seed Vault fallback text; button re-enables in `finally` (retry = tap again) |
 | Wrong PIN | `SecurityLockScreen` 178 | `Incorrect PIN. Please try again.` + shake animation + error haptic; field clears after 450 ms |
 | Too many wrong PINs | `SecurityLockScreen` 176 / `securityService.recordFailedAttempt` | `Too many incorrect attempts. Locked for 30s.` at 5 failures; `300s` at 10. Persisted in SecureStore, so it survives a restart. Keypad and biometrics are inert for the duration. |
 | Lockout still active at launch | `SecurityLockScreen` 81 | `Device temporarily locked. Retry in Ns.` |

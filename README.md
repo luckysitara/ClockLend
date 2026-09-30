@@ -508,7 +508,7 @@ flowchart TD
 2. View your current Reputation Score and Tier (Standard, Silver, Gold, Diamond).
 3. Under **"SKR Reputation Bond"**, enter the amount of SKR you wish to stake (e.g., `2,500 SKR`).
 4. Tap **"Stake SKR Bond"** and sign via Seed Vault.
-5. Your tier updates immediately on-chain: your maximum borrow LTV increases up to **90%**, and your APR fee discount applies automatically across all future loans.
+5. Your tier updates immediately on-chain: your **interest rate** discount applies to all future loans (≥100 SKR → 25% off, ≥1,000 SKR → 50% off, each locking a bond of the same size while you borrow). **Staking does not change your LTV** — LTV is a property of the pool, set when the pool is created and capped at 7000 bps.
 
 ---
 
