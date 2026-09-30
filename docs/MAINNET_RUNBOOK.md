@@ -4,10 +4,11 @@ Status: **deployed and live on Solana Mainnet-beta.** Every address and hash in 
 document was read from mainnet-beta RPC on 2026-09-29 and can be re-verified with the
 commands given. Where something is *not* done, it says so explicitly.
 
-> Round-14 audit context: three executable proof-of-concept bugs were found whose fixes
-> are **in source but not yet in the deployed bytecode**, and ops readiness was graded
-> **not ready**. See `site/audit-report.html` for current status. Nothing in this runbook
-> should be read as claiming the deployed program contains those fixes.
+> Round-14 audit context: three executable proof-of-concept bugs were found in round 14.
+> Their fixes are **now deployed** — the on-chain bytecode was re-verified on 2026-09-29
+> against a local `cargo-build-sbf` build of this repo and matched byte-for-byte over all
+> 364,521 non-padding bytes. Ops readiness is still graded **not ready**; see
+> `site/audit-report.html` and README open items for current status.
 
 ---
 
@@ -18,10 +19,10 @@ commands given. Where something is *not* done, it says so explicitly.
 | Cluster | mainnet-beta, genesis `5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d` |
 | Program ID | `4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7` |
 | ProgramData | `9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG` |
-| Allocated bytes | `357,517` (ELF is `357,472`; the remainder is retained zero padding) |
-| Deploy slot | `451589196` |
+| Allocated bytes | `367,757` (ELF is `364,536`; the remainder is retained zero padding) |
+| Deploy slot | `451698349` |
 | Upgrade authority | `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds` |
-| Bytecode sha256 | `019da88bc97498b127ddbaa76468ff8ad86c5094ae46045f7f9a9127b3c1dbdb` |
+| Bytecode sha256 | `6d1c3ec2443f713e2cefd29fcd45a0d26c54b63454d0a4d6323f5d7878b7249b` |
 | AdminConfig PDA | `7tCidaB2vu5N8KfKJ2Mqfm5dxbkvSqqvxHqkznYveroi` (`CLK_ADMN`, 73 B) |
 | `admin` | `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds` |
 | `oracle_authority` | `HtiDpTkcWDDaQeRLSBvYDdw2sRJb5VvkD7EMvr5JWVzJ` |
@@ -85,12 +86,13 @@ Equivalent one-liner:
 curl -s https://api.mainnet-beta.solana.com -X POST -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"getAccountInfo","params":["9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG",{"encoding":"base64"}]}' \
 | python3 -c "
-import sys,json,base64,hashlib
+import sys,json,base64,hashlib,os
 d=base64.b64decode(json.load(sys.stdin)['result']['value']['data'][0])
+n=os.path.getsize('program/target/deploy/clock_lend.so')
 print(len(d),'bytes allocated')
-print(hashlib.sha256(d[45:45+357472]).hexdigest(),'<-- on-chain ELF')
+print(hashlib.sha256(d[45:45+n]).hexdigest(),'<-- on-chain ELF, sliced to the local ELF size')
 "
-# expect 357517 / 019da88bc97498b127ddbaa76468ff8ad86c5094ae46045f7f9a9127b3c1dbdb
+# expect 367757 / 6d1c3ec2443f713e2cefd29fcd45a0d26c54b63454d0a4d6323f5d7878b7249b
 ```
 
 Any bytes past `45 + local_elf_size` are historical zero padding and must **not** be hashed.
@@ -239,13 +241,18 @@ requires `--yes` on mainnet.
 
 | # | Issue | Impact |
 |---|---|---|
-| 1 | Keeper not running reliably; both feeds stale ~3.9 h | Borrow/liquidation paths reading feeds revert |
-| 2 | Round-14 POC-1/2/3 fixes in source, **not redeployed** | On-chain program is the older build |
+| 1 | Keeper not running reliably; feeds observed ~81 min stale on 2026-09-29 (only 4 writes ever, hours apart) | Borrow/liquidation paths reading feeds revert |
+| 2 | ~~Round-14 POC-1/2/3 fixes not redeployed~~ **resolved** — redeployed; on-chain bytecode matches this repo (verified 2026-09-29) | — |
 | 3 | Treasury PDA never initialized | No fees collected; fee paths fail |
 | 4 | Upgrade authority is a single key, not a multisig, not timelocked | Key compromise = program replacement |
-| 5 | SKR yield vault initialized but never funded; pool has zero liquidity | Yield feature is inert in practice |
+| 5 | SKR yield vault initialized but never funded; the one pool holds $50 USDC of team liquidity and has originated zero loans | Yield feature is inert in practice |
 | 6 | No third-party audit has been performed | Internal, AI-assisted rounds only |
-| 7 | Committed Helius RPC key in `serverless/wrangler.toml` (now a comment) | Should be rotated and moved to a secret |
+| 7 | Committed Helius RPC key in `serverless/wrangler.toml` (now removed from the text, still in git history) | **Must be rotated with the provider** — deleting the text does not revoke it |
+| 8 | The live pool was created with `max_ltv_bps = 9000`, before the round-14 cap, and there is no instruction to update pool parameters | A 90% LTV loan is not protected by the round-14 7000 bps reasoning; drain and recreate the pool, or add an update instruction |
+| 9 | AWS Lambda keeper: fails open on `/crank` when `CRANK_AUTH_TOKEN` is unset, and payload-format-2.0 events (HTTP APIs / Function URLs) carry no top-level `httpMethod` so web requests fell into the unauthenticated cron branch | Both fixed in `serverless/src/lambda.ts`; redeploy the Lambda |
+| 10 | Cloudflare `/health` returned `rpcUrl` unredacted and echoed raw `err.message` | Fixed in `serverless/src/index.ts` (`redactUrl`, `safeErrorMessage`); redeploy the worker |
+| 11 | **Round-15 program hardening is committed but NOT deployed.** Four source fixes: P2P LTV brought under the shared `MAX_LTV_BPS` = 7000; pool-PDA re-derivation added to `BorrowFromPool`; the permissionless borrow path now parks (rather than folds) its yield half-fee; the 182-byte `AccountKind` heuristic removed | The deployed program still has all four. Rebuild, upgrade, then re-verify and re-record the bytecode hash below (§1.1). Note `cargo-build-sbf` will no longer reproduce `6d1c3ec2…` until the upgrade lands |
+| 12 | Pool LTV is capped at 7000 on the P2P path as well, so the live pool's 9000 is now the only way to borrow above 70% | Intentional; drain/recreate the pool as in item 8 |
 
 ---
 

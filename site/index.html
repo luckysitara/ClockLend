@@ -104,11 +104,11 @@
           <div class="mockup-asset-row">
             <div class="mockup-asset-pill active">
               <div class="mockup-asset-symbol" style="color: var(--accent);">SKR</div>
-              <div class="mockup-asset-sub">85% LTV</div>
+              <div class="mockup-asset-sub">70% LTV</div>
             </div>
             <div class="mockup-asset-pill">
               <div class="mockup-asset-symbol">SOL</div>
-              <div class="mockup-asset-sub">75% LTV</div>
+              <div class="mockup-asset-sub">70% LTV</div>
             </div>
             <div class="mockup-asset-pill">
               <div class="mockup-asset-symbol">USDC</div>
@@ -124,7 +124,7 @@
             </div>
             <div class="mockup-borrow-details">
               <span>Collateral Locked: <strong>1,850 SKR</strong></span>
-              <span>APR: <strong style="color: var(--accent);">8.0%</strong></span>
+              <span>APR: <strong style="color: var(--accent);">3.5%</strong></span>
             </div>
           </div>
 
@@ -139,6 +139,12 @@
           </div>
         </div>
       </div>
+
+      <p style="text-align: center; color: var(--text-muted); font-size: 0.8rem; margin-top: 14px; max-width: 620px; margin-left: auto; margin-right: auto;">
+        Illustrative UI mockup, not live data. Maximum LTV is a per-pool parameter set at pool initialization
+        (program cap 7,000 bps / 70%); the live mainnet pool charges 3.5% APR. Staked SKR discounts the interest
+        rate only — it does not raise LTV.
+      </p>
 
       <!-- Metrics Grid -->
       <div class="metrics-grid" style="margin-top: 50px;">
@@ -162,7 +168,7 @@
 
       <p style="text-align: center; color: var(--text-muted); font-size: 0.85rem; margin-top: 18px; max-width: 760px; margin-left: auto; margin-right: auto;">
         Audit rounds are <strong>internal and AI-assisted</strong>; <strong>no third-party audit has been performed</strong>.
-        Round 14 found three executable proof-of-concept bugs (fixes in source, not yet redeployed) and graded ops readiness
+        Round 14 found three executable proof-of-concept bugs &mdash; those fixes are now deployed and the on-chain bytecode was re-verified against a local build of this repo on 2026-09-29 &mdash; and graded ops readiness
         <strong>not ready</strong>. <a href="audit-report.html" style="color: var(--accent);">Read the round-14 report →</a>
       </p>
     </div>
@@ -217,7 +223,7 @@
         <div class="feature-card">
           <div class="feature-icon-wrapper">💎</div>
           <h3>SKR Protocol Yield Vault</h3>
-          <p>50% of every loan origination fee is automatically routed into the SKR Yield Vault. Stakers claim real USDC dividends with an escrow-bounded cooldown mechanism.</p>
+          <p>Half of a loan's origination fee routes into the SKR Yield Vault — when the yield-vault accounts are appended to the borrow. Without them the full fee goes to the treasury, and the mainnet vault has not been funded yet. Stakers claim real USDC dividends with an escrow-bounded cooldown mechanism.</p>
         </div>
       </div>
     </div>
@@ -264,24 +270,24 @@
         <div class="economics-content">
           <span class="section-tag">Token Utility & Revenue Model</span>
           <h3>SKR Real Yield Dividends & 30% Buyback-and-Burn</h3>
-          <p>ClockLend aligns protocol growth with token value accrual. Stakers earn direct USDC dividends, while 30% of all protocol revenue is committed to buying and burning $SKR.</p>
+          <p>ClockLend aligns protocol growth with token value accrual. Stakers earn direct USDC dividends, while 30% of protocol revenue is committed to buying and burning $SKR. That buyback is a team-run commitment, not an automated mechanism: no protocol fee has been collected to date and no buyback has been executed yet.</p>
           
           <ul class="perks-list">
             <li>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span><strong>50% Staker Dividend Stream:</strong> 50% of all loan origination fees stream directly on-chain to the SKR Yield Vault as instant USDC dividends for stakers.</span>
+              <span><strong>50% Staker Dividend Stream:</strong> When the yield-vault accounts are appended to a borrow, 50% of that loan's origination fee routes on-chain to the SKR Yield Vault as USDC dividends for stakers; without them the full fee goes to the treasury. The mainnet vault has not been funded yet.</span>
             </li>
             <li>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span><strong>🔥 30% Protocol Revenue Buy & Burn:</strong> 30% of all protocol revenue is dedicated to buying and burning $SKR (via Jupiter DEX spot buys and direct SPL burns), permanently destroying circulating supply.</span>
+              <span><strong>🔥 30% Protocol Revenue Buy & Burn:</strong> 30% of protocol revenue is committed to buying and burning $SKR (Jupiter DEX spot buys plus direct SPL burns) to reduce circulating supply. This is a manual, team-run operation run from the treasury — it is not an on-chain mechanism, and none has been executed to date.</span>
             </li>
             <li>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span><strong>85% Interest to Desk Owners:</strong> Liquidity providers earn 85% of all borrower interest with 100% principal protection in isolated PDA vaults.</span>
+              <span><strong>85% Interest to Desk Owners:</strong> Liquidity providers earn 85% of all borrower interest, and on a default past grace they receive 95% of the seized collateral (the protocol takes a 5% liquidation margin). There is <strong>no principal-protection mechanism</strong>: if the collateral's price has fallen, the seized collateral can be worth less than the principal lent.</span>
             </li>
             <li>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span><strong>90% Maximum LTV & 50% APR Discounts:</strong> Tiered borrowing perks and verified merchant badges for active SKR stakers.</span>
+              <span><strong>Staking Tiers & Per-Pool LTV:</strong> Staked SKR discounts the <em>interest rate</em> in exactly two tiers — 100 SKR for 25% off, 1,000 SKR for 50% off, each locking a bond of the same size while you borrow. Staking does not change LTV: the maximum loan-to-value is a pool parameter, set when the pool is initialized and capped at 7,000 bps (70%).</span>
             </li>
           </ul>
         </div>
@@ -302,7 +308,7 @@
           </div>
           <div class="vault-stat-row">
             <span style="color: var(--text-muted);">Desk Owner Interest Share</span>
-            <span style="font-weight: 700; color: #fff;">85% (100% Principal Protected)</span>
+            <span style="font-weight: 700; color: #fff;">85% + 95% of Seized Collateral on Default</span>
           </div>
           <div class="vault-stat-row">
             <span style="color: var(--text-muted);">Claim Cooldown</span>
@@ -314,7 +320,7 @@
           </div>
           <div class="vault-stat-row">
             <span style="color: var(--text-muted);">Slashing Ratio on Default</span>
-            <span style="font-weight: 700; color: #f43f5e;">20% Reputation-Bond Slash</span>
+            <span style="font-weight: 700; color: #f43f5e;">Locked Bond or 20% of Stake — Whichever Is Larger</span>
           </div>
         </div>
       </div>
@@ -327,7 +333,7 @@
       <div class="section-header">
         <span class="section-tag">Security & Audits</span>
         <h2 class="section-title">Institutional Rigor by Design</h2>
-        <p class="section-desc">14 internal AI-assisted audit rounds over 103 on-chain test functions. No third-party audit has been performed — remediation is ongoing and round-14's three proof-of-concept fixes are not yet redeployed.</p>
+        <p class="section-desc">14 internal AI-assisted audit rounds over 103 on-chain test functions. No third-party audit has been performed. Round-14's three proof-of-concept fixes are now deployed &mdash; the on-chain bytecode was re-verified against a local build of this repository on 2026-09-29.</p>
       </div>
 
       <div class="security-matrix">
@@ -368,7 +374,7 @@
       <div style="margin-top: 40px; background: rgba(20, 241, 149, 0.06); border: 1px solid rgba(20, 241, 149, 0.3); border-radius: var(--radius-lg); padding: 32px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
         <div style="max-width: 680px;">
           <h3 style="font-size: 1.35rem; font-weight: 800; color: #fff; margin-bottom: 8px;">Internal Audits & Vulnerability Disclosure</h3>
-          <p style="color: #cbd5e1; font-size: 0.95rem; margin-bottom: 0;">ClockLend's native SBF Rust program has been through 14 internal, AI-assisted audit rounds. The program is deployed and its bytecode is hash-verified on mainnet, but remediation is ongoing: round 14 found three executable proof-of-concept bugs whose fixes are in source and awaiting redeploy, and no third-party audit has been performed. If you discover any vulnerability, bug, or unexpected behavior, please report it directly to our official X account for prompt review.</p>
+          <p style="color: #cbd5e1; font-size: 0.95rem; margin-bottom: 0;">ClockLend's native SBF Rust program has been through 14 internal, AI-assisted audit rounds. The program is deployed and its bytecode is hash-verified on mainnet, but remediation is ongoing: round 14 found three executable proof-of-concept bugs, whose fixes have since been deployed and re-verified against a local build of this repository, and no third-party audit has been performed. If you discover any vulnerability, bug, or unexpected behavior, please report it directly to our official X account for prompt review.</p>
         </div>
         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
           <a href="security.html" class="btn btn-primary btn-sm">View Security & Audits →</a>
@@ -406,7 +412,7 @@
             <span class="faq-icon">+</span>
           </button>
           <div class="faq-answer">
-            <p>Unlike traditional DeFi platforms where liquidation bots immediately dump your collateral at the first tick, ClockLend provides an automated 24-hour Social Grace Period. During this window, you can repay the loan plus interest to rescue your collateral without penalty.</p>
+            <p>Unlike traditional DeFi platforms where liquidation bots immediately dump your collateral at the first tick, ClockLend provides a 24-hour Social Grace Period. It is not automatic — the window starts when the grace-period instruction is triggered on chain at or after the due time. During this window, you can repay the loan plus interest to rescue your collateral without penalty.</p>
           </div>
         </div>
 
@@ -416,7 +422,7 @@
             <span class="faq-icon">+</span>
           </button>
           <div class="faq-answer">
-            <p>Every time a borrower takes a loan through ClockLend, an origination fee is charged. Exactly 50% of this fee is instantly routed into the SkrYieldVault token account. Stakers earn proportional dividends in USDC based on their staked SKR shares, subject to a 1-hour anti-flash-loan cooldown.</p>
+            <p>Every time a borrower takes a loan through ClockLend, an origination fee is withheld from the principal. Half of that fee is routed into the SkrYieldVault token account — but only when the yield-vault accounts are appended to the borrow; without them the whole fee goes to the treasury instead. The mainnet yield vault has not been funded yet. Stakers earn proportional dividends in USDC based on their staked SKR shares, subject to a 1-hour anti-flash-loan cooldown.</p>
           </div>
         </div>
 

@@ -4,7 +4,7 @@
 > **Mainnet Program ID:** [`4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7`](https://solscan.io/account/4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7) — deployed and bytecode-hash-verified  
 > **Devnet Program ID:** [`HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3`](https://explorer.solana.com/address/HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3?cluster=devnet) (exists on devnet only)  
 > **Physical Target Hardware:** Solana Seeker (Android 14+ / Seed Vault / MWA 2.0)  
-> **Security Audit Status:** 14 internal AI-assisted rounds • 103 on-chain test functions • **no third-party audit** • round-14 fixes in source, awaiting redeploy
+> **Security Audit Status:** 14 internal AI-assisted rounds • 103 on-chain test functions • **no third-party audit** • round-14 fixes are deployed (verified 2026-09-29)
 
 ---
 
@@ -13,29 +13,55 @@
 The app is **mainnet-only**: every money flow executes on mainnet-beta, all devnet
 faucet/switch UI has been removed, and the data layer is fully network-aware.
 
-**Program** — **deployed on Solana Mainnet-beta**, bytecode hash-verified:
+**Program** — **deployed on Solana Mainnet-beta**, bytecode-verified against this repo:
 - Program `4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7`, ProgramData
-  `9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG` (357,517 B allocated / 357,472 B ELF),
-  deploy slot `451589196`, upgrade authority `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds`
-- On-chain bytecode sha256 `019da88bc97498b127ddbaa76468ff8ad86c5094ae46045f7f9a9127b3c1dbdb`
-  — this equals `sha256sum program/target/deploy/clock_lend.so`, so the deployed program is
-  provably the build in this repo. Recipe: [`docs/MAINNET_RUNBOOK.md`](docs/MAINNET_RUNBOOK.md) §1.1
+  `9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG` (367,757 B allocated / 364,536 B ELF;
+  the remainder is retained zero padding), deploy slot `451698349`,
+  upgrade authority `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds`
+- **Last verified deploy: 2026-09-29.** At that moment the deployed bytecode matched a local
+  `cargo-build-sbf` build of this repository byte-for-byte over all 364,521 non-padding bytes
+  (artifact sha256 `6d1c3ec2443f713e2cefd29fcd45a0d26c54b63454d0a4d6323f5d7878b7249b`, which is
+  what `deploy-mainnet.mjs` compares against the on-chain slice
+  `ProgramData.data[45 : 45 + localSize]`). Recipe and re-verification procedure:
+  [`docs/MAINNET_RUNBOOK.md`](docs/MAINNET_RUNBOOK.md) §1.1
+- ⚠️ **The source has since moved ahead of the deployment.** The round-15 hardening below is
+  committed but **not yet on chain**, so a rebuild today will NOT reproduce the hash above and
+  the deployed program is no longer provably this repository. Re-verify (and re-record the
+  hash) after the next upgrade. Until then, treat the deployed program as round-14-state.
 - 103 on-chain test functions across six suites (`grep -c '#\[test\]\|#\[tokio::test\]' program/tests/*.rs`)
 - 8-byte account discriminators with fail-closed dispatch, ProgramData-derived admin root,
   PDA-verified escrows with front-run authority defense
 - **Upgradeable**, not immutable: the deployer key can replace the program
 
 **Deployed but not yet used.** The only program-owned accounts on mainnet are the two price
-feeds, the AdminConfig PDA, one lending pool (zero liquidity, zero loans) and the SKR yield
-vault. The treasury PDA has never been initialized, so no fee has ever been collected.
+feeds, the AdminConfig PDA, one lending pool and the SKR yield vault. The pool holds $50.00
+USDC of the team's own liquidity and has originated **zero loans**; there are no P2P offers
+and no user profiles. The treasury PDA has never been initialized, so no fee has ever been
+collected.
 
 **Open items — see [`docs/MAINNET_RUNBOOK.md`](docs/MAINNET_RUNBOOK.md) §5:**
-1. The keeper is not running reliably; both mainnet feeds were observed ~3.9 h stale, so
-   borrows that read them currently revert
-2. The round-14 POC fixes are **in source but not yet redeployed**
+1. The keeper is not running reliably; as of 2026-09-29 both mainnet feeds were ~81 minutes
+   stale against the program's 600-second bound, so borrows that read them revert. Only four
+   successful feed writes exist on mainnet, hours apart — the `*/6` cron is not firing.
+2. The live pool was created before the round-14 LTV cap with `max_ltv_bps = 9000`, and the
+   program has no instruction to update pool parameters. New pools are capped at 7000 bps;
+   this one is not, and cannot be retrofitted.
 3. No third-party audit has been performed
-4. A Helius RPC API key is committed in `serverless/wrangler.toml` (now a comment) and should
-   be rotated
+4. A Helius RPC API key is committed in `serverless/wrangler.toml` (now a comment) and is
+   still live — **it must be rotated with the provider**, not merely deleted from the repo
+5. The AWS Lambda keeper has two auth bypasses: `lambda.ts` runs the crank unauthenticated
+   when `CRANK_AUTH_TOKEN` is unset (the Cloudflare worker correctly fails closed), and
+   payload-format-2.0 events (HTTP APIs / Function URLs) carry no top-level `httpMethod`, so
+   ordinary web requests fall into the unauthenticated cron branch
+6. `/health` on the Cloudflare worker returns `rpcUrl` unredacted, exposing the API key to
+   anonymous callers
+7. **Round-15 hardening is committed but not deployed.** Source-side fixes for four issues
+   found in the 2026-09-29 audit — the P2P LTV cap was 9000 while the pool cap was 7000;
+   `BorrowFromPool` was the only money handler missing a pool-PDA re-derivation; the
+   permissionless borrow path could fold the SKR yield backlog into share value (letting a
+   just-in-time staker drain it with ~20 dust borrows); and `AccountKind` classified any
+   182-byte first-byte-1 slice as a `LendingPool`. Five regression tests pin the new
+   behaviour. **None of it is on chain** — the deployed program still has all four.
 
 **Infrastructure**
 - RPC: Helius gatekeeper → configured RPC → PublicNode → official fallback (env-driven,
@@ -71,7 +97,7 @@ vault. The treasury PDA has never been initialized, so no fee has ever been coll
    - [Borrower Walkthrough (Instant Micro-Loan)](#borrower-walkthrough-instant-micro-loan)
    - [Lender / Merchant Walkthrough (Deploying a Desk)](#lender--merchant-walkthrough-deploying-a-desk)
    - [P2P Pawn Walkthrough (Listing & Funding)](#p2p-pawn-walkthrough-listing--funding)
-   - [SKR Staking Walkthrough (Unlocking 90% LTV & Discounts)](#skr-staking-walkthrough-unlocking-90-ltv--discounts)
+   - [SKR Staking Walkthrough (Interest Discounts & Bonds)](#skr-staking-walkthrough-interest-discounts--bonds)
 6. [Real-World Use Cases & Scenarios](#-real-world-use-cases--scenarios)
 7. [Smart Contract Verification & Test Suite](#-smart-contract-verification--test-suite)
 8. [TARDIS & Solana Ecosystem Synergy](#-tardis--solana-ecosystem-synergy)
@@ -89,9 +115,9 @@ flowchart LR
     A["Solana Seeker<br>(Hardware / Seed Vault)"] --> B["ClockLend Client<br>(R8 / Hermes / Anti-Emulator)"]
     B --> C["P2P Express Match<br>(Instant Lowest-APR Routing)"]
     B --> D["Merchant Desks<br>(Solo & Circle Credit Pools)"]
-    B --> E["Circle Pawn Deck<br>(1-on-1 NFT / cNFT Escrow)"]
+    B --> E["Circle Pawn Deck<br>(1-on-1 SOL / SKR Escrow)"]
     C & D & E --> F["Native Rust SBF Program<br>(4Dp2A6SH...NHgv7, Mainnet)"]
-    F --> G["SKR Reputation Bond<br>(90% LTV & Slashing Engine)"]
+    F --> G["SKR Reputation Bond<br>(Interest Discount & Slashing Engine)"]
     F --> H["24h Social Grace Period<br>(Peer Rescue Over Bot Liquidation)"]
 ```
 
@@ -103,7 +129,7 @@ flowchart LR
    - 0ms local hybrid state hydration ensuring instantaneous launch and offline resilience.
 2. **Deep Economic Alignment with the $10,000 SKR Track**:
    - SKR is not a speculative add-on; it is the **fundamental reputation currency** of ClockLend.
-   - Staking SKR unlocks **90% LTV** (vs 65% standard), up to **50% APR interest discounts**, merchant credit verification badges, and serves as an automated slashing bond.
+   - Staking SKR unlocks up to **50% interest-rate discounts** (two tiers: ≥100 SKR, ≥1,000 SKR), a merchant credit verification badge, and serves as a slashing bond. It does **not** change LTV.
    - SKR serves as the **default collateral asset** for instant micro-loans across the protocol.
 3. **Institutional-Grade Defense-in-Depth**:
    - Macro-free, native `solana-program` Rust smart contract with pure integer math (100% SBF floating-point immunity).
@@ -128,15 +154,19 @@ ClockLend introduces a hybrid credit paradigm combining **algorithmic micro-pool
 2. **The Ticking Clock Mechanic**: Borrowers are greeted by a prominent countdown clock for each active debt obligation. Time-to-maturity is gamified, establishing clear repayment deadlines.
 3. **The Social Safety Net (24h Grace Period)**: When a loan passes its due date without repayment, ClockLend does **not** instantly trigger an auction bot. Instead, an on-chain **24-Hour Social Grace Period** is initiated. Circle peers and friends receive high-priority alerts allowing them to fund a buyout, salvaging the borrower's credit score and acquiring the underlying asset at a discounted rate within the community.
 4. **Treasury Monetization & Sustainable Economics**:
-   - **0.5% Origination Fee**: Deducted from borrowed principal to fund protocol insurance reserves.
-   - **10% Protocol Take-Rate**: Deducted from earned interest payments upon successful loan maturity.
-   - **5% Liquidation Margin**: Captured upon expired default to continuously capitalize the protocol DAO treasury.
+   - **Origination Fee — 0.25% (native-SOL collateral) / 0.50% (SKR collateral)**: Withheld
+     from the borrowed principal at disbursement. Split 50% to the Treasury PDA and 50% to
+     the SKR Yield Vault when the yield-vault accounts are supplied; otherwise 100% to the
+     Treasury PDA.
+   - **15% Interest Take-Rate**: Deducted from earned interest upon successful repayment.
+   - **5% Liquidation Margin**: Captured from seized collateral on expired default.
+   - There is **no insurance reserve**: no such mechanism exists in the program.
 
 ---
 
 ### 3. Cryptographic Invariants & PDAs
 
-The ClockLend protocol operates on Solana Devnet via Native Rust (`solana-program` v1.18.26). Every transaction is atomically guarded by deterministic Program Derived Addresses (PDAs):
+The ClockLend protocol operates on **Solana Mainnet-beta** via Native Rust (`solana-program` 2.2.1). Every transaction is atomically guarded by deterministic Program Derived Addresses (PDAs):
 
 ```mermaid
 classDiagram
@@ -203,12 +233,17 @@ classDiagram
 #### PDA Seed Formats:
 | PDA Type | Derivation Seeds | Purpose |
 | :--- | :--- | :--- |
-| **Lending Pool** | `[b"pool", pool_id.to_le_bytes()]` | Holds pool liquidity, parameters, and merchant metadata |
-| **Loan Escrow** | `[b"escrow", order_id.to_le_bytes()]` | Atomically locks borrower collateral until full repayment |
-| **P2P Pawn Escrow** | `[b"p2p_offer", offer_id.to_le_bytes()]` | Holds custom tokens, NFTs, or cNFTs for bilateral funding |
+| **Lending Pool** | `[b"pool", authority, pool_id.to_le_bytes()]` | Holds pool parameters and accounting. Authoritative seeds, per `process_initialize_pool` |
+| **Pool Vault** | `[b"vault", pool_pda]` | The pool's liquidity SPL token account, owned by the vault PDA |
+| **Loan Order** | `[b"loan", pool_pda, borrower, loan_id.to_le_bytes()]` | Per-loan record |
+| **Loan Escrow** | `[b"escrow", loan_pda]` | Atomically locks borrower collateral until full repayment |
+| **P2P Pawn Offer** | `[b"p2p_offer", creator, offer_id.to_le_bytes()]` | Bilateral offer record; the escrow is `[b"escrow", p2p_offer_pda]` |
 | **Reputation Profile** | `[b"profile", user_pubkey.as_ref()]` | Stores soulbound credit score, tier, and loan completion history |
-| **Reputation Escrow** | `[b"reputation_escrow", user_pubkey.as_ref()]` | Holds slashable SKR reputation bond tokens |
+| **SKR Stake Escrow** | `[b"skr_escrow", user_pubkey.as_ref()]` | Holds slashable SKR reputation bond tokens |
 | **Protocol Treasury** | `[b"treasury"]` | Accumulates origination fees and default liquidation spreads |
+| **Price Feed** | `[b"oracle", mint]` (global) or `[b"oracle", pool, mint]` (pool-scoped) | Admin-written price, with a 600s pricing bound |
+| **Admin Config** | `[b"admin"]` | Protocol admin + oracle authority; rooted in the program's upgrade authority |
+| **SKR Yield Vault** | `[b"skr_yield_vault", reward_mint]` (+ token account `[b"skr_yield_token", reward_mint]`, position `[b"skr_yield_user", user, reward_mint]`) | Protocol-fee dividend accumulator for SKR stakers |
 
 ---
 
@@ -232,7 +267,7 @@ flowchart TD
     LiquidationFlow -->|5% Liquidation Margin| Treasury
     
     Treasury -->|30% Revenue Allocation| BuyBurn["🔥 30% Buyback & Burn Engine<br>(Permanent $SKR Supply Destruction)"]
-    Treasury -->|70% Protocol Allocation| TreasuryReserves["🛡️ 70% Protocol Reserves & Ops<br>(Audits, Insurance & Growth)"]
+    Treasury -->|70% Revenue Allocation (committed)| TreasuryReserves["🛡️ 70% Protocol Reserves & Ops<br>(Security, Development, Growth)"]
     
     BuyBurn -->|Direct Burn| BurnDirect["Direct SPL Token Burn<br>(Treasury SKR → Destroyed)"]
     BuyBurn -->|Jupiter Spot Swap| BurnJupiter["Spot Market Buy & Burn<br>(Treasury USDC/SOL → SKR → Destroyed)"]
@@ -248,15 +283,24 @@ flowchart TD
 #### B. What Happens to the Rest of the Capital?
 - **Lending Desk Owners & LPs**: Receive **100% of their loan principal** and **85% of all loan interest** compounded automatically into their pool vault PDA (`pool.vault_pda`). If a loan defaults past grace, they receive **95% of the seized collateral**. Desk owners can withdraw anytime via `WithdrawLiquidity` (Tag 9).
 - **SKR Token Stakers**: Receive **50% of all protocol origination fees** accumulated as a USDC dividend pool inside `SkrYieldVault`. Stakers claim proportional dividends anytime via `ClaimSkrYield` (Tag 17) protected by a 1-hour anti-flash-loan cooldown.
-- **P2P Pawn Funders**: Receive **100% of agreed loan interest** directly to their wallet upon borrower repayment, or 100% of escrowed NFT/custom token collateral on default.
+- **P2P Pawn Funders**: Receive **100% of agreed loan interest** directly to their wallet upon borrower repayment, or 100% of the escrowed collateral on default. The deployed program escrows **native SOL or SKR only** — no NFT, cNFT, or other token is accepted as collateral.
 
 #### C. Protocol Treasury Allocation: 30% Buyback & Burn Commitment
-All protocol revenue collects safely in the on-chain **Treasury PDA** (`6yY4P4x29kpJKKkwCTFAvJp4uyPuei4NZix8Vs2xL4dq`). 
+Protocol fees are routed to the on-chain **Treasury PDA**
+(`5buCUcCHHDCzQpanMKCK8uruErL5D2UzSFVrbtPrKV7y`). **No fee has ever been collected** — the
+treasury PDA has no account on chain and only its USDC ATA exists, at a zero balance. Nothing
+is "held in reserve" today.
 
-To drive relentless deflation and long-term value accrual for the $SKR token, **30% of all project revenue is used to buy and burn the $SKR token**:
+To drive deflation and long-term value accrual for the $SKR token, the project has committed
+**30% of protocol revenue to buying and burning the $SKR token**:
 
-- **🔥 30% Dedicated SKR Buyback & Burn**: Systematically deployed to absorb circulating $SKR supply off the open market (via Jupiter DEX) or burn accumulated SKR directly from the Treasury PDA.
-- **🛡️ 70% Protocol Reserves & Operations**: Dedicated to protocol security, insurance reserves, ongoing development, and liquidity bootstrapping.
+- **🔥 30% SKR Buyback & Burn (commitment, not yet executed)**: Intended to absorb circulating
+  $SKR supply off the open market (via Jupiter) or burn accumulated SKR directly from the
+  Treasury PDA. **No buyback or burn has been executed to date**, and the execution is a
+  manual, team-run operation — it is not automated on-chain.
+- **🛡️ 70% Protocol Reserves & Operations (commitment)**: Intended for protocol security,
+  ongoing development, and liquidity bootstrapping. There is no on-chain reserve mechanism;
+  treasury funds are withdrawable at the team's admin key's discretion.
 
 The protocol operations engine executes the 30% buyback and burn via [`scripts/burn-skr.mjs`](scripts/burn-skr.mjs):
 
@@ -299,18 +343,29 @@ node scripts/withdraw-treasury.mjs --amount 2.5 --token sol --dest <WALLET> --ne
 ```
 
 
-#### E. Tier Staking Matrix & Reputation Slashes
-| Tier Level | Required Staked SKR | Maximum Allowed LTV | APR Interest Discount | Credit Rating Boost |
-| :--- | :--- | :--- | :--- | :--- |
-| **Standard** | 0 SKR | 65.0% LTV | 0.0% APR Discount | Base (70 Score) |
-| **Silver** | 1,000 SKR | 75.0% LTV | 10.0% APR Discount | +5 Score (Silver Badge) |
-| **Gold** | 2,500 SKR | 85.0% LTV | 25.0% APR Discount | +15 Score (Gold Badge) |
-| **Diamond** | 5,000+ SKR | **90.0% LTV** | **50.0% APR Discount** | +25 Score (Diamond Merchant) |
+#### E. Staking Tiers & Reputation Slashes
+Staking SKR affects **the interest rate only**. It does **not** change the LTV available to a
+borrower — LTV is a property of the pool, fixed at `InitializePool` and capped at 7000 bps
+(processor.rs `process_initialize_pool`). There are exactly two discount tiers:
 
-When a borrower defaults past the 24-hour Social Grace period, the on-chain engine executes deterministic reputation bond slashing:
-$$\text{Slashed Amount} = \text{staked\_skr} \times 20\%$$
-$$\text{Burn Allocation} = \text{Slashed Amount} \times 80\% \quad (\text{permanently burned})$$
-$$\text{Treasury Allocation} = \text{Slashed Amount} \times 20\% \quad (\text{compensates lender bad debt})$$
+| Staked SKR (available, i.e. unstaked by other loans) | Interest Discount | Bond Locked While Borrowing |
+| :--- | :--- | :--- |
+| ≥ 100 SKR (`100_000_000` base units) | 25% off the pool rate | 100 SKR |
+| ≥ 1,000 SKR (`1_000_000_000` base units) | 50% off the pool rate | 1,000 SKR |
+
+The bond is released on repayment and consumed on default. Reputation score is separate: it
+starts at 10000, gains +50 per completed loan (capped at 10000, so it cannot increase from
+the starting value), and loses 1000 per default.
+
+When a borrower defaults past the grace period, the on-chain engine slashes the SKR bond
+(processor.rs `process_claim_default`):
+
+$$\text{Slashed Amount} = \max(\text{loan.locked\_skr},\ \min(\text{staked\_skr} \times 20\%,\ \text{max\_slashable}))$$
+
+where `max_slashable` protects stake backing other live loans. The slashed SKR is
+**transferred to the lender's SKR token account** (owned by the pool authority, the pool
+vault PDA, or the treasury) — it is **not burned**: the program contains no burn instruction.
+Burns happen only via manual operator runs of `scripts/burn-skr.mjs` against the treasury.
 
 ---
 
@@ -328,7 +383,7 @@ $$\text{Treasury Allocation} = \text{Slashed Amount} \times 20\% \quad (\text{co
 - **NFC Phone Bump**: Seeker users can physically tap their phones together to share, verify, and join exclusive private lending circles in real life.
 
 ### 3. Circle Pawn Deck (1-on-1 Social Pawns)
-- **Exotic Collateral Support**: Allows users to lock NFTs, compressed NFTs (cNFTs), pre-order entitlement cNFTs, or custom tokens into an Escrow PDA.
+- **Collateral Support (as deployed)**: Borrowers lock **native SOL or the canonical SKR mint** into an Escrow PDA. The program allowlists exactly these two; NFT, cNFT, and arbitrary-token collateral are **not supported** and are rejected with `InvalidMint`. Broader collateral types are a roadmap item.
 - **Bilateral Terms**: Pawn creators set their requested USDC amount, fixed interest payoff, and duration.
 - **Peer-to-Peer Funding**: Any peer on the network can review the collateral and fund the pawn in 1 tap, claiming the guaranteed interest yield upon borrower repayment or claiming the asset upon default.
 - **Cancellation & Rent Recovery**: Unfunded pawn offers can be cancelled at any time by the creator with a guaranteed 100% refund of locked assets and Solana account rent.
@@ -421,7 +476,7 @@ flowchart TD
    - Set Loan Duration Limits (e.g., `3 to 14 days`).
    - Enter Initial Liquidity Capacity (e.g., `$250 USDC`).
 3. **Initialize on Solana**: Tap **"Initialize Lending Desk"** and sign the transaction.
-4. **Earn Yield**: Your desk is now live on Devnet. Borrowers will automatically match with your desk, and interest yield is credited back to your authority account upon repayment.
+4. **Earn Yield**: Your desk is now live on-chain. Borrowers will automatically match with your desk, and interest yield is credited back to your authority account upon repayment.
 
 ---
 
@@ -429,7 +484,7 @@ flowchart TD
 1. **Listing a Pawn**:
    - Navigate to the **"Pawn Deck"** view.
    - Tap **"List Asset for Pawn"**.
-   - Enter asset name (e.g., *"1,000 SKR Token"* or *"Seeker Genesis cNFT"*).
+   - Enter asset name (e.g., *"1,000 SKR Token"* or *"0.5 SOL"*).
    - Set Requested Loan Amount (e.g., `$30 USDC`).
    - Set Offered Interest Payoff (e.g., `+$4.50 USDC Yield`).
    - Set Duration (e.g., `14 Days`).
@@ -445,7 +500,7 @@ flowchart TD
 
 ---
 
-### SKR Staking Walkthrough (Unlocking 90% LTV & Discounts)
+### SKR Staking Walkthrough (Interest Discounts & Bonds)
 1. Open the **"Profile"** tab.
 2. View your current Reputation Score and Tier (Standard, Silver, Gold, Diamond).
 3. Under **"SKR Reputation Bond"**, enter the amount of SKR you wish to stake (e.g., `2,500 SKR`).
@@ -461,10 +516,10 @@ flowchart TD
 * **Problem**: Alex is testing smart contracts late at night. His wallet runs out of SOL for gas fees, and public devnet faucets are rate-limited.
 * **Solution**: Alex opens ClockLend, selects 500 SKR as collateral, and takes out an instant $5 USDC micro-loan. Within 400 milliseconds, his loan is funded, allowing him to continue deploying his dApp without waiting.
 
-### Scenario B: The Web3 Collector (Unlocking Liquidity Without Selling Genesis cNFTs)
-* **User**: Maya, a Genesis Seeker pre-order holder with rare community cNFTs.
-* **Problem**: Maya needs short-term stablecoins to mint an ecosystem pass but refuses to sell her prized Seeker Genesis NFT.
-* **Solution**: Maya lists her Genesis cNFT on the **Circle Pawn Deck** for 7 days at 15% interest. A fellow collector funds the pawn. Maya mints her pass, repays the loan 3 days later, and reclaims her unblemished NFT.
+### Scenario B: The Web3 Collector (Unlocking Liquidity Without Selling Genesis Holdings)
+* **User**: Maya, a Genesis Seeker pre-order holder.
+* **Problem**: Maya needs short-term stablecoins to mint an ecosystem pass but does not want to sell her SKR.
+* **Solution**: Maya lists **1,000 SKR** on the **Circle Pawn Deck** for 7 days at 15% interest. A fellow collector funds the pawn. Maya mints her pass, repays the loan 3 days later, and reclaims her SKR. *(The deployed program escrows SOL or SKR only — NFT/cNFT collateral is not yet supported.)*
 
 ### Scenario C: The DAO / Hacker House Circle (Community Micro-Treasury)
 * **User**: The Superteam Nigeria / Berlin Hacker House.
@@ -559,7 +614,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 | Evaluation Criteria | Weight | How ClockLend Meets & Exceeds |
 | :--- | :---: | :--- |
 | **Mobile-First UX** | 25% | Built natively for Solana Seeker. Features an animated ticking countdown clock, 1-tap Seed Vault MWA signing, biometric app locking, and NFC phone bumping. |
-| **$10,000 SKR Track** | 25% | SKR is the primary collateral asset and the protocol's core reputation engine. Staking SKR unlocks 90% LTV, grants 50% fee discounts, and enforces automated default slashing. |
+| **$10,000 SKR Track** | 25% | SKR is the primary collateral asset and the protocol's core reputation engine. Staking SKR grants up to a 50% interest discount and enforces on-chain default slashing. It does not change LTV. |
 | **Technical Execution** | 25% | Macro-free native Rust (`solana-program`) smart contract with pure integer math, 103 test functions, deployed and bytecode-hash-verified on Solana Mainnet-beta, plus an Android release build with R8 obfuscation and anti-emulator detection. |
 | **Real-World Impact** | 25% | Addresses the $500B+ informal peer credit market (ROSCAs, community lending, pawnshops) by providing decentralized, transparent, and non-predatory micro-loans on mobile. |
 

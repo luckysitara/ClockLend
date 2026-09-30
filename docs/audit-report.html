@@ -41,6 +41,18 @@
 <h1>ClockLend — Round-9 Audit Report</h1>
 <div class="sub">2026-09-24 · scope: NEW uncommitted SKR yield vault + LST feature on top of committed round-8 fix round (52927da) · 3 fresh-eyes agents (program / mobile / ops) + main-loop verification of all criticals &amp; highs</div>
 
+<div style="background:var(--card);border-left:3px solid var(--med);border-radius:6px;padding:.85rem 1rem;margin:1rem 0">
+  <p style="margin:0"><b>Historical document — do not read as current status.</b> This is a dated
+  round-9 audit kept unaltered as a record. Findings, grades and test counts below describe the
+  source as it stood on 24 Sep 2026, not today's deployment. The program has since been through
+  round-14 and has been redeployed to <b>Solana Mainnet-beta</b>
+  (<span class="mono">4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7</span>); the deployed bytecode
+  now matches this repository. Current status — including the live findings and the fact that
+  <b>no third-party audit has been performed</b> — is in <span class="mono">README.md</span> and
+  <span class="mono">site/audit-report.html</span>. Note also that this document is <b>not served</b>
+  by the website: <span class="mono">vercel.json</span> publishes only <span class="mono">site/</span>.</p>
+</div>
+
 <div class="scores">
   <div class="score"><div class="grade" style="color:var(--med)">C+</div><div class="label">Program security (core lending B+, yield feature D)</div></div>
   <div class="score"><div class="grade" style="color:var(--med)">C+</div><div class="label">Program quality/tests</div></div>

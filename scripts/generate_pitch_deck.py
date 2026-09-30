@@ -214,7 +214,7 @@ def create_deck(output_path="ClockLend_Pitch_Deck.pptx"):
     ftf = foot.text_frame
     fp = ftf.paragraphs[0]
     fp.alignment = PP_ALIGN.CENTER
-    fp.text = "Native Rust Program (349 KB, Zero-Anchor) · Keeper-Refreshed Admin Price Feeds · Slashable SKR Reputation Bonds"
+    fp.text = "Native Rust Program (356 KB, Zero-Anchor) · Keeper-Refreshed Admin Price Feeds · Slashable SKR Reputation Bonds"
     fp.font.size = Pt(11.5)
     fp.font.color.rgb = RGBColor(120, 140, 175)
     fp.font.name = FONT_MONO
@@ -395,7 +395,7 @@ Answer: They serve institutional whale collateral with algorithmic liquidation b
     # 3 Stat Metrics (Bottom Row)
     metrics = [
         ("24h", "Social Grace Period", "Circle rescues default before bots can liquidate", GOLD),
-        ("90%", "Max Borrow LTV", "Unlocked by holding a staked SKR reputation bond", EMERALD),
+        ("70%", "Max Pool LTV", "A per-pool parameter set at pool initialization (7,000 bps program cap)", EMERALD),
         ("50%", "APR Fee Discount", "Exclusive rate reduction for top-tier SKR stakers", CYAN)
     ]
     for idx, (m_val, m_label, m_sub, col) in enumerate(metrics):
@@ -485,7 +485,7 @@ Objection Prep:
         ("0:20", "1-Tap Express", "Deposit 0.5 SOL collateral; the on-chain feed values it; borrow $50 USDC instantly."),
         ("0:45", "Countdown Clock", "Loan appears on dashboard with live settlement clock & interest ticker."),
         ("1:05", "1-Swipe Repay", "Borrower repays $51 USDC; escrow releases 0.5 SOL collateral back to wallet."),
-        ("1:20", "SKR Reputation Stake", "Stake 1,000 SKR bond; instant level up to 90% LTV tier with 50% APR discount.")
+        ("1:20", "SKR Reputation Stake", "Stake 1,000 SKR: 50% off the interest rate, with a matching bond locked while borrowing. (Staking never changes LTV.)")
     ]
     for ts, st_title, st_desc in steps:
         p_s = tf_sb.add_paragraph()
@@ -685,11 +685,11 @@ Key Honest Highlights:
     # 3 Pillars
     pillars = [
         ("🚀 Solana Mainnet", "Deployed & Verified", [
-            "349 KB native Rust ELF, bytecode hash-verified",
-            "Program 4Dp2A6SH… deployed at slot 451,589,196",
+            "356 KB native Rust ELF, bytecode hash-verified",
+            "Program 4Dp2A6SH… deployed at slot 451,698,349",
             "Admin PDA live; SOL & SKR admin price feeds live",
             "Genesis Seeker Lending Desk created on chain",
-            "Caveat: zero liquidity, zero loans, treasury not yet initialized"
+            "Caveat: zero loans, no P2P offers; 50 USDC of team liquidity, treasury not yet initialized"
         ], EMERALD),
         ("📱 Seeker Native App", "Installed on Hardware", [
             "Running on physical Seeker hardware",
@@ -698,11 +698,11 @@ Key Honest Highlights:
             "APK compiled and ready for dApp Store",
             "Full fail-closed biometric app locking"
         ], CYAN),
-        ("⚙️ Autonomous Pipeline", "Zero Keeper Dependency", [
+        ("⚙️ Scripted Pipeline", "Operator-Run & Disclosed", [
             "Mainnet deployment fully automated",
             "Auto-closing deploy buffer (rent refunded)",
-            "CoinGecko backup price keeper script",
-            "Self-healing oracle pull updates on borrow",
+            "Keeper script refreshes the price feeds — borrows revert past the 600s staleness bound",
+            "Pricing is written by an admin oracle-authority key — disclosed, not trustless",
             "No centralized backend database required"
         ], GOLD)
     ]
@@ -767,14 +767,14 @@ Answer: "Correct, and deliberate. In lending, a smart contract bug costs real us
     skr_cards = [
         ("🏆 Staking Tier Rights", "Direct Economic Utility", [
             "100 SKR Staked: Unlocks 25% APR fee discount across all lending desks.",
-            "1,000 SKR Staked: Unlocks 50% APR fee discount + 90% LTV borrow tier.",
+            "1,000 SKR Staked: Unlocks a 50% interest-rate discount and locks a 1,000 SKR bond while borrowing.",
             "Continuous Yield: Staked SKR continues generating rewards while locked in loan escrow.",
             "Non-Custodial Exit: Unstake anytime from the mobile UI with zero lockup penalty when loans are cleared."
         ], EMERALD),
         ("🛡️ Slashed Reputation Bond", "Default Deterrence", [
             "Borrower stakes SKR as a skin-in-the-game credit bond.",
             "If loan defaults and 24h grace expires, the bond is slashed on-chain.",
-            "Slashed SKR compensates the desk lender, protecting pool solvency.",
+            "Slashed SKR is transferred to a SKR account held by the pool authority, pool vault PDA, or treasury — it is not burned.",
             "Clean borrowers build permanent on-chain credit scores."
         ], GOLD),
         ("🔮 Live SKR/USD Price Feed", "On-Chain, Keeper-Refreshed", [
@@ -816,15 +816,15 @@ Answer: "Correct, and deliberate. In lending, a smart contract bug costs real us
 "For the SKR track: SKR in ClockLend is a staking product with real economic rights — tiered APR discounts, a slashable default bond, and a collateral class. We price it on chain from Jupiter market data via a keeper-refreshed feed with a fail-closed staleness bound. To be straight with you: that feed is admin-written, not a trustless oracle. That is staking, rewards, and access in one product."
 Key Takeaway for Judges:
 - ClockLend directly drives structural staking demand for SKR.
-- Borrowers need SKR to access 90% LTV and fee discounts.
-- Merchants stake SKR to earn trusted merchant badges.""")
+- Borrowers need SKR to reach the 25% / 50% interest-rate discount tiers.
+- Staking never raises LTV — LTV is a per-pool parameter (7,000 bps program cap).""")
 
     # ==========================================
     # SLIDE 9: REVENUE MODEL & VALUE ACCRUAL
     # ==========================================
     s9 = prs.slides.add_slide(blank_layout)
     add_background(s9, alt=False)
-    add_header(s9, "REVENUE MODEL & TOKEN FLYWHEEL", "Protocol monetization driving staker yields & 30% token burns.", "Automated on-chain fee distribution paired with 30% revenue buyback & burn.", "30% token burns.")
+    add_header(s9, "REVENUE MODEL & TOKEN FLYWHEEL", "Protocol monetization driving staker yields & a 30% burn commitment.", "Program-enforced fee split, paired with a 30% buyback & burn commitment that is team-run and not yet executed.", "30% burn commitment.")
 
     rev_cards = [
         ("💰 3 Protocol Inflows", "Automated Monetization", [
@@ -834,16 +834,16 @@ Key Takeaway for Judges:
             "Zero Float / Macro-Free: Enforced deterministically in native SBF Rust contract."
         ], GOLD),
         ("⚖️ On-Chain Fee Routing", "Decentralized Value Split", [
-            "50% of Origination Fees: Direct USDC dividend yield to SKR stakers via SkrYieldVault PDA.",
-            "85% of Loan Interest: Paid directly into Desk Owner Vaults (100% principal protected).",
+            "50% of Origination Fees: USDC dividend yield to SKR stakers via SkrYieldVault PDA — conditional on the yield-vault accounts being supplied to the borrow; the vault has never been funded.",
+            "85% of Loan Interest: Paid directly into Desk Owner Vaults. On default past grace the desk receives 95% of the seized collateral (5% protocol margin) — there is no principal protection, and a price decline can leave it short.",
             "100% of P2P Loan Interest: Directly transferred to peer funder wallets.",
-            "Treasury PDA Reserve: 70% reserved for protocol operations, insurance, and growth."
+            "Treasury PDA: Receives every protocol fee not routed to the yield vault. No insurance or reserve mechanism exists; as deployed it has no account on chain and no fee has ever been collected."
         ], EMERALD),
-        ("🔥 30% Revenue Buy & Burn", "Deflationary Token Flywheel", [
-            "30% Revenue Commitment: 30% of all project revenue is dedicated to buying & burning SKR.",
-            "Jupiter Spot Buy & Burn: Treasury USDC/SOL executes market buy orders on DEX, elevating price floor.",
-            "Direct SPL Burn: Atomically burns Treasury-accumulated SKR with zero slippage and zero fees.",
-            "Verifiable On-Chain Proof: Permanent supply destruction verified with public Solscan proofs."
+        ("🔥 30% Revenue Buy & Burn", "Deflationary Commitment (Not Yet Executed)", [
+            "30% Revenue Commitment: 30% of project revenue is committed to buying & burning SKR — a standing commitment, not an on-chain mechanism.",
+            "Team-Run, Manual: The buyback depends on a human operator running scripts/burn-skr.mjs against a funded treasury.",
+            "Program Has No Burn Instruction: SKR burns are ordinary SPL burn transactions signed by the operator, not an atomic contract feature.",
+            "Nothing Executed To Date: No protocol fee has ever been collected and no buyback or burn has been executed; if one runs, it is verifiable on Solscan."
         ], CYAN)
     ]
     for idx, (title, sub, bullets, col) in enumerate(rev_cards):
@@ -877,11 +877,11 @@ Key Takeaway for Judges:
     add_notes(s9, """PRESENTER NOTES (Slide 9):
 "Here is how ClockLend makes money and generates real value:
 1. 3 Automated Inflows: 0.25%-0.50% origination fees, 15% interest take-rate on repayments, and 5% liquidation margins.
-2. Value Distribution: 50% of origination fees flow directly to SKR stakers as USDC dividends. Desk owners keep 85% of interest and 100% of principal.
-3. 30% Deflationary Commitment: 30% of all project revenue is used to buy and burn SKR tokens via Jupiter DEX and direct on-chain burns, permanently shrinking circulating supply and rewarding long-term holders."
+2. Value Distribution: half of origination fees route to SKR stakers as USDC dividends when the yield-vault accounts are supplied; desk owners keep 85% of interest, and on default past grace they receive 95% of the seized collateral — which can be worth less than principal if the collateral price fell.
+3. 30% Deflationary Commitment: 30% of project revenue is committed to buying and burning SKR via Jupiter DEX and direct SPL burns. Be precise with judges: this is a manual, team-run program, no protocol fee has been collected yet, and no buyback has been executed to date."
 Key Business Takeaway:
-- Real cash-flow protocol with no unbacked token emissions.
-- LPs get real yield, stakers get USDC dividends, and SKR supply decreases.""")
+- Program-enforced fee split with no unbacked token emissions.
+- LPs get real yield and stakers get USDC dividends; the 30% burn is a commitment we have not yet executed.""")
 
 
     # ==========================================

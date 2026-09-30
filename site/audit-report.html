@@ -49,7 +49,7 @@
 </div>
 
 <div class="finding" style="border-left:3px solid var(--high)">
-  <strong>How to read this report.</strong> These are <strong>internal, AI-assisted</strong> audit rounds performed by the ClockLend team's own agents and reviewed by the team. <strong>No third-party audit firm has been engaged and no external audit has been performed.</strong> The grades above are the round-14 findings as recorded at audit time; entries marked "Fixed in source, awaiting redeploy" are <em>not yet on chain</em>. Verify every deployment claim yourself against the on-chain addresses below.
+  <strong>How to read this report.</strong> These are <strong>internal, AI-assisted</strong> audit rounds performed by the ClockLend team's own agents and reviewed by the team. <strong>No third-party audit firm has been engaged and no external audit has been performed.</strong> The grades above are the round-14 findings as recorded at audit time; entries marked "Fixed in source, awaiting redeploy" were not yet on chain when this report was written &mdash; they have since been deployed and re-verified (see the status note below). Verify every deployment claim yourself against the on-chain addresses below.
 </div>
 
 <h2>Deployment &amp; on-chain verification</h2>
@@ -59,10 +59,10 @@
 <tr><td>Program ID</td><td><code>4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7</code></td><td><a href="https://solscan.io/account/4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7" target="_blank" style="color:var(--low)">Solscan</a></td></tr>
 <tr><td>Cluster</td><td>Solana Mainnet-beta (genesis <code>5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d</code>)</td><td><code>getGenesisHash</code></td></tr>
 <tr><td>ProgramData</td><td><code>9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG</code></td><td><code>solana program show</code></td></tr>
-<tr><td>Allocated bytes</td><td>357,517 (ELF is 357,472; the remainder is retained zero padding)</td><td>ProgramData account length</td></tr>
-<tr><td>Deploy slot</td><td>451,589,196</td><td>ProgramData slot field</td></tr>
+<tr><td>Allocated bytes</td><td>367,757 (ELF is 364,536; the remainder is zero padding)</td><td>ProgramData account length</td></tr>
+<tr><td>Deploy slot</td><td>451,698,349</td><td>ProgramData slot field</td></tr>
 <tr><td>Upgrade authority</td><td><code>8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds</code></td><td>ProgramData authority field</td></tr>
-<tr><td>Bytecode sha256</td><td><code>019da88bc97498b127ddbaa76468ff8ad86c5094ae46045f7f9a9127b3c1dbdb</code></td><td>Matches the local build artifact</td></tr>
+<tr><td>Bytecode sha256</td><td><code>6d1c3ec2443f713e2cefd29fcd45a0d26c54b63454d0a4d6323f5d7878b7249b</code></td><td>Matches the local build artifact</td></tr>
 <tr><td>Upgradeable?</td><td><strong>Yes</strong> — the deployer key can replace the program</td><td>ProgramData Option flag = 1</td></tr>
 </table>
 <p class="sub" style="margin-top:.5rem">Note the last row: the program is <strong>upgradeable</strong>, not immutable. A "fully trustless, immutable contract" is not what is deployed today. The upgrade authority is a single team-held key; it is not a multisig and is not timelocked.</p>
@@ -231,7 +231,7 @@
 <p>Post-round-12 verification found a critical introduced by the rescue instruction: inserting <code>WithdrawUnusedYield</code> before <code>ClaimSkrYield</code> shifted the borsh discriminants (Withdraw=17, Claim=18) while the mobile client still sends tag 17 — every dividend claim dispatched to the rescue handler and reverted. Fixed by reordering (Claim=17, Withdraw=18) and pinned forever by <code>test_wire_tags_are_pinned</code> (asserts the byte encoding of all 19 variants). Also fixed: Pyth receiver removed from the signing allowlist, the local order's 7-day hardcode, the missing stake-builder yield appends (round-10's share registration now fires from the app), builder network params, modal live prices, cooldown error 38, the rescue builder, and full runbook alignment incl. a 10-minute keeper workflow. 100/100 tests.</p>
 
 <h2>Round-14 fresh-eyes audit (2026-09-29) — findings and current status</h2>
-<p>An independent, fresh-eyes pass over the deployed program produced the grades at the top of this page. Program security came back <strong>strong</strong>: no path was found by which an unprivileged account can steal funds. Three executable proof-of-concept bugs were found, and the ops tooling was judged not ready. <strong>Statuses below are current as of the date on this page — "Fixed in source, awaiting redeploy" means the fix is committed but is NOT yet in the on-chain bytecode.</strong></p>
+<p>An independent, fresh-eyes pass over the deployed program produced the grades at the top of this page. Program security came back <strong>strong</strong>: no path was found by which an unprivileged account can steal funds. Three executable proof-of-concept bugs were found, and the ops tooling was judged not ready. <strong>Statuses below are as recorded at audit time. The three round-14 POC fixes have since been deployed: the on-chain bytecode was re-verified on 2026-09-29 and matched a local build of this repository byte-for-byte over all 364,521 non-padding bytes.</strong></p>
 
 <table>
 <tr><th>ID</th><th>Severity</th><th>Area</th><th>Finding</th><th>Status</th></tr>
@@ -240,21 +240,21 @@
   <td><span class="badge high">High</span></td>
   <td>Yield / fee routing</td>
   <td>When the SKR yield-vault leg of the origination-fee split cannot pay (accounts present but unusable), the fee could be partially stranded instead of routing in full to the treasury.</td>
-  <td><span class="badge med">Fixed in source, awaiting redeploy</span></td>
+  <td><span class="badge ok">Fixed &mdash; deployed &amp; byte-verified 2026-09-29</span></td>
 </tr>
 <tr>
   <td><code>POC-2</code></td>
   <td><span class="badge high">High</span></td>
   <td>P2P pawns</td>
   <td><code>CreateP2POffer</code> did not default the loan asset to the canonical mainnet USDC mint when no mint account was appended, letting a mainnet funder be handed an unfundable offer.</td>
-  <td><span class="badge med">Fixed in source, awaiting redeploy</span></td>
+  <td><span class="badge ok">Fixed &mdash; deployed &amp; byte-verified 2026-09-29</span></td>
 </tr>
 <tr>
   <td><code>POC-3</code></td>
   <td><span class="badge high">High</span></td>
   <td>Oracle-free pools</td>
   <td>On oracle-free pools the borrower could price collateral <em>above</em> the hardcoded baseline using a live feed, rather than being capped at <code>min(baseline, live)</code>.</td>
-  <td><span class="badge med">Fixed in source, awaiting redeploy</span></td>
+  <td><span class="badge ok">Fixed &mdash; deployed &amp; byte-verified 2026-09-29</span></td>
 </tr>
 <tr>
   <td><code>OPS-1</code></td>
@@ -292,8 +292,9 @@
 <h3>What has NOT been done</h3>
 <ul>
   <li><strong>No third-party audit.</strong> Every round referenced on this page is internal and AI-assisted. No external firm has reviewed this code.</li>
-  <li><strong>The POC fixes are not on chain.</strong> The deployed bytecode predates them. Until it is upgraded and re-verified by hash, the on-chain program is the older build.</li>
-  <li><strong>No mainnet loan activity.</strong> The pool exists with <code>total_liquidity = 0</code> and <code>loans_originated = 0</code>; nothing has been borrowed or lent on mainnet.</li>
+  <li><strong>The POC fixes were not on chain at audit time &mdash; they are now.</strong> The program has since been upgraded (deploy slot <code>451,698,349</code>) and the on-chain bytecode re-verified on 2026-09-29 against a local <code>cargo-build-sbf</code> build of this repository, matching byte-for-byte over all 364,521 non-padding bytes. The deployed program is now the build in the repo.</li>
+  <li><strong>No mainnet loan activity.</strong> The pool holds <strong>50.00 USDC</strong> of the team's own liquidity with <code>loans_originated = 0</code>; there are zero P2P offers and zero user profiles. Nothing has been borrowed or lent on mainnet.</li>
+  <li><strong>The live pool predates the round-14 LTV cap.</strong> It was initialized with <code>max_ltv_bps = 9000</code>. New pools are rejected above 7000 bps, but the program exposes no instruction to update an existing pool's parameters, so this pool would still lend at 90% LTV. Combined with the fact that the program has <em>no price-based liquidation</em> &mdash; the only liquidation path is the post-due-date clock &mdash; a collateral drawdown of more than 10% would transfer the loss to the lender. The pool must be drained and recreated (or an update instruction added) before it originates a loan.</li>
   <li><strong>The program is upgradeable</strong> by a single team-held deployer key.</li>
 </ul>
 

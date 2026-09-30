@@ -231,8 +231,8 @@
       <div class="metric-label">Social grace period — peers rescue before bots ever see it</div>
     </div>
     <div class="metric-card">
-      <div class="metric-value">90%</div>
-      <div class="metric-label">Max LTV unlocked by the SKR reputation bond</div>
+      <div class="metric-value">70%</div>
+      <div class="metric-label">Max pool LTV — a per-pool parameter set at pool initialization (7,000 bps program cap)</div>
     </div>
     <div class="metric-card">
       <div class="metric-value">50%</div>
@@ -269,7 +269,7 @@
           <li>0:20 — 1-tap Express borrow, priced from the on-chain feed</li>
           <li>0:45 — the ticking settlement clock</li>
           <li>1:05 — repay in one swipe, collateral home</li>
-          <li>1:20 — stake SKR, unlock the 90% tier</li>
+          <li>1:20 — stake SKR, unlock the 50% interest-rate discount tier</li>
         </ul>
       </div>
     </div>
@@ -345,7 +345,7 @@
     Earlier rounds' findings — type confusion, offer re-initialization, admin races, treasury burns,
     liquidation gaps — were fixed and regression-tested. To be clear about what is <em>not</em> done:
     no third-party firm has audited this code, round 14 found three further executable PoC bugs whose
-    fixes are in source but <em>not yet redeployed</em>, pricing is admin-fed (not trustless), and the
+    fixes have since been deployed and re-verified against a local build of this repo, pricing is admin-fed (not trustless), and the
     program stays upgradeable by one team key. Program
     <span class="mono text-primary">4Dp2A6SH…NHgv7</span> is live on Solana Mainnet-beta with its
     bytecode hash-verified on-chain.
@@ -355,8 +355,8 @@
     Two of this panel's judges are security researchers, so let me be precise and not oversell:
     these were 14 INTERNAL, AI-assisted audit rounds run by our own agents — no third-party firm
     has reviewed this code. We run 103 test functions including a property-based fuzz suite over
-    solvency and escrow invariants. Round 14 found three further executable PoC bugs; the fixes are
-    committed in source but are NOT yet in the redeployed on-chain bytecode. Ops readiness was
+    solvency and escrow invariants. Round 14 found three further executable PoC bugs; those fixes
+    are now deployed, and the on-chain bytecode has been re-verified byte-for-byte against a local build of the repo. Ops readiness was
     graded not ready. The deployed binary IS hash-verified on-chain, and you can check that.
   </div>
 </div>
@@ -369,7 +369,7 @@
   <div class="grid-3 animate-in" style="margin-top: 12px;">
     <div class="card-glow">
       <h3 class="h3 text-primary">Mainnet</h3>
-      <p class="small" style="margin-top: 8px;">Program deployed and bytecode-verified. Lending desk created on chain. Caveat: zero liquidity, zero loans, treasury not yet initialized.</p>
+      <p class="small" style="margin-top: 8px;">Program deployed and bytecode-verified. Lending desk created on chain. Caveat: zero loans, no P2P offers, 50 USDC of team liquidity, treasury not yet initialized.</p>
     </div>
     <div class="card">
       <h3 class="h3">Seeker app</h3>
@@ -377,7 +377,7 @@
     </div>
     <div class="card">
       <h3 class="h3">Pipeline</h3>
-      <p class="small" style="margin-top: 8px;">Mainnet bootstrap scripted end-to-end. No keeper, no backend, no admin price key.</p>
+      <p class="small" style="margin-top: 8px;">Mainnet bootstrap scripted end-to-end. Pricing is written by an admin oracle-authority key — disclosed, not trustless.</p>
     </div>
   </div>
   <p class="small animate-in" style="margin-top: 24px; color: var(--c-text-muted);">
@@ -414,7 +414,7 @@
       <ul class="bullet-list">
         <li>On-chain SKR/USD feed, keeper-refreshed with a 600s fail-closed bound</li>
         <li>Live market price, guardian-verified per transaction</li>
-        <li>No keeper, no admin key, no trust required</li>
+        <li>Admin-fed pricing via an oracle-authority key — disclosed, not trustless</li>
         <li>Bond locked by the program — unstake whenever</li>
       </ul>
     </div>
@@ -422,8 +422,9 @@
   <div class="notes">
     <div class="notes-label">Speaker notes</div>
     For the SKR track: SKR in ClockLend is a staking product with real economic rights — tiered
-    APR discounts, a slashable default bond, and a collateral class. And we price it from a live on-chain feed,
-    SKR/USD feed — the market's price, verified on-chain, with no centralized keeper. That is
+    APR discounts, a slashable default bond, and a collateral class. And we price it from a live on-chain
+    SKR/USD feed, refreshed by our keeper. To be straight with you: that feed is admin-written by our
+    oracle-authority key, not a trustless oracle. That is
     staking, rewards, and access in one product.
   </div>
 </div>
@@ -431,7 +432,7 @@
 <!-- 9 · REVENUE MODEL & FLYWHEEL -->
 <div class="slide">
   <span class="caption animate-in">Revenue Model & Value Accrual</span>
-  <h1 class="h1 animate-in" style="margin-top: 16px;">Protocol monetization driving<br><span class="text-primary">staker yields & 30% token burns.</span></h1>
+  <h1 class="h1 animate-in" style="margin-top: 16px;">Protocol monetization driving<br><span class="text-primary">staker yields & a 30% burn commitment.</span></h1>
   <div class="divider animate-in"></div>
   <div class="grid-3 animate-in" style="margin-top: 12px;">
     <div class="card">
@@ -446,19 +447,19 @@
     <div class="card">
       <h3 class="h3 text-primary" style="margin-bottom: 8px;">⚖️ On-Chain Value Split</h3>
       <ul class="bullet-list">
-        <li><strong>50% Origination Fees:</strong> Direct USDC dividend yield to SKR stakers via Yield Vault PDA</li>
-        <li><strong>85% Loan Interest:</strong> Paid directly into Desk Owner Vaults (100% principal protected)</li>
+        <li><strong>50% Origination Fees:</strong> USDC dividend yield to SKR stakers via the Yield Vault PDA — only when the yield-vault accounts are supplied to the borrow; the vault has never been funded</li>
+        <li><strong>85% Loan Interest:</strong> Paid directly into Desk Owner Vaults. On default past grace the desk gets 95% of the seized collateral (5% protocol margin) — no principal protection; a price decline can leave it short</li>
         <li><strong>100% P2P Interest:</strong> Direct to peer funder wallets</li>
-        <li><strong>Treasury PDA:</strong> 70% reserved for protocol operations, insurance, and growth</li>
+        <li><strong>Treasury PDA:</strong> Receives every protocol fee not routed to the yield vault. No insurance or reserve mechanism exists; as deployed it has no account on chain and no fee has ever been collected</li>
       </ul>
     </div>
     <div class="card-glow">
       <h3 class="h3" style="color: #00D4FF; margin-bottom: 8px;">🔥 30% Revenue Buy & Burn</h3>
       <ul class="bullet-list">
-        <li><strong>30% Dedicated Allocation:</strong> 30% of all project revenue is used to buy and burn $SKR</li>
-        <li><strong>Jupiter Spot Buy & Burn:</strong> Treasury USDC/SOL executes market buy orders on DEX</li>
-        <li><strong>Direct SPL Burn:</strong> Zero-slippage atomic burn for Treasury-held SKR</li>
-        <li><strong>Permanent Destruction:</strong> Supply reduction verified on-chain via public Solscan proofs</li>
+        <li><strong>30% Commitment:</strong> 30% of project revenue is committed to buying and burning $SKR — a standing commitment, not an on-chain mechanism</li>
+        <li><strong>Team-Run, Manual:</strong> The buyback depends on a human operator running scripts/burn-skr.mjs against a funded treasury</li>
+        <li><strong>No Burn Instruction in the Program:</strong> SKR burns are ordinary SPL burn transactions signed by the operator</li>
+        <li><strong>Nothing Executed To Date:</strong> No fee has ever been collected and no buyback or burn has been executed; if one runs, it is verifiable on Solscan</li>
       </ul>
     </div>
   </div>
@@ -466,8 +467,8 @@
     <div class="notes-label">Speaker notes</div>
     Here is how ClockLend makes money and generates real value:
     1. 3 Automated Inflows: 0.25%-0.50% origination fees, 15% interest take-rate on repayments, and 5% liquidation margins.
-    2. Value Distribution: 50% of origination fees flow directly to SKR stakers as USDC dividends. Desk owners keep 85% of interest and 100% of principal.
-    3. 30% Deflationary Commitment: 30% of all project revenue is dedicated to buying and burning SKR tokens via Jupiter DEX and direct on-chain burns, permanently shrinking circulating supply and rewarding long-term holders.
+    2. Value Distribution: half of origination fees route to SKR stakers as USDC dividends when the yield-vault accounts are supplied. Desk owners keep 85% of interest, and on default past grace they receive 95% of the seized collateral — which can be worth less than principal if the collateral price fell.
+    3. 30% Deflationary Commitment: 30% of project revenue is committed to buying and burning SKR tokens via Jupiter DEX and direct SPL burns. Be precise with judges: this is a manual, team-run program, no protocol fee has been collected yet, and no buyback has been executed to date.
   </div>
 </div>
 

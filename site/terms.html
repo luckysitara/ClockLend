@@ -87,21 +87,21 @@
         <h2>5. Smart Contract Mechanics & Liquidation Terms</h2>
 
         <h3>5.1. Collateral Escrow & Sizing</h3>
-        <p>Borrowers must deposit collateral (SOL or SKR) into a cryptographic escrow PDA to secure a loan. Maximum Loan-to-Value (LTV) limits are enforced deterministically on-chain based on real-time oracle price feeds (subject to a strict 600-second staleness bound). Staking SKR reputation bonds unlocks higher LTV tiers up to 90%.</p>
+        <p>Borrowers must deposit collateral (SOL or SKR) into a cryptographic escrow PDA to secure a loan. Maximum Loan-to-Value (LTV) limits are enforced deterministically on-chain based on oracle price feeds (subject to a strict 600-second staleness bound). LTV is a property of each pool, set when that pool is initialized and capped at 7,000 bps (70%). Staking SKR reputation bonds does not change LTV; it discounts the interest rate only, in two tiers: 100 SKR staked for a 25% discount, and 1,000 SKR staked for a 50% discount.</p>
 
         <h3>5.2. 24-Hour Social Grace Period & Default</h3>
         <p>If a loan is not repaid by its scheduled maturity timestamp:</p>
         <ul>
-          <li>The loan enters an automated <strong>24-Hour Social Grace Period</strong>. During this 24-hour window, the borrower retains the right to repay the full principal plus accrued interest to release their collateral.</li>
+          <li>The loan becomes eligible for a <strong>24-Hour Social Grace Period</strong>, which begins when the grace-period instruction is triggered on chain at or after the scheduled maturity timestamp — it does not start automatically. During this 24-hour window, the borrower retains the right to repay the full principal plus accrued interest to release their collateral.</li>
           <li>If the borrower fails to repay prior to the expiration of the Social Grace Period, the loan transitions to Default. The pool authority or P2P funder may execute <code>ClaimDefault</code> to liquidate and claim the escrowed collateral.</li>
-          <li>For defaulted reputation borrowers, up to 20% of their staked SKR reputation bond is automatically slashed by the smart contract to compensate for default risk.</li>
+          <li>For defaulted reputation borrowers, the smart contract slashes the greater of (a) the locked SKR reputation bond and (b) 20% of the staked SKR balance, capped at the staked balance — so the full bond (100 or 1,000 SKR, per staking tier) can be slashed, which is more than 20%. The slashed SKR is transferred to a SKR token account controlled by the pool authority, the pool vault PDA, or the treasury; it is not burned.</li>
         </ul>
 
         <h2>6. Protocol Fees & Dividend Distribution</h2>
         <p>ClockLend applies transparent, code-enforced origination fees upon loan disbursement:</p>
         <ul>
-          <li><strong>50% Protocol Treasury:</strong> Half of the fee is transferred to the decentralized protocol treasury PDA for ongoing maintenance and reserves.</li>
-          <li><strong>50% SKR Yield Vault:</strong> Exactly half of the fee is automatically streamed into the on-chain SkrYieldVault token account, distributed as USDC dividends to eligible SKR stakers.</li>
+          <li><strong>50% Protocol Treasury:</strong> Half of the origination fee is transferred to the decentralized protocol treasury PDA for ongoing maintenance. The program contains no insurance or reserve mechanism; the treasury is funded only by fees actually collected.</li>
+          <li><strong>50% SKR Yield Vault:</strong> The other half is routed into the on-chain SkrYieldVault token account, distributed as USDC dividends to eligible SKR stakers — but only when the yield-vault accounts are appended to the borrow. If those accounts are not supplied, the <em>entire</em> fee is transferred to the treasury instead: the split is conditional, not guaranteed. As deployed, the mainnet yield vault is initialized but has never been funded.</li>
           <li>A 1-hour anti-flash-loan cooldown applies to yield claims following any stake modification or reward disbursement.</li>
         </ul>
         <p>You are solely responsible for determining and satisfying any tax obligations arising from your protocol yield, lending profits, or borrowing activities.</p>
