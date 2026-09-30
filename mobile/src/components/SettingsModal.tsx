@@ -8,14 +8,15 @@ import {
   Modal,
   Switch,
   Linking,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 
-interface SettingsModalProps {
-  visible: boolean;
-  onClose: () => void;
+export interface SettingsViewProps {
+  onBack: () => void;
   skrHandle: string;
   hasCustomPin: boolean;
   lockEnabled: boolean;
@@ -28,9 +29,8 @@ interface SettingsModalProps {
   onOpenAssetsModal: () => void;
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({
-  visible,
-  onClose,
+export const SettingsView: React.FC<SettingsViewProps> = ({
+  onBack,
   skrHandle,
   hasCustomPin,
   lockEnabled,
@@ -45,25 +45,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const { colors, mode, toggleTheme } = useTheme();
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* ── Top Header Row (Matches 6d27c768) ── */}
-        <View style={[styles.headerRow, { borderBottomColor: colors.divider }]}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => {
-              try { Haptics.selectionAsync(); } catch {}
-              onClose();
-            }}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Back to Profile"
-          >
-            <Ionicons name="arrow-back" size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Setting</Text>
-          <View style={{ width: 40 }} />
-        </View>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* ── Top Header Row with Safe Status Bar Inset ── */}
+      <View style={[styles.headerRow, { borderBottomColor: colors.divider }]}>
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={() => {
+            try { Haptics.selectionAsync(); } catch {}
+            onBack();
+          }}
+          activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Back to Profile"
+        >
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
+        <View style={{ width: 40 }} />
+      </View>
 
         <ScrollView
           style={styles.scroll}
@@ -75,7 +74,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <View style={[styles.cardGroup, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <TouchableOpacity
               style={styles.settingRow}
-              onPress={onClose}
+              onPress={onBack}
               activeOpacity={0.7}
             >
               <View style={[styles.iconCircle, { backgroundColor: colors.badgeBg }]}>
@@ -253,7 +252,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <TouchableOpacity
                   style={styles.settingRow}
                   onPress={() => {
-                    onClose();
+                    onBack();
                     onLockApp();
                   }}
                   activeOpacity={0.7}
@@ -276,6 +275,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <View style={{ height: 40 }} />
         </ScrollView>
       </View>
+  );
+};
+
+export interface SettingsModalProps extends SettingsViewProps {
+  visible: boolean;
+  onClose: () => void;
+}
+
+export const SettingsModal: React.FC<SettingsModalProps> = (props) => {
+  return (
+    <Modal visible={props.visible} animationType="slide" onRequestClose={props.onClose}>
+      <SettingsView {...props} onBack={props.onClose} />
     </Modal>
   );
 };
@@ -289,7 +300,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 12 : 16,
     paddingBottom: 14,
     borderBottomWidth: 1,
   },

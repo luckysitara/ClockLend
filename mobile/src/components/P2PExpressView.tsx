@@ -399,7 +399,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
           activeOpacity={0.88}
         >
           <LinearGradient
-            colors={mode === 'dark' ? ['#5B21B6', '#7C3AED', '#8B5CF6'] : ['#6D28D9', '#7C3AED', '#8B5CF6']}
+            colors={mode === 'dark' ? ['#172554', '#1E40AF', '#2563EB'] : ['#1E3A8A', '#1D4ED8', '#2563EB']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.borrowBtnGradient}
@@ -491,7 +491,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
               activeOpacity={0.88}
             >
               <LinearGradient
-                colors={mode === 'dark' ? ['#5B21B6', '#7C3AED', '#8B5CF6'] : ['#6D28D9', '#7C3AED', '#8B5CF6']}
+                colors={mode === 'dark' ? ['#172554', '#1E40AF', '#2563EB'] : ['#1E3A8A', '#1D4ED8', '#2563EB']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.confirmActionGradient}
@@ -556,7 +556,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     padding: 20,
-    shadowColor: '#7C3AED',
+    shadowColor: '#1D4ED8',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.12,
     shadowRadius: 14,
@@ -614,7 +614,7 @@ const styles = StyleSheet.create({
   tokenIconText: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#7C3AED',
+    color: '#2563EB',
   },
   tokenTagText: {
     fontSize: 14,
@@ -690,7 +690,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     borderRadius: 20,
     overflow: 'hidden',
-    shadowColor: '#7C3AED',
+    shadowColor: '#1D4ED8',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.28,
     shadowRadius: 10,
@@ -788,7 +788,7 @@ const styles = StyleSheet.create({
   confirmActionBtn: {
     borderRadius: 20,
     overflow: 'hidden',
-    shadowColor: '#7C3AED',
+    shadowColor: '#1D4ED8',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,

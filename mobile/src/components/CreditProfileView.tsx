@@ -19,7 +19,7 @@ import {
   isBiometricsEnabled,
   getUserPin,
 } from '../services/securityService';
-import { SettingsModal } from './SettingsModal';
+import { SettingsView } from './SettingsModal';
 
 interface CreditProfileViewProps {
   userProfile: UserProfile;
@@ -57,7 +57,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
   onClaimYield,
 }) => {
   const { colors, mode } = useTheme();
-  const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
+  const [subView, setSubView] = useState<'PROFILE' | 'SETTINGS'>('PROFILE');
   const [lockEnabled, setLockEnabledState] = useState<boolean>(false);
   const [hasCustomPin, setHasCustomPin] = useState<boolean>(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -94,6 +94,24 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
   const cleanHandle = skrHandle.replace(/^@/, '').replace(/\.skr$/i, '');
   const skrUsername = `${cleanHandle}.skr`;
 
+  if (subView === 'SETTINGS') {
+    return (
+      <SettingsView
+        onBack={() => setSubView('PROFILE')}
+        skrHandle={skrUsername}
+        hasCustomPin={hasCustomPin}
+        lockEnabled={lockEnabled}
+        onToggleLock={handleToggleLock}
+        onSetupPin={onSetupPin ?? (() => {})}
+        onChangePin={onChangePin ?? (() => {})}
+        onLockApp={onLockApp ?? (() => {})}
+        onOpenLeaderboard={onOpenLeaderboard ?? (() => {})}
+        onOpenJudgeBriefing={onOpenJudgeBriefing ?? (() => {})}
+        onOpenAssetsModal={onOpenAssetsModal ?? (() => {})}
+      />
+    );
+  }
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
@@ -109,7 +127,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         <TouchableOpacity
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setShowSettingsModal(true);
+            setSubView('SETTINGS');
           }}
           style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
           activeOpacity={0.7}
@@ -240,40 +258,6 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         <Ionicons name="log-out-outline" size={18} color={colors.danger} />
         <Text style={[styles.disconnectBtnText, { color: colors.danger }]}>Disconnect Wallet</Text>
       </TouchableOpacity>
-
-      {/* ── Dedicated Settings Modal (Matches 6d27c768) ── */}
-      <SettingsModal
-        visible={showSettingsModal}
-        onClose={() => setShowSettingsModal(false)}
-        skrHandle={skrHandle}
-        hasCustomPin={hasCustomPin}
-        lockEnabled={lockEnabled}
-        onToggleLock={handleToggleLock}
-        onSetupPin={() => {
-          setShowSettingsModal(false);
-          if (onSetupPin) onSetupPin();
-        }}
-        onChangePin={() => {
-          setShowSettingsModal(false);
-          if (onChangePin) onChangePin();
-        }}
-        onLockApp={() => {
-          setShowSettingsModal(false);
-          if (onLockApp) onLockApp();
-        }}
-        onOpenLeaderboard={() => {
-          setShowSettingsModal(false);
-          if (onOpenLeaderboard) onOpenLeaderboard();
-        }}
-        onOpenJudgeBriefing={() => {
-          setShowSettingsModal(false);
-          if (onOpenJudgeBriefing) onOpenJudgeBriefing();
-        }}
-        onOpenAssetsModal={() => {
-          setShowSettingsModal(false);
-          if (onOpenAssetsModal) onOpenAssetsModal();
-        }}
-      />
     </ScrollView>
   );
 };

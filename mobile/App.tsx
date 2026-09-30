@@ -1081,6 +1081,15 @@ function MainApp() {
   ) => {
     if (!session) return;
 
+    const userUsdc = walletAssets?.usdcBalance ?? 0;
+    if (initialLiquidity > userUsdc) {
+      Alert.alert(
+        'Insufficient USDC Balance',
+        `Your wallet has ${userUsdc.toFixed(2)} USDC, but you entered ${initialLiquidity.toFixed(2)} USDC for initial desk liquidity.\n\nPlease deposit or swap for more USDC before initializing a desk.`
+      );
+      return;
+    }
+
     const poolId = Math.floor(100 + Math.random() * 900);
     const interestRateBps = Math.round(aprPercent * 100);
     const maxLtvBps = Math.round(maxLtvPercent * 100);
@@ -1467,6 +1476,7 @@ function MainApp() {
             pools={pools}
             offers={offers}
             userPubkey={session.publicKey.toBase58()}
+            walletAssets={walletAssets}
             onSelectPool={(pool) => {
               setActiveTab('BORROW');
             }}
@@ -1591,7 +1601,7 @@ function MainApp() {
             accessibilityLabel="ClockLend Hub"
           >
             <LinearGradient
-              colors={mode === 'dark' ? ['#5B21B6', '#7C3AED', '#8B5CF6'] : ['#6D28D9', '#7C3AED', '#8B5CF6']}
+              colors={mode === 'dark' ? ['#172554', '#1E40AF', '#2563EB'] : ['#1E3A8A', '#1D4ED8', '#2563EB']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.centerFabGradient}
@@ -1742,7 +1752,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    shadowColor: '#7C3AED',
+    shadowColor: '#1D4ED8',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,

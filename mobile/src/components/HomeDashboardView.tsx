@@ -64,7 +64,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
       sub: '8.5% Fixed APR • $250,000 USDC Capacity',
       cta: 'Borrow Now →',
       onPress: onNavigateBorrow,
-      gradient: ['#5B21B6', '#7C3AED', '#8B5CF6'] as const,
+      gradient: ['#1E3A8A', '#1D4ED8', '#2563EB'] as const,
     },
     {
       id: 'leaderboard',
@@ -73,7 +73,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
       sub: '1. @sol_whale • 2. @alpha_dev • 3. @crypto_king',
       cta: 'View Rankings →',
       onPress: onOpenLeaderboard,
-      gradient: ['#1E1B4B', '#4338CA', '#6366F1'] as const,
+      gradient: ['#0F172A', '#1E3A8A', '#2563EB'] as const,
     },
     {
       id: 'social_grace',
@@ -82,7 +82,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
       sub: 'Escrow protection against sudden market flash crashes',
       cta: 'Explore Desks →',
       onPress: onNavigateDesks,
-      gradient: ['#064E3B', '#047857', '#10B981'] as const,
+      gradient: ['#042F2E', '#0D9488', '#14B8A6'] as const,
     },
   ];
 
@@ -162,9 +162,9 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
         </View>
       </View>
 
-      {/* ── Royal Violet Gradient Hero Balance Card (Matches 8febc333) ── */}
+      {/* ── Deep Blue Gradient Hero Balance Card (Matches 8febc333) ── */}
       <LinearGradient
-        colors={mode === 'dark' ? ['#4C1D95', '#6D28D9', '#7C3AED'] : ['#5B21B6', '#7C3AED', '#8B5CF6']}
+        colors={mode === 'dark' ? ['#172554', '#1E40AF', '#2563EB'] : ['#1E3A8A', '#1D4ED8', '#2563EB']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.heroCard}
@@ -409,8 +409,8 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
               </View>
 
               <View style={[styles.notificationItem, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-                <View style={[styles.notifIconBox, { backgroundColor: 'rgba(124, 58, 237, 0.15)' }]}>
-                  <Ionicons name="hardware-chip" size={18} color="#7C3AED" />
+                <View style={[styles.notifIconBox, { backgroundColor: 'rgba(37, 99, 235, 0.15)' }]}>
+                  <Ionicons name="hardware-chip" size={18} color="#2563EB" />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.notifTitle, { color: colors.text }]}>Hardware Security Key Verified</Text>
@@ -513,7 +513,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     padding: 22,
     marginBottom: 16,
-    shadowColor: '#7C3AED',
+    shadowColor: '#1D4ED8',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.28,
     shadowRadius: 14,
@@ -581,7 +581,7 @@ const styles = StyleSheet.create({
   bannerWrapper: {
     borderRadius: 20,
     overflow: 'hidden',
-    shadowColor: '#7C3AED',
+    shadowColor: '#1D4ED8',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.22,
     shadowRadius: 12,

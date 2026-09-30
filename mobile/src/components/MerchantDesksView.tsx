@@ -11,16 +11,21 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
+  Platform,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
-import { LendingPool, P2POffer } from '../types';
+import { LendingPool, P2POffer, WalletAssets } from '../types';
 
 interface MerchantDesksViewProps {
   pools: LendingPool[];
   offers: P2POffer[];
   userPubkey?: string;
+  walletAssets?: WalletAssets;
   onSelectPool: (pool: LendingPool) => void;
   onFundPawnOffer: (offerId: number) => void;
   onCreatePawnOffer: (name: string, reqAmount: number, profit: number, days: number) => void;
@@ -47,6 +52,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
   pools,
   offers,
   userPubkey,
+  walletAssets,
   onSelectPool,
   onFundPawnOffer,
   onCreatePawnOffer,
@@ -61,6 +67,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
   onRetry,
 }) => {
   const { colors } = useTheme();
+  const userUsdcBalance = walletAssets?.usdcBalance ?? 0;
   const [subTab, setSubTab] = useState<'POOLS' | 'PAWNS'>('POOLS');
   const [deskFilter, setDeskFilter] = useState<'ALL' | 'VERIFIED' | 'CIRCLES' | 'MY_DESKS'>('ALL');
   const [pawnFilter, setPawnFilter] = useState<'ALL' | 'MY_PAWNS' | 'FUNDED' | 'COMPLETED'>('ALL');
@@ -69,11 +76,11 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
   const [createPoolModal, setCreatePoolModal] = useState<boolean>(false);
   const [deskName, setDeskName] = useState<string>('Solana Chad Vault');
   const [deskType, setDeskType] = useState<'Individual' | 'Circle'>('Individual');
-  const [deskApr, setDeskApr] = useState<string>('8.0');
+  const [deskApr, setDeskApr] = useState<string>('12.0');
   const [deskLtv, setDeskLtv] = useState<string>('70');
   const [deskMinDays, setDeskMinDays] = useState<string>('7');
   const [deskMaxDays, setDeskMaxDays] = useState<string>('30');
-  const [deskLiquidity, setDeskLiquidity] = useState<string>('500');
+  const [deskLiquidity, setDeskLiquidity] = useState<string>(userUsdcBalance > 0 ? Math.min(50, Math.floor(userUsdcBalance)).toString() : '10');
 
   // Create Pawn Modal
   const [pawnModal, setPawnModal] = useState<boolean>(false);
@@ -97,8 +104,8 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
       Alert.alert('Missing Name', 'Please enter a name for your lending desk.');
       return;
     }
-    if (isNaN(apr) || apr <= 0 || apr > 100) {
-      Alert.alert('Invalid APR', 'Please enter a valid fixed APR between 1% and 100%.');
+    if (isNaN(apr) || apr <= 0 || apr > 150) {
+      Alert.alert('Invalid APR', 'Please enter a valid fixed APR between 1% and 150%.');
       return;
     }
     if (isNaN(ltv) || ltv <= 10 || ltv > 70) {
@@ -111,6 +118,13 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
     }
     if (isNaN(liq) || liq <= 0) {
       Alert.alert('Invalid Liquidity', 'Please enter a valid initial liquidity amount.');
+      return;
+    }
+    if (liq > userUsdcBalance) {
+      Alert.alert(
+        'Insufficient USDC Balance',
+        `Your wallet has ${userUsdcBalance.toFixed(2)} USDC, which is less than the requested ${liq.toFixed(2)} USDC initial liquidity.\n\nPlease deposit or swap for USDC before initializing a lending desk.`
+      );
       return;
     }
 
@@ -545,17 +559,37 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
       </ScrollView>
 
       {/* ── Create Lending Desk Modal ── */}
-      <Modal visible={createPoolModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
+      <Modal
+        visible={createPoolModal}
+        animationType="slide"
+        transparent
+        statusBarTranslucent
+        onRequestClose={() => setCreatePoolModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableWithoutFeedback onPress={() => setCreatePoolModal(false)}>
+            <View style={styles.modalDismissArea} />
+          </TouchableWithoutFeedback>
+
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Create Lending Desk</Text>
-              <TouchableOpacity onPress={() => setCreatePoolModal(false)}>
+              <TouchableOpacity
+                onPress={() => setCreatePoolModal(false)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
                 <Ionicons name="close" size={22} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 28 }}
+            >
               <Text style={[styles.inputLabel, { color: colors.textMuted }]}>DESK NAME</Text>
               <TextInput
                 style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
@@ -567,18 +601,18 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
 
               <View style={styles.inputSplitRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.inputLabel, { color: colors.textMuted }]}>FIXED APR (MAX 100%)</Text>
+                  <Text style={[styles.inputLabel, { color: colors.textMuted }]}>FIXED APR (MAX 150%)</Text>
                   <TextInput
                     style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
                     value={deskApr}
                     onChangeText={setDeskApr}
                     keyboardType="decimal-pad"
-                    placeholder="8.0"
+                    placeholder="12.0"
                     placeholderTextColor={colors.textMuted}
                   />
                   {parseFloat(deskApr) > 0 && (
                     <Text style={{ fontSize: 10, color: colors.primaryLabel, marginTop: 4, fontWeight: '600' }}>
-                      ≈ {((parseFloat(deskApr) * 7) / 365).toFixed(2)}% flat fee / 7d
+                      ≈ {((parseFloat(deskApr) * 7) / 365).toFixed(2)}% / 7d ({((parseFloat(deskApr) * 30) / 365).toFixed(2)}% / 30d)
                     </Text>
                   )}
                 </View>
@@ -595,18 +629,71 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                 </View>
               </View>
 
-              <Text style={[styles.inputLabel, { color: colors.textMuted }]}>INITIAL LIQUIDITY (USDC)</Text>
+              <View style={styles.inputSplitRow}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.inputLabel, { color: colors.textMuted }]}>MIN DURATION (DAYS)</Text>
+                  <TextInput
+                    style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
+                    value={deskMinDays}
+                    onChangeText={setDeskMinDays}
+                    keyboardType="number-pad"
+                    placeholder="7"
+                    placeholderTextColor={colors.textMuted}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.inputLabel, { color: colors.textMuted }]}>MAX DURATION (DAYS)</Text>
+                  <TextInput
+                    style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
+                    value={deskMaxDays}
+                    onChangeText={setDeskMaxDays}
+                    keyboardType="number-pad"
+                    placeholder="30"
+                    placeholderTextColor={colors.textMuted}
+                  />
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 6 }}>
+                <Text style={[styles.inputLabel, { color: colors.textMuted, marginTop: 0, marginBottom: 0 }]}>INITIAL LIQUIDITY (USDC)</Text>
+                <TouchableOpacity
+                  onPress={() => setDeskLiquidity(userUsdcBalance > 0 ? userUsdcBalance.toString() : '0')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={{ fontSize: 11, color: colors.primaryLabel, fontWeight: '700' }}>
+                    Balance: ${userUsdcBalance.toFixed(2)} (Max)
+                  </Text>
+                </TouchableOpacity>
+              </View>
               <TextInput
-                style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderColor: !isNaN(parseFloat(deskLiquidity)) && parseFloat(deskLiquidity) > userUsdcBalance ? colors.danger : colors.cardBorder,
+                    color: colors.text,
+                  },
+                ]}
                 value={deskLiquidity}
                 onChangeText={setDeskLiquidity}
                 keyboardType="decimal-pad"
-                placeholder="500"
+                placeholder={userUsdcBalance > 0 ? `Max ${userUsdcBalance.toFixed(2)}` : '0.00'}
                 placeholderTextColor={colors.textMuted}
               />
+              {!isNaN(parseFloat(deskLiquidity)) && parseFloat(deskLiquidity) > userUsdcBalance && (
+                <Text style={{ fontSize: 11, color: colors.danger, marginTop: 4, fontWeight: '600' }}>
+                  ⚠️ Exceeds your wallet balance (${userUsdcBalance.toFixed(2)} USDC). Please reduce amount.
+                </Text>
+              )}
 
               <TouchableOpacity
-                style={[styles.modalSubmitBtn, { backgroundColor: colors.primary }]}
+                style={[
+                  styles.modalSubmitBtn,
+                  {
+                    backgroundColor: colors.primary,
+                    opacity: !isNaN(parseFloat(deskLiquidity)) && parseFloat(deskLiquidity) > userUsdcBalance ? 0.6 : 1,
+                  },
+                ]}
                 onPress={handleCreatePoolSubmit}
                 activeOpacity={0.8}
               >
@@ -614,21 +701,41 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
               </TouchableOpacity>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Create P2P Pawn Modal ── */}
-      <Modal visible={pawnModal} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
+      <Modal
+        visible={pawnModal}
+        animationType="slide"
+        transparent
+        statusBarTranslucent
+        onRequestClose={() => setPawnModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
+          <TouchableWithoutFeedback onPress={() => setPawnModal(false)}>
+            <View style={styles.modalDismissArea} />
+          </TouchableWithoutFeedback>
+
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>List P2P Pawn</Text>
-              <TouchableOpacity onPress={() => setPawnModal(false)}>
+              <TouchableOpacity
+                onPress={() => setPawnModal(false)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
                 <Ionicons name="close" size={22} color={colors.textMuted} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingBottom: 28 }}
+            >
               <Text style={[styles.inputLabel, { color: colors.textMuted }]}>COLLATERAL ASSET</Text>
               <TextInput
                 style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
@@ -682,28 +789,54 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
               </TouchableOpacity>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* ── Deposit Liquidity Modal ── */}
       {fundModal && (
-        <Modal visible={!!fundModal} animationType="fade" transparent>
-          <View style={styles.modalOverlay}>
+        <Modal
+          visible={!!fundModal}
+          animationType="fade"
+          transparent
+          statusBarTranslucent
+          onRequestClose={() => setFundModal(null)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.modalOverlay}
+          >
+            <TouchableWithoutFeedback onPress={() => setFundModal(null)}>
+              <View style={styles.modalDismissArea} />
+            </TouchableWithoutFeedback>
+
             <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
               <View style={styles.modalHeader}>
                 <Text style={[styles.modalTitle, { color: colors.text }]}>Deposit into {fundModal.name}</Text>
-                <TouchableOpacity onPress={() => setFundModal(null)}>
+                <TouchableOpacity
+                  onPress={() => setFundModal(null)}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
                   <Ionicons name="close" size={22} color={colors.textMuted} />
                 </TouchableOpacity>
               </View>
 
-              <Text style={[styles.inputLabel, { color: colors.textMuted }]}>DEPOSIT AMOUNT (USDC)</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 6 }}>
+                <Text style={[styles.inputLabel, { color: colors.textMuted, marginTop: 0, marginBottom: 0 }]}>DEPOSIT AMOUNT (USDC)</Text>
+                <TouchableOpacity
+                  onPress={() => setFundAmount(userUsdcBalance > 0 ? userUsdcBalance.toString() : '0')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={{ fontSize: 11, color: colors.primaryLabel, fontWeight: '700' }}>
+                    Balance: ${userUsdcBalance.toFixed(2)} (Max)
+                  </Text>
+                </TouchableOpacity>
+              </View>
               <TextInput
                 style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
                 value={fundAmount}
                 onChangeText={setFundAmount}
                 keyboardType="decimal-pad"
-                placeholder="100"
+                placeholder={userUsdcBalance > 0 ? `Max ${userUsdcBalance.toFixed(2)}` : '0.00'}
                 placeholderTextColor={colors.textMuted}
               />
 
@@ -711,7 +844,18 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                 style={[styles.modalSubmitBtn, { backgroundColor: colors.primary }]}
                 onPress={() => {
                   const amt = parseFloat(fundAmount);
-                  if (!isNaN(amt) && amt > 0 && onDepositLiquidity) {
+                  if (isNaN(amt) || amt <= 0) {
+                    Alert.alert('Invalid Amount', 'Please enter a valid amount to deposit.');
+                    return;
+                  }
+                  if (amt > userUsdcBalance) {
+                    Alert.alert(
+                      'Insufficient USDC Balance',
+                      `Your wallet has ${userUsdcBalance.toFixed(2)} USDC, which is less than the requested ${amt.toFixed(2)} USDC deposit.\n\nPlease deposit or swap for USDC before funding.`
+                    );
+                    return;
+                  }
+                  if (onDepositLiquidity) {
                     onDepositLiquidity(fundModal, amt);
                     setFundModal(null);
                   }
@@ -721,7 +865,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                 <Text style={[styles.modalSubmitText, { color: colors.primaryText }]}>Deposit Liquidity</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
       )}
     </View>
@@ -980,13 +1124,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
     justifyContent: 'flex-end',
   },
+  modalDismissArea: {
+    flex: 1,
+  },
   modalCard: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: 1,
     borderBottomWidth: 0,
     padding: 20,
-    maxHeight: '85%',
+    maxHeight: '88%',
   },
   modalHeader: {
     flexDirection: 'row',
