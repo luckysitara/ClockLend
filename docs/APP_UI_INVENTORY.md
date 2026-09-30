@@ -398,46 +398,38 @@ Alerts: 245 `Solscan Transaction` / full signature · 275 `Escrow Account` / ful
 
 ### 3.10 Account tab — `CreditProfileView.tsx`
 
-| Line | Exact string | Purpose |
-|---|---|---|
-| 93, 95, 99 | `{skrHandle}` · `SEED VAULT` · `{shorten(pubkey)} • Solana Mainnet` | Passport card |
-| 107, 109 | `On-Chain Reputation` · `{(reputationScore/100).toFixed(1)}%` | Score |
-| 114 | `Tier 2 · 50% APR discount` / `Tier 1 · 25% APR discount` / `No SKR bond · 0% APR discount` | Tier pill |
-| 120 | `{totalLoansCompleted} loans completed on time • {totalLoansDefaulted} defaults` | Stats |
-| 129 | `SKR Bond Tier Progression` | Tier progress |
-| 133 | `Tier 2 — 50% APR discount active` | Tier 2 |
-| 135 | `Next: Tier 2 at 1,000 SKR available (50% discount)` | Tier 1 |
-| 136 | `Next: Tier 1 at 100 SKR available (25% discount)` | Standard |
-| 152–156 | `{availableSkr.toLocaleString()} SKR counts toward the tier` + `${lockedSkr} SKR bonded to active loans` (when `lockedSkr > 0`) + ` • Program APR discount: {aprDiscount}%` | Tier perk caption |
-| 171 | `View Global Seeker Hall of Fame →` | Gold button (opens leaderboard) |
-| 179, 181 | `SKR Reputation Bond` · `$10,000 SKR Track` | Staking section |
-| 185–186 | `Stake SKR into the protocol escrow to earn a program APR discount: 100+ SKR available = 25%, 1,000+ SKR available = 50%. SKR bonded to an active loan is excluded from both tiers.` | Section description |
-| 190, 192, 195 | `Staked in Protocol Escrow` · `{stakedSkr} SKR` · `{availableSkr} SKR available` | Staked figures |
-| 197 | ` • ${lockedSkr} SKR bonded to active loans` | Conditional suffix |
-| 213 | `+500 SKR` · `+1000 SKR` · `+2500 SKR` · `+5000 SKR` | Stake presets |
-| 238 | `↩ Unstake {availableSkr} SKR` | Unstake button |
-| 240, 242 | ` (all bonded to active loans)` · ` (stake first)` | Unstake suffixes |
-| 253, 257 | `Wallet Holdings (Solana Mainnet)` · `${totalUsdValue.toFixed(2)}` | Holdings header |
-| 264, 266 | `SOL Balance` · `{solBalance.toFixed(3)} SOL` | Mini asset 1 |
-| 270, 272 | `USDC` · `${usdcBalance.toFixed(2)}` | Mini asset 2 |
-| 276, 278 | `SKR Tokens` · `{skrBalance.toFixed(0)} SKR` | Mini asset 3 |
-| 290–291 | `View & Manage Wallet Assets →` | Opens assets modal |
-| 300 | `App Security & Biometrics` | Section |
-| 306, 307, 308 | `PIN + Biometrics (2/2 Active)` · `PIN Only (1/2 Active)` · `Protection Disabled` | Methods badge |
-| 316, 318 | `Require PIN on App Launch` · `Lock app whenever it opens or resumes from background.` | Master lock toggle |
-| 342, 345 | `Fingerprint / Face ID` · `Fast 1-tap unlock using device biometric sensor.` | Biometric toggle |
-| 376 | `Change PIN` / `Set Custom PIN` | PIN button |
-| 388 | `Lock Now` | Lock button |
-| 398, 400, 403 | `SKR Protocol Yield` · `💧` · `Accrued: {accruedRewards/1e6} USDC` | Yield card |
-| 407 | `Your escrowed {stakedSkr} SKR earns protocol-fee dividends. Claim pays out hourly.` | Yield sub |
-| 408 | `Stake SKR to start earning protocol-fee dividends.` | Yield empty state |
-| 420 | `Claim` | Claim button |
-| 428, 430, 432, 434 | `Seeker Hardware Security` · `🛡️` · `Seed Vault Enclave` · `Cryptographic keys isolated in hardware enclave. Zero remote key exfiltration.` | Security rows |
-| 440, 442, 444 | `📜` · `Audited Protocol Logic` · `Non-custodial smart contracts executed with atomic escrow settlement on Solana.` | Security rows |
-| 454 | `View Protocol on Solana Explorer ↗` | Explorer button |
-| 464 | `Logout` | Logout |
+**Restructured (2026-09-30).** This screen was reorganised from an undifferentiated
+stack of similar-sized cards into seven labelled sections. Line numbers are deliberately
+omitted below: they drifted the moment the file was restructured, and a stale table is
+worse than none. Verify against source.
 
-No Alerts in this file. Unused remnants: `themeSwitchBtn` / `themeSwitchText` styles and the `mode`/`toggleTheme` destructure — evidence of a removed theme switcher.
+Order, top to bottom:
+
+| # | Section | Contents |
+|---|---|---|
+| 1 | *(unboxed header)* | Avatar, `{skrHandle}`, `SEED VAULT`, `{shorten(pubkey)} • Solana Mainnet`; then `On-Chain Reputation` and the score at 32px/900. Unboxed and largest by type scale so it reads as a screen title, not another panel. |
+| 2 | `CREDIT` | Tier pill (`Tier 2 · 50% APR discount` / `Tier 1 · 25% APR discount` / `No SKR bond · 0% APR discount`) in the section header; `SKR Bond Tier Progression` + bar + `Next: Tier …` perk caption; `{n} loans completed on time • {m} defaults`. |
+| 3 | `STAKING & EARNINGS` | `$10,000 SKR Track` pill; the tier description; staked figure (26px/800); presets `+500 / +1000 / +2500 / +5000 SKR`; `↩ Unstake {n} SKR`; then a sub-label `SKR PROTOCOL YIELD` with the accrued/claim row. |
+| 4 | `WALLET` | `Wallet Holdings (Solana Mainnet)`, `${total}`, then `SOL Balance` / `USDC` / `SKR Tokens` as three ruled rows (was a boxed 3-up grid), then `View & Manage Wallet Assets` with a chevron. |
+| 5 | `SECURITY` | Methods badge (`PIN + Biometrics (2/2 Active)` / `PIN Only (1/2 Active)` / `Protection Disabled`); `Require PIN on App Launch` toggle; `Fingerprint / Face ID` toggle; `Change PIN` / `Set Custom PIN`; `Lock Now`. Below a rule: `Seed Vault Enclave` and `Audited Protocol Logic`. |
+| 6 | `ABOUT` | `Judge Briefing — how this works`, `View Global Seeker Hall of Fame`, `View Protocol on Solana Explorer ↗`. |
+| 7 | *(logout)* | Hairline then a borderless, centred danger-text button. De-emphasised, clearly separated. |
+
+Notes:
+- **Every card container was removed** (passport card, six section cards, and the inner
+  tier-progress, staked-hero and assets-grid boxes). Structure now comes from a hairline
+  rule plus 28pt section spacing and from type size/weight. Secondary rows share one
+  anatomy: fixed 22pt icon column, label, sub, value, chevron.
+- Two strings lost a trailing `→` (`View Global Seeker Hall of Fame →`,
+  `View & Manage Wallet Assets →`) because the row now carries a chevron. All other copy
+  is unchanged except where structure required it.
+- The `SKR Reputation Bond` card title was absorbed into the `STAKING & EARNINGS` header.
+- **Claim button is gated**: disabled (and dimmed from the same value) unless
+  `accruedRewards > 0`. The on-chain yield vault has never been funded, so the previous
+  always-enabled Claim that always paid 0.0000 USDC has been removed as an affordance.
+- Unused remnants kept on purpose: `themeSwitchBtn` / `themeSwitchText` styles and the
+  `mode` / `toggleTheme` destructure — evidence of a removed theme switcher, retained
+  because this tab is a plausible home for one.
 
 ### 3.11 Wallet assets modal — `WalletAssetsModal.tsx`
 
@@ -630,6 +622,14 @@ Recorded for completeness only — **no call sites**. `Circle Pawn Deck` · `1-o
 | `priceTrusted` | `isLivePriceUsable()`, resynced every 15 s | Gates every USD figure in Loans / Assets |
 
 ### 5.2 Per-screen states
+
+> **STALE (2026-09-30).** The two claims below that "Desk tab: no loading state at all" and
+> "Loans: no error surface in-view and no retry control" were accurate when written and are
+> **no longer true** — `ActiveOrdersView`, `MerchantDesksView` and `LeaderboardModal` now
+> implement distinct loading, error, retry and empty states, with error never rendering as
+> empty. The per-screen string tables in §3.8, §3.9 and §3.13 do not yet carry the new state
+> copy. Re-read those components before relying on this section.
+
 
 **Borrow:** loading (`Discovering Pools...`; CTA spinner while submitting); empty (two variants, §3.7); error (five alert paths); success → hands off to `App.handleBorrow` which switches to LOANS. **The CTA starts disabled until a trusted price arrives for the selected asset** (`usableAssets` initial `{sol:false, skr:false}`).
 
