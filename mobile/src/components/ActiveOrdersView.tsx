@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Linking } 
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { LoanOrder } from '../types';
-import { CountdownTimer } from './CountdownTimer';
+import { CountdownTimer, CountdownUrgency, getCountdownUrgency } from './CountdownTimer';
 import { requestTardisGraceRescue } from '../services/tardisIntegration';
 import {
   livePrices,
@@ -19,6 +19,20 @@ interface ActiveOrdersViewProps {
   onTriggerGrace: (orderId: number) => void;
   onNavigateBorrow: () => void;
 }
+
+/** due_time -> urgency for every tracked loan; 'unknown' when the account
+ *  carries no due_time yet (rendered as the due-date-unknown card). */
+const urgencyMapFor = (
+  orders: Array<{ id: number; dueTime: number }>,
+  nowSec: number
+): Record<number, CountdownUrgency | 'unknown'> => {
+  const map: Record<number, CountdownUrgency | 'unknown'> = {};
+  for (const order of orders) {
+    if (order.dueTime > 0) map[order.id] = getCountdownUrgency(order.dueTime, nowSec);
+    else map[order.id] = 'unknown';
+  }
+  return map;
+};
 
 export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
   orders,
@@ -50,6 +64,37 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
     return s === 'ACTIVE' || s === 'INGRACEPERIOD' || s === 'GRACE_PERIOD';
   });
 
+  // One shared clock for the whole list, so the status badge, the card border
+  // and the countdown can never disagree about the same loan. The on-chain
+  // LoanStatus only flips to InGracePeriod when someone executes
+  // TriggerGracePeriod, so an overdue loan keeps reporting ACTIVE until that
+  // instruction lands — the badge must therefore read due_time too.
+  // The updater returns the previous map when nothing changed, so the cards
+  // re-render only at a phase boundary, not once per second.
+  const [urgencyById, setUrgencyById] = useState<Record<number, CountdownUrgency | 'unknown'>>(
+    () => urgencyMapFor(activeOrders, Math.floor(Date.now() / 1000))
+  );
+  const trackedKey = activeOrders.map((o) => `${o.id}:${o.dueTime}:${o.status}`).join('|');
+
+  useEffect(() => {
+    const tracked = activeOrders.map((o) => ({ id: o.id, dueTime: o.dueTime }));
+
+    const tick = () => {
+      const next = urgencyMapFor(tracked, Math.floor(Date.now() / 1000));
+      setUrgencyById((prev) => {
+        const ids = Object.keys(next);
+        const unchanged =
+          ids.length === Object.keys(prev).length && ids.every((id) => prev[Number(id)] === next[Number(id)]);
+        return unchanged ? prev : next;
+      });
+    };
+
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trackedKey]);
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
@@ -75,6 +120,12 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
         activeOrders.map((order) => {
           const totalDue = (order.principalAmount + order.interestDue).toFixed(2);
           const inGrace = order.status.toUpperCase().includes('GRACE');
+          const urgency = urgencyById[order.id] ?? 'unknown';
+          // Past due_time while the status is still ACTIVE: the grace window has
+          // NOT started (it is only opened by an explicit TriggerGracePeriod
+          // instruction, available below as "24h Grace"). Saying "Active in
+          // Escrow" here told the borrower everything was fine.
+          const isOverdue = !inGrace && urgency === 'overdue';
 
           return (
             <View
@@ -83,10 +134,11 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                 styles.card,
                 { backgroundColor: colors.card, borderColor: colors.cardBorder },
                 inGrace && { borderColor: colors.warning, backgroundColor: 'rgba(245, 158, 11, 0.05)' },
+                isOverdue && { borderColor: colors.danger, backgroundColor: 'rgba(239, 68, 68, 0.05)' },
               ]}
             >
               <View style={styles.cardHeader}>
-                <View>
+                <View style={styles.cardHeaderLeft}>
                   <Text style={[styles.poolName, { color: colors.text }]}>{order.poolName}</Text>
                   <Text style={[styles.orderId, { color: colors.textMuted }]}>Order #{order.id}</Text>
                 </View>
@@ -96,16 +148,26 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                     styles.badge,
                     inGrace
                       ? { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: 'rgba(245, 158, 11, 0.3)' }
+                      : isOverdue
+                      ? { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: 'rgba(239, 68, 68, 0.3)' }
                       : { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder },
                   ]}
                 >
                   <Text
                     style={[
                       styles.badgeText,
-                      inGrace ? { color: colors.warning } : { color: colors.primary },
+                      inGrace
+                        ? { color: colors.warning }
+                        : isOverdue
+                        ? { color: colors.danger }
+                        : { color: colors.primary },
                     ]}
                   >
-                    {inGrace ? '⚠️ Social Grace Active' : '🟢 Active in Escrow'}
+                    {inGrace
+                      ? '⚠️ Social Grace Active'
+                      : isOverdue
+                      ? '🔴 Past Due · Grace Not Open'
+                      : '🟢 Active in Escrow'}
                   </Text>
                 </View>
               </View>
@@ -128,7 +190,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
               {/* Ticking Countdown Timer — M-3: an unset due_time is "unknown",
                   never a fabricated date. */}
               {order.dueTime > 0 ? (
-                <CountdownTimer dueTime={order.dueTime} />
+                <CountdownTimer dueTime={order.dueTime} graceOpen={inGrace} />
               ) : (
                 <View style={[styles.warningCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
                   <Text style={[styles.warningCardText, { color: colors.textSecondary }]}>
@@ -312,7 +374,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
-                    style={[styles.rescueBtn, { backgroundColor: '#ef4444' }]}
+                    style={[styles.rescueBtn, { backgroundColor: colors.danger, shadowColor: colors.danger }]}
                     onPress={() => {
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
                       requestTardisGraceRescue(order);
@@ -381,6 +443,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 4,
+  },
+  cardHeaderLeft: {
+    flex: 1,
+    marginRight: 8,
   },
   poolName: {
     fontSize: 16,
@@ -468,7 +534,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#ef4444',
+    // shadowColor comes from the theme's danger token at the call site.
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.4,
     shadowRadius: 4,

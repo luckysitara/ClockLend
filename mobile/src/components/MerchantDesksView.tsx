@@ -11,7 +11,7 @@ import {
   Linking,
 } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
-import { LendingPool, P2POffer } from '../types';
+import { LendingPool, P2POffer, OfferStatus } from '../types';
 import { sharePawnToTardis, openTardisCommunity } from '../services/tardisIntegration';
 
 interface MerchantDesksViewProps {
@@ -33,7 +33,6 @@ interface MerchantDesksViewProps {
     initialLiquidity: number
   ) => void;
   onDepositLiquidity?: (pool: LendingPool, amount: number) => void;
-  onNfcBumpCircle: () => void;
 }
 
 export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
@@ -47,12 +46,9 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
   onCancelPawnOffer,
   onCreatePool,
   onDepositLiquidity,
-  onNfcBumpCircle,
 }) => {
   const { colors } = useTheme();
   const [subTab, setSubTab] = useState<'POOLS' | 'PAWNS'>('POOLS');
-  const [nfcModal, setNfcModal] = useState<boolean>(false);
-  const [isNfcActive, setIsNfcActive] = useState<boolean>(false);
   const [fundAmount, setFundAmount] = useState<string>('500');
 
   // New desk / pool modal state
@@ -128,16 +124,6 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
     return true;
   });
 
-  const triggerNfcBump = () => {
-    setIsNfcActive(true);
-    setTimeout(() => {
-      setIsNfcActive(false);
-      setNfcModal(false);
-      onNfcBumpCircle();
-      Alert.alert('🤝 Circle Synced!', 'Connected via Seeker NFC. Desk data refreshed.');
-    }, 1200);
-  };
-
   const handleCreatePawn = () => {
     const amt = parseFloat(reqAmount);
     const prof = parseFloat(profitAmount);
@@ -206,13 +192,6 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                 <Text style={[styles.newPawnChipText, { color: colors.primaryText }]}>+ Create Desk</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity
-              style={[styles.nfcChip, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}
-              onPress={() => setNfcModal(true)}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.nfcChipText, { color: colors.primary }]}>📡 NFC (Soon)</Text>
-            </TouchableOpacity>
           </View>
         ) : (
           <TouchableOpacity
@@ -270,8 +249,8 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                               </View>
                             )}
                             {isMyDesk && (
-                              <View style={[styles.verifiedTag, { backgroundColor: 'rgba(234, 179, 8, 0.15)', borderColor: '#eab308', borderWidth: 1 }]}>
-                                <Text style={[styles.verifiedTagText, { color: '#eab308' }]}>👑 YOUR DESK</Text>
+                              <View style={[styles.verifiedTag, { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: colors.warning, borderWidth: 1 }]}>
+                                <Text style={[styles.verifiedTagText, { color: colors.warning }]}>👑 YOUR DESK</Text>
                               </View>
                             )}
                             <View
@@ -452,6 +431,23 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                 const isFunder = Boolean(userPubkey && offer.funder && offer.funder.toLowerCase() === userPubkey.toLowerCase());
                 const totalDue = parseFloat((offer.requestedAmount + offer.interestOffered).toFixed(2));
                 const isRepaid = offer.status === 'Repaid';
+                // Single source of truth for presentation. The badge and the action
+                // area previously derived status independently, so a DEFAULTED pawn
+                // showed a "DEFAULTED" chip above a green "✅ Completed — Collateral
+                // Unlocked & Returned" panel: the card contradicted itself, and told
+                // the borrower their collateral had been returned when the funder had
+                // actually seized it.
+                const statusView: Record<
+                  OfferStatus,
+                  { label: string; fg: string; bg: string }
+                > = {
+                  Open: { label: 'OPEN', fg: colors.primary, bg: colors.badgeBg },
+                  Funded: { label: 'FUNDED', fg: '#3b82f6', bg: 'rgba(59, 130, 246, 0.15)' },
+                  InGracePeriod: { label: 'GRACE PERIOD', fg: colors.warning, bg: 'rgba(245, 158, 11, 0.15)' },
+                  Repaid: { label: 'COMPLETED', fg: '#22c55e', bg: 'rgba(34, 197, 94, 0.15)' },
+                  Defaulted: { label: 'DEFAULTED', fg: colors.danger, bg: 'rgba(239, 68, 68, 0.15)' },
+                };
+                const sv = statusView[offer.status] ?? statusView.Open;
 
                 return (
                   <View
@@ -481,32 +477,8 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                           Creator: {isCreator ? 'You' : `${offer.creator.slice(0, 4)}...${offer.creator.slice(-4)}`}
                         </Text>
                       </View>
-                      <View
-                        style={[
-                          styles.statusChip,
-                          {
-                            backgroundColor: isRepaid
-                              ? 'rgba(34, 197, 94, 0.15)'
-                              : offer.status === 'Funded'
-                              ? 'rgba(59, 130, 246, 0.15)'
-                              : colors.badgeBg,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.statusText,
-                            {
-                              color: isRepaid
-                                ? '#22c55e'
-                                : offer.status === 'Funded'
-                                ? '#3b82f6'
-                                : colors.primary,
-                            },
-                          ]}
-                        >
-                          {isRepaid ? 'COMPLETED' : offer.status.toUpperCase()}
-                        </Text>
+                      <View style={[styles.statusChip, { backgroundColor: sv.bg }]}>
+                        <Text style={[styles.statusText, { color: sv.fg }]}>{sv.label}</Text>
                       </View>
                     </View>
 
@@ -597,7 +569,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                       isCreator ? (
                         <View>
                           <View style={[styles.fundedNote, { backgroundColor: 'rgba(239, 68, 68, 0.08)', marginBottom: 10 }]}>
-                            <Text style={[styles.fundedNoteText, { color: '#ef4444' }]}>
+                            <Text style={[styles.fundedNoteText, { color: colors.danger }]}>
                               🚨 Funded! Repay ${totalDue} USDC to unlock your {offer.collateralName} from escrow.
                             </Text>
                           </View>
@@ -624,10 +596,34 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                           <Text style={[styles.fundedNoteText, { color: colors.textMuted }]}>🔒 Funded & In Escrow</Text>
                         </View>
                       )
+                    ) : offer.status === 'InGracePeriod' ? (
+                      // Past due, inside the 24h window. The borrower can STILL repay;
+                      // the funder is waiting on a possible claim.
+                      <View style={[styles.fundedNote, { backgroundColor: 'rgba(245, 158, 11, 0.10)' }]}>
+                        <Text style={[styles.fundedNoteText, { color: colors.warning, fontWeight: '700' }]}>
+                          {isCreator
+                            ? `⏳ Past due — grace window running. Repay $${totalDue} USDC before it closes or the collateral is seized.`
+                            : isFunder
+                            ? '⏳ Past due — grace window running. You can claim the collateral once it closes.'
+                            : '⏳ Past due — grace window running.'}
+                        </Text>
+                      </View>
+                    ) : offer.status === 'Defaulted' ? (
+                      // The collateral was SEIZED. This previously rendered as a green
+                      // "✅ Completed — Collateral Unlocked & Returned".
+                      <View style={[styles.fundedNote, { backgroundColor: 'rgba(239, 68, 68, 0.10)' }]}>
+                        <Text style={[styles.fundedNoteText, { color: colors.danger, fontWeight: '700' }]}>
+                          {isCreator
+                            ? '🚫 Defaulted — the grace window closed and the escrowed collateral was claimed by the funder.'
+                            : isFunder
+                            ? '🚫 Defaulted — you claimed the escrowed collateral.'
+                            : '🚫 Defaulted — collateral was claimed by the funder.'}
+                        </Text>
+                      </View>
                     ) : (
                       <View style={[styles.fundedNote, { backgroundColor: 'rgba(34, 197, 94, 0.08)' }]}>
                         <Text style={[styles.fundedNoteText, { color: '#22c55e', fontWeight: '700' }]}>
-                          ✅ Completed — Collateral Unlocked & Returned
+                          ✅ Repaid — collateral unlocked and returned to the creator.
                         </Text>
                       </View>
                     )}
@@ -885,42 +881,6 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
         </View>
       </Modal>
 
-      {/* NFC BUMP MODAL */}
-      <Modal visible={nfcModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-            <Text style={styles.modalNfcIcon}>📡</Text>
-            <View style={[styles.verifiedTag, { backgroundColor: 'rgba(234, 179, 8, 0.15)', borderColor: '#eab308', borderWidth: 1, marginBottom: 12 }]}>
-              <Text style={[styles.verifiedTagText, { color: '#eab308' }]}>HARDWARE NFC • COMING SOON</Text>
-            </View>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Seeker Phone Bump (NFC)</Text>
-            <Text style={[styles.modalDesc, { color: colors.textSecondary }]}>
-              Hold your Seeker smartphone back-to-back with a trusted peer to instantly establish an authenticated lending circle via hardware NFC chips.
-            </Text>
-
-            <View style={[styles.protocolNote, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder, marginBottom: 16 }]}>
-              <Text style={[styles.protocolNoteText, { color: colors.textSecondary }]}>
-                🔒 Requires physical Seeker Secure Element NFC driver integration. This feature will be enabled in an upcoming Solana Mobile firmware release.
-              </Text>
-            </View>
-
-            <TouchableOpacity
-              style={[styles.bumpActionBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder, borderWidth: 1, opacity: 0.6 }]}
-              disabled={true}
-              activeOpacity={1}
-            >
-              <Text style={[styles.bumpActionText, { color: colors.textMuted }]}>
-                ⏳ Hardware NFC — Coming Soon
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setNfcModal(false)}>
-              <Text style={[styles.modalCloseText, { color: colors.textSecondary }]}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
       {/* CREATE NEW PAWN MODAL */}
       <Modal visible={pawnModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -1066,16 +1026,6 @@ const styles = StyleSheet.create({
   segmentText: {
     fontSize: 12,
     fontWeight: '600',
-  },
-  nfcChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  nfcChipText: {
-    fontSize: 12,
-    fontWeight: '700',
   },
   newPawnChip: {
     paddingHorizontal: 12,

@@ -171,8 +171,10 @@ export const JudgeBriefingModal: React.FC<JudgeBriefingModalProps> = ({
                 <View style={styles.bulletItem}>
                   <Text style={[styles.bulletDot, { color: '#c084fc' }]}>•</Text>
                   <Text style={[styles.bulletText, { color: colors.textSecondary }]}>
-                    <Text style={{ fontWeight: '800', color: colors.text }}>NFC Tap & TARDIS Social Circles: </Text>
-                    Form lending circles and pool liquidity with nearby Seeker phones via physical hardware tap.
+                    <Text style={{ fontWeight: '800', color: colors.text }}>Peer-to-Peer Circles: </Text>
+                    Circle lending desks and TARDIS social sharing are live on-chain today. Seeker NFC
+                    tap-to-pair is roadmap only — this build ships no NFC driver, so the desks tab does
+                    not offer it.
                   </Text>
                 </View>
               </View>
