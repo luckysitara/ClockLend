@@ -7,6 +7,8 @@ import {
   Animated,
   Image,
   Dimensions,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -306,7 +308,7 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
             style={[
               styles.unlockPinBtn,
               {
-                backgroundColor: themeMode === 'dark' ? '#131826' : '#FFFFFF',
+                backgroundColor: themeMode === 'dark' ? '#1A1C22' : '#FFFFFF',
                 borderColor: colors.cardBorder,
               },
             ]}
@@ -418,7 +420,7 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
                       style={[
                         styles.keyBtn,
                         {
-                          backgroundColor: themeMode === 'dark' ? '#131826' : '#F8FAFC',
+                          backgroundColor: themeMode === 'dark' ? '#1A1C22' : '#FFFFFF',
                           borderColor: colors.cardBorder,
                         },
                       ]}
@@ -448,7 +450,7 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: 48,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 28) + 20 : 52,
     paddingHorizontal: 24,
   },
   topLogoRow: {

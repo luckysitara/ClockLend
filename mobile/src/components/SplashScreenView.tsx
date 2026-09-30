@@ -102,7 +102,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
     <Pressable
       style={[
         styles.container,
-        { backgroundColor: mode === 'dark' ? '#0B0E17' : '#FFFFFF' },
+        { backgroundColor: mode === 'dark' ? '#121316' : '#F7F5F0' },
       ]}
       onPress={finishEarly}
       accessibilityRole="button"

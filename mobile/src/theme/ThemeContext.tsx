@@ -43,50 +43,50 @@ export interface ThemeColors {
 // a token without recomputing its WCAG ratio against background/card/cardAlt.
 const darkColors: ThemeColors = {
   isDark: true,
-  background: '#0B0E17',
-  card: '#131826',
-  cardAlt: '#1A2133',
+  background: '#121316',
+  card: '#1A1C22',
+  cardAlt: '#24262E',
   cardBorder: 'rgba(255, 255, 255, 0.08)',
-  primary: '#6366F1',
-  primaryText: '#FFFFFF',
-  primaryLabel: '#818CF8',
-  text: '#F1F5F9',
-  textSecondary: '#94A3B8',
-  textMuted: '#64748B',
-  accent: '#38BDF8',
-  accentLight: '#7DD3FC',
+  primary: '#F59E0B',
+  primaryText: '#000000',
+  primaryLabel: '#FBBF24',
+  text: '#F3F4F6',
+  textSecondary: '#9CA3AF',
+  textMuted: '#6B7280',
+  accent: '#F59E0B',
+  accentLight: '#FDE68A',
   danger: '#F87171',
   warning: '#F59E0B',
-  success: '#34D399',
-  badgeBg: 'rgba(99, 102, 241, 0.12)',
-  badgeBorder: 'rgba(99, 102, 241, 0.25)',
-  inputBg: '#0F131F',
+  success: '#10B981',
+  badgeBg: 'rgba(245, 158, 11, 0.14)',
+  badgeBorder: 'rgba(245, 158, 11, 0.30)',
+  inputBg: '#181A20',
   inputBorder: 'rgba(255, 255, 255, 0.08)',
   divider: 'rgba(255, 255, 255, 0.06)',
 };
 
 const lightColors: ThemeColors = {
   isDark: false,
-  background: '#F8FAFC',
+  background: '#F7F5F0',
   card: '#FFFFFF',
-  cardAlt: '#F1F5F9',
-  cardBorder: '#E2E8F0',
-  primary: '#572DFD',
+  cardAlt: '#EFECE4',
+  cardBorder: '#E8E3D8',
+  primary: '#D97706',
   primaryText: '#FFFFFF',
-  primaryLabel: '#4F46E5',
-  text: '#0F172A',
-  textSecondary: '#475569',
-  textMuted: '#94A3B8',
-  accent: '#0284C7',
-  accentLight: '#38BDF8',
+  primaryLabel: '#B45309',
+  text: '#1C1917',
+  textSecondary: '#78716C',
+  textMuted: '#A8A29E',
+  accent: '#D97706',
+  accentLight: '#FEF3C7',
   danger: '#DC2626',
   warning: '#D97706',
-  success: '#15803D',
-  badgeBg: 'rgba(87, 45, 253, 0.08)',
-  badgeBorder: 'rgba(87, 45, 253, 0.20)',
+  success: '#10B981',
+  badgeBg: 'rgba(217, 119, 6, 0.10)',
+  badgeBorder: 'rgba(217, 119, 6, 0.22)',
   inputBg: '#FFFFFF',
-  inputBorder: '#CBD5E1',
-  divider: '#E2E8F0',
+  inputBorder: '#E8E3D8',
+  divider: '#ECE7DE',
 };
 
 interface ThemeContextType {
@@ -97,14 +97,14 @@ interface ThemeContextType {
 }
 
 const ThemeContext = createContext<ThemeContextType>({
-  mode: 'dark',
-  colors: darkColors,
+  mode: 'light',
+  colors: lightColors,
   toggleTheme: () => {},
   setTheme: () => {},
 });
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [mode, setMode] = useState<ThemeMode>('dark');
+  const [mode, setMode] = useState<ThemeMode>('light');
 
   const toggleTheme = () => {
     setMode((prev) => (prev === 'dark' ? 'light' : 'dark'));

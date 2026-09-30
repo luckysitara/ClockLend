@@ -202,6 +202,21 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
+      {/* Top Header Row with ClockLend Logo */}
+      <View style={styles.topHeaderRow}>
+        <View style={styles.brandRow}>
+          <Image source={require('../../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Instant Borrow</Text>
+        </View>
+        {walletAssets && (
+          <View style={[styles.balancePill, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <Text style={[styles.balancePillText, { color: colors.primaryLabel }]}>
+              {walletAssets.solBalance.toFixed(3)} SOL
+            </Text>
+          </View>
+        )}
+      </View>
+
       {/* Jupiter-Style Main Card */}
       <View style={[styles.mainCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         
@@ -448,7 +463,37 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingTop: 8,
     paddingBottom: 32,
+  },
+  topHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  headerLogo: {
+    width: 28,
+    height: 28,
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  balancePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  balancePillText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   mainCard: {
     borderRadius: 24,

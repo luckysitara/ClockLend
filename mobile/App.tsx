@@ -9,8 +9,15 @@ import {
   Linking,
   AppState,
   AppStateStatus,
+  Platform,
+  StatusBar,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
+
+const STATUS_BAR_INSET = Platform.select({
+  android: Math.max(StatusBar.currentHeight ?? 0, 36) + 12,
+  ios: 48,
+  default: 16,
+});
 import { Ionicons } from '@expo/vector-icons';
 import { PublicKey } from '@solana/web3.js';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -1338,8 +1345,12 @@ function MainApp() {
   // 3. If no wallet connected, show the Seeker Onboarding Gate
   if (!session) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar
+          translucent
+          backgroundColor="transparent"
+          barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+        />
         <ConnectWalletView
           onConnected={(newSession) => {
             setSession(newSession);
@@ -1354,7 +1365,7 @@ function MainApp() {
             <Text style={[styles.toastText, { color: colors.text }]}>{toastMessage}</Text>
           </View>
         )}
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -1394,23 +1405,12 @@ function MainApp() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
-
-      {/* Top Header (shown on secondary tabs) */}
-      {activeTab !== 'HOME' && activeTab !== 'HUB' && (
-        <Header
-          skrHandle={session.skrHandle}
-          solBalance={solBalance}
-          onPressProfile={() => setActiveTab('PROFILE')}
-          onPressBalance={() => setShowAssetsModal(true)}
-          onDisconnectWallet={handleDisconnect}
-          hasSeekerGenesisToken={walletAssets.hasSeekerGenesisToken}
-          isProfileActive={activeTab === 'PROFILE'}
-          onOpenLeaderboard={() => setShowLeaderboard(true)}
-          onOpenJudgeBriefing={() => setShowJudgeBriefing(true)}
-        />
-      )}
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar
+        translucent
+        backgroundColor="transparent"
+        barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+      />
 
       {/* Main Content Area */}
       <View style={styles.body}>
@@ -1696,7 +1696,7 @@ function MainApp() {
           <Text style={[styles.toastText, { color: colors.text }]}>{toastMessage}</Text>
         </View>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -1711,6 +1711,7 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingTop: STATUS_BAR_INSET,
   },
   body: {
     flex: 1,

@@ -7,8 +7,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  SafeAreaView,
-  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -21,9 +19,38 @@ interface ConnectWalletViewProps {
   onConnected: (session: SeekerSession) => void;
 }
 
+interface OnboardingSlide {
+  id: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  description: string;
+}
+
+const ONBOARDING_SLIDES: OnboardingSlide[] = [
+  {
+    id: 'instant_borrow',
+    icon: 'flash',
+    title: 'Instant USDC Borrow',
+    description: 'Lock SOL or SKR collateral into on-chain escrow and receive instant liquidity.',
+  },
+  {
+    id: 'social_grace',
+    icon: 'shield-checkmark',
+    title: '24-Hour Social Grace',
+    description: 'Time-based micro-loans protect your position against market flash-crashes.',
+  },
+  {
+    id: 'seed_vault',
+    icon: 'hardware-chip',
+    title: 'Seeker Seed Vault',
+    description: 'Protected by Solana Mobile hardware security. Your private keys never leave the phone.',
+  },
+];
+
 export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnected }) => {
   const { colors, mode, toggleTheme } = useTheme();
   const [isConnecting, setIsConnecting] = useState(false);
+  const [activeSlide, setActiveSlide] = useState(0);
 
   const handleMwaConnect = async () => {
     try {
@@ -44,11 +71,16 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
     }
   };
 
-  return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle={mode === 'dark' ? 'light-content' : 'dark-content'} />
+  const handleNextSlide = () => {
+    try { Haptics.selectionAsync(); } catch {}
+    setActiveSlide((prev) => (prev + 1) % ONBOARDING_SLIDES.length);
+  };
 
-      {/* Top Utility Bar */}
+  const slide = ONBOARDING_SLIDES[activeSlide];
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* ── Top Utility Row ── */}
       <View style={styles.topBar}>
         <View style={[styles.networkBadge, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
           <View style={[styles.statusDot, { backgroundColor: colors.success }]} />
@@ -73,7 +105,7 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
         </TouchableOpacity>
       </View>
 
-      {/* Hero Brand Section */}
+      {/* ── Brand Lockup (Seeker & Nectar Style) ── */}
       <View style={styles.heroSection}>
         <View style={[styles.logoContainer, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           <Image source={LOGO_IMG} style={styles.logoImage} resizeMode="contain" />
@@ -81,53 +113,45 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
 
         <Text style={[styles.brandTitle, { color: colors.text }]}>ClockLend</Text>
         <Text style={[styles.brandTagline, { color: colors.textSecondary }]}>
-          Instant Liquidity on Solana
-        </Text>
-        <Text style={[styles.brandDescription, { color: colors.textMuted }]}>
-          Borrow USDC against your SOL and SKR with zero instant liquidation risk.
+          Instant Credit on Solana Seeker
         </Text>
       </View>
 
-      {/* 3 Core Value Props (Jupiter/Solflare Style) */}
-      <View style={styles.featuresContainer}>
-        <View style={[styles.featureCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-          <View style={[styles.featureIconBox, { backgroundColor: colors.badgeBg }]}>
-            <Ionicons name="flash" size={20} color={colors.primary} />
-          </View>
-          <View style={styles.featureContent}>
-            <Text style={[styles.featureTitle, { color: colors.text }]}>Instant USDC Borrow</Text>
-            <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>
-              Lock collateral into trustless on-chain escrow and receive instant liquidity.
-            </Text>
-          </View>
+      {/* ── Interactive Onboarding Carousel Card ── */}
+      <TouchableOpacity
+        style={[styles.carouselCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+        onPress={handleNextSlide}
+        activeOpacity={0.9}
+        accessibilityRole="button"
+        accessibilityLabel={`Onboarding feature ${activeSlide + 1} of ${ONBOARDING_SLIDES.length}. Tap to next.`}
+      >
+        <View style={[styles.carouselIconBox, { backgroundColor: colors.badgeBg }]}>
+          <Ionicons name={slide.icon} size={28} color="#D97706" />
         </View>
 
-        <View style={[styles.featureCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-          <View style={[styles.featureIconBox, { backgroundColor: 'rgba(52, 211, 153, 0.12)' }]}>
-            <Ionicons name="shield-checkmark" size={20} color={colors.success} />
-          </View>
-          <View style={styles.featureContent}>
-            <Text style={[styles.featureTitle, { color: colors.text }]}>24-Hour Social Grace</Text>
-            <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>
-              Time-based loans protect your position against market flash crashes.
-            </Text>
-          </View>
-        </View>
+        <Text style={[styles.carouselTitle, { color: colors.text }]}>{slide.title}</Text>
+        <Text style={[styles.carouselDesc, { color: colors.textSecondary }]}>{slide.description}</Text>
 
-        <View style={[styles.featureCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-          <View style={[styles.featureIconBox, { backgroundColor: 'rgba(56, 189, 248, 0.12)' }]}>
-            <Ionicons name="hardware-chip" size={20} color={colors.accent} />
-          </View>
-          <View style={styles.featureContent}>
-            <Text style={[styles.featureTitle, { color: colors.text }]}>Seeker Seed Vault</Text>
-            <Text style={[styles.featureDesc, { color: colors.textSecondary }]}>
-              Protected by Solana Mobile hardware security. Your keys stay on device.
-            </Text>
-          </View>
+        {/* Pagination Dots */}
+        <View style={styles.dotsRow}>
+          {ONBOARDING_SLIDES.map((s, idx) => (
+            <TouchableOpacity
+              key={s.id}
+              style={[
+                styles.dot,
+                { backgroundColor: idx === activeSlide ? '#D97706' : colors.cardBorder },
+                idx === activeSlide && styles.activeDot,
+              ]}
+              onPress={() => {
+                try { Haptics.selectionAsync(); } catch {}
+                setActiveSlide(idx);
+              }}
+            />
+          ))}
         </View>
-      </View>
+      </TouchableOpacity>
 
-      {/* Bottom Connect CTA */}
+      {/* ── Bottom Action ── */}
       <View style={styles.bottomSection}>
         <TouchableOpacity
           style={[
@@ -156,159 +180,167 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
         <View style={styles.secureFooter}>
           <Ionicons name="lock-closed" size={12} color={colors.textMuted} />
           <Text style={[styles.secureFooterText, { color: colors.textMuted }]}>
-            Secured by Solana Mobile Stack (MWA)
+            Protected by Solana Mobile Seed Vault
           </Text>
         </View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
     justifyContent: 'space-between',
   },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 12,
-    paddingBottom: 8,
+    paddingVertical: 8,
   },
   networkBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
     borderWidth: 1,
+    gap: 6,
   },
   statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
   networkText: {
     fontSize: 12,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   themeBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   heroSection: {
     alignItems: 'center',
     paddingVertical: 12,
   },
   logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
+    width: 72,
+    height: 72,
+    borderRadius: 22,
     borderWidth: 1,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: 16,
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 8,
+    shadowColor: '#D97706',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 4,
   },
   logoImage: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
   },
   brandTitle: {
     fontSize: 28,
-    fontWeight: '800',
+    fontWeight: '900',
     letterSpacing: -0.5,
     marginBottom: 4,
   },
   brandTagline: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
-    marginBottom: 8,
   },
-  brandDescription: {
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 19,
-    paddingHorizontal: 16,
-  },
-  featuresContainer: {
-    gap: 10,
+  carouselCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: 'center',
     marginVertical: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
   },
-  featureCard: {
+  carouselIconBox: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  carouselTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  carouselDesc: {
+    fontSize: 14,
+    fontWeight: '500',
+    lineHeight: 20,
+    textAlign: 'center',
+    paddingHorizontal: 8,
+    marginBottom: 20,
+  },
+  dotsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    padding: 14,
-    borderRadius: 16,
-    borderWidth: 1,
+    gap: 8,
   },
-  featureIconBox: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
-  featureContent: {
-    flex: 1,
-  },
-  featureTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  featureDesc: {
-    fontSize: 12,
-    lineHeight: 16,
+  activeDot: {
+    width: 24,
+    borderRadius: 4,
   },
   bottomSection: {
-    paddingBottom: 24,
-    paddingTop: 8,
-    alignItems: 'center',
+    gap: 12,
   },
   connectBtn: {
-    width: '100%',
-    height: 56,
-    borderRadius: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    height: 56,
+    borderRadius: 28,
     gap: 10,
-    shadowColor: '#6366F1',
+    shadowColor: '#D97706',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 6,
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
   },
   btnDisabled: {
-    opacity: 0.7,
+    opacity: 0.6,
   },
   connectBtnText: {
     fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.2,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   secureFooter: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 6,
-    marginTop: 14,
+    paddingBottom: 4,
   },
   secureFooterText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '500',
   },
 });

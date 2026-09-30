@@ -68,8 +68,8 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
       {/* ── Top Header Row (Matches 8febc333) ── */}
       <View style={styles.topHeader}>
         <View style={styles.userSection}>
-          <View style={[styles.avatar, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-            <Text style={[styles.avatarText, { color: colors.text }]}>{initials}</Text>
+          <View style={[styles.avatar, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <Image source={require('../../assets/logo.png')} style={styles.avatarImg} resizeMode="contain" />
           </View>
           <View>
             <Text style={[styles.greetingText, { color: colors.text }]}>Hello, {skrHandle}</Text>
@@ -261,6 +261,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingTop: 8,
     paddingBottom: 48,
   },
   topHeader: {
@@ -281,10 +282,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
-  avatarText: {
-    fontSize: 15,
-    fontWeight: '800',
+  avatarImg: {
+    width: 26,
+    height: 26,
   },
   greetingText: {
     fontSize: 18,

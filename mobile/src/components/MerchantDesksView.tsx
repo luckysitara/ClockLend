@@ -10,6 +10,7 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -153,7 +154,29 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── Top Bar: Segmented Switcher & Create Action ── */}
+      {/* ── Top Header Row with ClockLend Logo (Matches 68a39554) ── */}
+      <View style={styles.screenHeaderRow}>
+        <View style={styles.brandRow}>
+          <Image source={require('../../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
+          <Text style={[styles.screenTitle, { color: colors.text }]}>Markets</Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.createBtn, { backgroundColor: colors.primary }]}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            if (subTab === 'POOLS') setCreatePoolModal(true);
+            else setPawnModal(true);
+          }}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="add" size={18} color={colors.primaryText} />
+          <Text style={[styles.createBtnText, { color: colors.primaryText }]}>
+            {subTab === 'POOLS' ? 'Desk' : 'Pawn'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Segmented Switcher ── */}
       <View style={styles.topBar}>
         <View style={[styles.segmentControl, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
           <TouchableOpacity
@@ -718,13 +741,34 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingTop: 8,
+  },
+  screenHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  headerLogo: {
+    width: 28,
+    height: 28,
+  },
+  screenTitle: {
+    fontSize: 22,
+    fontWeight: '800',
   },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 8,
     gap: 12,
   },
   segmentControl: {

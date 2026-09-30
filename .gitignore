@@ -60,5 +60,5 @@ Tardis/
 
 # Serverless & Deployment Cache
 .wrangler/
-.vercel/
-
+*.jpeg
+*.jpg

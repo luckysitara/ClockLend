@@ -98,6 +98,28 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
+      {/* ── Top Header Row with ClockLend Logo (Matches 703a904b) ── */}
+      <View style={styles.topHeaderRow}>
+        <View style={styles.brandRow}>
+          <Image source={require('../../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
+          <Text style={[styles.screenTitle, { color: colors.text }]}>Profile</Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            if (hasCustomPin) {
+              if (onChangePin) onChangePin();
+            } else {
+              if (onSetupPin) onSetupPin();
+            }
+          }}
+          style={[styles.settingsBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="settings-outline" size={20} color={colors.text} />
+        </TouchableOpacity>
+      </View>
+
       {/* ── 1. Profile Hero Card (Seeker / Nectar style) ── */}
       <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         <View style={styles.profileHeaderRow}>
@@ -516,7 +538,35 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingTop: 8,
     paddingBottom: 48,
+  },
+  topHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  headerLogo: {
+    width: 28,
+    height: 28,
+  },
+  screenTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  settingsBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   profileCard: {
     borderRadius: 20,
