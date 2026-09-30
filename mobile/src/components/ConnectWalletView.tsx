@@ -27,52 +27,110 @@ interface ConnectWalletViewProps {
   onConnected: (session: SeekerSession) => void;
 }
 
-interface OnboardingSlide {
-  id: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  iconColor: string;
-  badge: string;
-  title: string;
-  description: string;
-  chips: string[];
-}
+/**
+ * The four slides deliberately do NOT share one skeleton. Each one is a
+ * different kind of page — a terms ledger, a timeline, a plain statement, then
+ * the calculator — because four copies of badge/title/paragraph/chips is what
+ * made this screen read as filler.
+ *
+ * Every figure quoted in `ONBOARDING_SLIDES` is enforced by the program:
+ *   LTV cap 7000 bps            processor.rs `MAX_LTV_BPS` / `process_initialize_pool`
+ *   origination 25 / 50 bps     `originationFeeBps` (SOL / SKR collateral), withheld from principal
+ *   simple interest, 365-day yr principal × rate × secs / (10_000 × 31_536_000)
+ *   grace window 86400 s        `process_trigger_grace_period` — opened by instruction, never automatic
+ *   oracle age bound 600 s      `ADMIN_FEED_MAX_PRICE_AGE_SECS`
+ *   SKR discounts 25% / 50%     interest rate only; it never changes LTV
+ * Do not add a number here that you cannot point at in the source.
+ */
+type OnboardingSlide =
+  | {
+      id: string;
+      variant: 'terms';
+      kicker: string;
+      title: string;
+      body: string;
+      facts: { label: string; value: string; detail: string }[];
+    }
+  | {
+      id: string;
+      variant: 'timeline';
+      kicker: string;
+      title: string;
+      steps: { label: string; detail: string }[];
+      note: string;
+    }
+  | {
+      id: string;
+      variant: 'statement';
+      kicker: string;
+      statement: string;
+      body: string;
+      caveatTitle: string;
+      caveats: string[];
+    }
+  | { id: string; variant: 'calculator'; kicker: string; title: string };
 
 const ONBOARDING_SLIDES: OnboardingSlide[] = [
   {
     id: '1',
-    icon: 'flash-outline',
-    iconColor: '#6366F1',
-    badge: '1-TAP MICRO-CREDIT',
-    title: 'Micro-Credit in Seconds',
-    description: 'Draw instant USDC against your SOL or SKR at up to 70% LTV. Zero paperwork, atomic on-chain settlement.',
-    chips: ['⚡ Instant Settlement', '📈 Up to 70% LTV', '🪙 Real USDC'],
+    variant: 'terms',
+    kicker: 'THE LOAN',
+    title: 'USDC against your SOL or SKR',
+    body: 'Post collateral to a program-owned escrow and receive USDC. Repay principal plus interest by the due date to get it back.',
+    facts: [
+      {
+        label: 'LTV cap',
+        value: '7000 bps (70%)',
+        detail: 'Fixed per pool at creation; new pools cannot exceed it.',
+      },
+      {
+        label: 'Origination fee',
+        value: '0.25% SOL / 0.50% SKR',
+        detail: 'Withheld up front, not added to your repayment.',
+      },
+      {
+        label: 'Interest',
+        value: 'Simple, over a 365-day year',
+        detail: 'The program accepts no partial repayment.',
+      },
+    ],
   },
   {
     id: '2',
-    icon: 'shield-outline',
-    iconColor: '#10B981',
-    badge: 'ZERO INSTANT LIQUIDATION',
-    title: '24-Hour Social Grace',
-    description: 'Borrow with peace of mind. ClockLend never runs an instant auction: a 24-hour grace window must be opened on-chain at or after your due date before any collateral can be claimed.',
-    chips: ['🛡️ 24h Grace Shield', '🤝 Peer-Funded Desks', '🚫 No Instant Liquidation'],
+    variant: 'timeline',
+    kicker: 'IF YOU RUN LATE',
+    title: 'The 24-hour grace window',
+    steps: [
+      { label: 'Due date', detail: 'Repayment is due in full.' },
+      {
+        label: 'Window opened',
+        detail: 'You or the desk submit the on-chain instruction that starts a 24-hour window. It is not automatic.',
+      },
+      {
+        label: 'Claim possible',
+        detail: 'Only once the window has expired can the escrowed collateral be claimed.',
+      },
+    ],
+    note: 'While the window is open, the program rejects any claim against your escrow.',
   },
   {
     id: '3',
-    icon: 'hardware-chip-outline',
-    iconColor: '#38BDF8',
-    badge: 'SEEKER ENCLAVE',
-    title: 'Hardware Seed Vault',
-    description: 'Private keys remain permanently sealed within your Seeker SPU hardware enclave. 100% non-custodial.',
-    chips: ['🔐 SPU Hardware Enclave', '📱 Solana Seeker Native', '🔒 100% Non-Custodial'],
+    variant: 'statement',
+    kicker: 'BEFORE YOU CONNECT',
+    statement: 'Your key stays in the Seeker Seed Vault.',
+    body: 'Signing happens on the device. This app holds no key material and cannot move your funds on its own.',
+    caveatTitle: 'WHAT THIS DOES NOT CLAIM',
+    caveats: [
+      'Staking SKR discounts the interest rate only — 25% off at 100 SKR, 50% at 1,000 SKR. It never raises your LTV.',
+      'No insurance, no principal protection, no guaranteed return.',
+      'The program is upgradeable by its authority key; prices are admin-fed and rejected past 600 seconds.',
+    ],
   },
   {
     id: '4',
-    icon: 'calculator-outline',
-    iconColor: '#F59E0B',
-    badge: 'TRY BEFORE YOU CONNECT',
-    title: 'Preview Your Borrow',
-    description: 'Simulate a loan at the live mainnet pool rate. No wallet needed — just tap.',
-    chips: [],
+    variant: 'calculator',
+    kicker: 'NO WALLET NEEDED',
+    title: 'What would you repay?',
   },
 ];
 
@@ -158,113 +216,186 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
     flatListRef.current?.scrollToIndex({ index, animated: true });
   };
 
+  const renderAmountPicker = () => (
+    <View style={styles.calcRow}>
+      {CALC_PRESET_AMOUNTS.map((amt) => {
+        const isActive = calcAmount === amt;
+        return (
+          <TouchableOpacity
+            key={amt}
+            activeOpacity={0.7}
+            onPress={() => {
+              try { Haptics.selectionAsync(); } catch {}
+              setCalcAmount(amt);
+            }}
+            style={[
+              styles.calcChip,
+              isActive
+                ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                : { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            ]}
+          >
+            <Text style={[styles.calcChipText, { color: isActive ? colors.primaryText : colors.textSecondary }]}>
+              ${amt}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
+  const renderTermPicker = () => (
+    <View style={styles.calcRow}>
+      {CALC_PRESET_TERMS.map((days) => {
+        const isActive = calcDays === days;
+        return (
+          <TouchableOpacity
+            key={days}
+            activeOpacity={0.7}
+            onPress={() => {
+              try { Haptics.selectionAsync(); } catch {}
+              setCalcDays(days);
+            }}
+            style={[
+              styles.calcChip,
+              isActive
+                ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                : { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            ]}
+          >
+            <Text style={[styles.calcChipText, { color: isActive ? colors.primaryText : colors.textSecondary }]}>
+              {days}d
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
   const renderSlide = ({ item }: { item: OnboardingSlide }) => {
     return (
       <View style={[styles.slideContainer, { width: SLIDE_WIDTH }]}>
-        <View style={[styles.iconWrapper, { backgroundColor: `${item.iconColor}15` }]}>
-          <Ionicons name={item.icon} size={36} color={item.iconColor} />
-        </View>
+        <View style={styles.slideColumn}>
+          {item.variant === 'terms' && (
+            <>
+              <Text style={[styles.kicker, { color: colors.textMuted }]}>{item.kicker}</Text>
+              <Text style={[styles.displayTitle, { color: colors.text }]}>{item.title}</Text>
+              <Text style={[styles.lead, { color: colors.textSecondary }]}>{item.body}</Text>
 
-        <View style={[styles.slideBadge, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
-          <Text style={[styles.slideBadgeText, { color: colors.primary }]}>{item.badge}</Text>
-        </View>
-
-        <Text style={[styles.slideTitle, { color: colors.text }]}>{item.title}</Text>
-        <Text style={[styles.slideDesc, { color: colors.textSecondary }]}>{item.description}</Text>
-
-        {item.id === '4' ? (
-          <View style={[styles.calcCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-            <Text style={[styles.calcSectionLabel, { color: colors.textMuted }]}>BORROW AMOUNT</Text>
-            <View style={styles.calcRow}>
-              {CALC_PRESET_AMOUNTS.map((amt) => {
-                const isActive = calcAmount === amt;
-                return (
-                  <TouchableOpacity
-                    key={amt}
-                    activeOpacity={0.7}
-                    onPress={() => {
-                      try { Haptics.selectionAsync(); } catch {}
-                      setCalcAmount(amt);
-                    }}
+              <View style={styles.factList}>
+                {item.facts.map((fact, idx) => (
+                  <View
+                    key={fact.label}
                     style={[
-                      styles.calcChip,
-                      isActive
-                        ? { backgroundColor: colors.primary, borderColor: colors.primary }
-                        : { backgroundColor: colors.card, borderColor: colors.cardBorder },
+                      styles.factRow,
+                      idx > 0 && { borderTopWidth: 1, borderTopColor: colors.divider },
                     ]}
                   >
-                    <Text style={[styles.calcChipText, { color: isActive ? colors.primaryText : colors.textSecondary }]}>
-                      ${amt}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <Text style={[styles.calcSectionLabel, { color: colors.textMuted }]}>LOAN TERM</Text>
-            <View style={styles.calcRow}>
-              {CALC_PRESET_TERMS.map((days) => {
-                const isActive = calcDays === days;
-                return (
-                  <TouchableOpacity
-                    key={days}
-                    activeOpacity={0.7}
-                    onPress={() => {
-                      try { Haptics.selectionAsync(); } catch {}
-                      setCalcDays(days);
-                    }}
-                    style={[
-                      styles.calcChip,
-                      isActive
-                        ? { backgroundColor: colors.primary, borderColor: colors.primary }
-                        : { backgroundColor: colors.card, borderColor: colors.cardBorder },
-                    ]}
-                  >
-                    <Text style={[styles.calcChipText, { color: isActive ? colors.primaryText : colors.textSecondary }]}>
-                      {days}d
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <View style={[styles.calcDivider, { backgroundColor: colors.divider }]} />
-
-            {rateStatus === 'live' && calcInterestUsd !== null && calcRepayUsd !== null ? (
-              <>
-                <Text style={[styles.calcEstimateLabel, { color: colors.textMuted }]}>
-                  AT {(liveRateBps! / 100).toFixed(2)}% APR — LIVE MAINNET RATE
-                </Text>
-                <Text style={[styles.calcEstimateValue, { color: colors.text }]}>
-                  Repay ${calcRepayUsd.toFixed(2)} <Text style={{ color: colors.textMuted, fontSize: 13, fontWeight: '600' }}>in {calcDays} days</Text>
-                </Text>
-                <Text style={[styles.calcNote, { color: colors.textMuted }]}>
-                  Interest ${calcInterestUsd.toFixed(2)} · up to 50% lower with 1,000+ SKR staked
-                </Text>
-              </>
-            ) : (
-              <Text style={[styles.calcNote, { color: colors.textMuted }]}>
-                {rateStatus === 'loading'
-                  ? 'Fetching live mainnet rate…'
-                  : 'Live rate unavailable — connect to see your exact offer.'}
-              </Text>
-            )}
-          </View>
-        ) : (
-          <View style={styles.slideChipsRow}>
-            {item.chips.map((chip, idx) => (
-              <View
-                key={idx}
-                style={[
-                  styles.slideChip,
-                  { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder },
-                ]}
-              >
-                <Text style={[styles.slideChipText, { color: colors.textSecondary }]}>{chip}</Text>
+                    <View style={styles.factHead}>
+                      <Text style={[styles.factLabel, { color: colors.textSecondary }]}>{fact.label}</Text>
+                      <View style={[styles.factLeader, { backgroundColor: colors.divider }]} />
+                      <Text style={[styles.factValue, { color: colors.text }]}>{fact.value}</Text>
+                    </View>
+                    <Text style={[styles.factDetail, { color: colors.textMuted }]}>{fact.detail}</Text>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
-        )}
+            </>
+          )}
+
+          {item.variant === 'timeline' && (
+            <>
+              <Text style={[styles.kicker, { color: colors.textMuted }]}>{item.kicker}</Text>
+              <Text style={[styles.displayTitle, { color: colors.text }]}>{item.title}</Text>
+
+              <View style={styles.timeline}>
+                {item.steps.map((step, idx) => {
+                  const isLast = idx === item.steps.length - 1;
+                  return (
+                    <View key={step.label} style={styles.stepRow}>
+                      <View style={styles.stepRail}>
+                        <View
+                          style={[
+                            styles.stepDot,
+                            { backgroundColor: isLast ? colors.danger : colors.textMuted },
+                          ]}
+                        />
+                        {!isLast && <View style={[styles.stepLine, { backgroundColor: colors.divider }]} />}
+                      </View>
+                      <View style={styles.stepBody}>
+                        <Text style={[styles.stepLabel, { color: colors.text }]}>{step.label}</Text>
+                        <Text style={[styles.stepDetail, { color: colors.textSecondary }]}>{step.detail}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.note, { color: colors.textMuted }]}>{item.note}</Text>
+            </>
+          )}
+
+          {item.variant === 'statement' && (
+            <>
+              <Text style={[styles.kicker, { color: colors.textMuted }]}>{item.kicker}</Text>
+              <Text
+                style={[styles.statement, { color: colors.text, borderLeftColor: colors.primary }]}
+              >
+                {item.statement}
+              </Text>
+              <Text style={[styles.lead, { color: colors.textSecondary }]}>{item.body}</Text>
+
+              <Text style={[styles.kicker, styles.caveatTitle, { color: colors.textMuted }]}>
+                {item.caveatTitle}
+              </Text>
+              {item.caveats.map((caveat) => (
+                <View key={caveat} style={styles.caveatRow}>
+                  <View style={[styles.caveatMark, { backgroundColor: colors.textMuted }]} />
+                  <Text style={[styles.caveat, { color: colors.textSecondary }]}>{caveat}</Text>
+                </View>
+              ))}
+            </>
+          )}
+
+          {item.variant === 'calculator' && (
+            <>
+              <Text style={[styles.kicker, { color: colors.textMuted }]}>{item.kicker}</Text>
+              <Text style={[styles.calcTitle, { color: colors.text }]}>{item.title}</Text>
+
+              <Text style={[styles.calcSectionLabel, { color: colors.textMuted }]}>BORROW AMOUNT</Text>
+              {renderAmountPicker()}
+
+              <Text style={[styles.calcSectionLabel, { color: colors.textMuted }]}>LOAN TERM</Text>
+              {renderTermPicker()}
+
+              <View style={[styles.calcDivider, { backgroundColor: colors.divider }]} />
+
+              {rateStatus === 'live' && calcInterestUsd !== null && calcRepayUsd !== null ? (
+                <>
+                  <Text style={[styles.resultLabel, { color: colors.textMuted }]}>
+                    REPAYMENT · {(liveRateBps! / 100).toFixed(2)}% APR, LIVE POOL RATE
+                  </Text>
+                  <Text style={[styles.resultValue, { color: colors.text }]}>
+                    {`$${calcRepayUsd.toFixed(2)}`}
+                  </Text>
+                  <Text style={[styles.resultCaption, { color: colors.textSecondary }]}>
+                    {`in ${calcDays} days · interest $${calcInterestUsd.toFixed(2)}`}
+                  </Text>
+                  <Text style={[styles.calcNote, { color: colors.textMuted }]}>
+                    Estimate only. Collateral price movement and the origination fee withheld at disbursement
+                    are not included.
+                  </Text>
+                </>
+              ) : (
+                <Text style={[styles.calcNote, { color: colors.textMuted }]}>
+                  {rateStatus === 'loading'
+                    ? 'Fetching the live mainnet pool rate…'
+                    : 'Live rate unavailable — connect to see your own terms.'}
+                </Text>
+              )}
+            </>
+          )}
+        </View>
       </View>
     );
   };
@@ -308,23 +439,35 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
           contentContainerStyle={styles.flatListContent}
         />
 
-        {/* Carousel Pagination Dots */}
         <View style={styles.paginationRow}>
-          {ONBOARDING_SLIDES.map((_, idx) => {
-            const isActive = activeSlide === idx;
-            return (
-              <TouchableOpacity
-                key={idx}
-                onPress={() => goToSlide(idx)}
-                style={[
-                  styles.dot,
-                  isActive
-                    ? [styles.activeDot, { backgroundColor: colors.primary }]
-                    : [styles.inactiveDot, { backgroundColor: colors.cardBorder }],
-                ]}
-              />
-            );
-          })}
+          <View style={styles.dotsRow}>
+            {ONBOARDING_SLIDES.map((_, idx) => {
+              const isActive = activeSlide === idx;
+              return (
+                <TouchableOpacity
+                  key={idx}
+                  onPress={() => goToSlide(idx)}
+                  style={[
+                    styles.dot,
+                    isActive
+                      ? [styles.activeDot, { backgroundColor: colors.primary }]
+                      : [styles.inactiveDot, { backgroundColor: colors.cardBorder }],
+                  ]}
+                />
+              );
+            })}
+          </View>
+
+          {activeSlide < ONBOARDING_SLIDES.length - 1 && (
+            <TouchableOpacity
+              style={styles.nextButton}
+              onPress={() => goToSlide(activeSlide + 1)}
+              activeOpacity={0.6}
+            >
+              <Text style={[styles.nextText, { color: colors.primary }]}>Next</Text>
+              <Ionicons name="chevron-forward" size={12} color={colors.primary} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -337,7 +480,7 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
           activeOpacity={0.88}
         >
           <LinearGradient
-            colors={['#6366F1', '#4F46E5']}
+            colors={[colors.primary, '#4F46E5']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.connectGradient}
@@ -354,9 +497,9 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
         </TouchableOpacity>
 
         <View style={styles.securityNoteRow}>
-          <Ionicons name="shield-checkmark" size={12} color="#10B981" style={{ marginRight: 6 }} />
+          <Ionicons name="shield-checkmark" size={12} color={colors.primary} style={{ marginRight: 6 }} />
           <Text style={[styles.securityNoteText, { color: colors.textMuted }]}>
-            Protected by Solana Seeker Seed Vault
+            Signed in the Seeker Seed Vault
           </Text>
         </View>
       </View>
@@ -370,7 +513,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingTop: 52,
-    paddingBottom: 36,
+    paddingBottom: 30,
   },
   topBar: {
     flexDirection: 'row',
@@ -411,91 +554,172 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginVertical: 20,
+    marginVertical: 12,
   },
   flatListContent: {
     alignItems: 'center',
   },
   slideContainer: {
-    alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
   },
-  iconWrapper: {
-    width: 76,
-    height: 76,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
+  slideColumn: {
+    width: '100%',
+    maxWidth: 340,
   },
-  slideBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 12,
-  },
-  slideBadgeText: {
+  // Type hierarchy, shared by the three editorial slides: a 10 px kicker, a
+  // 28 px display line, 14 px secondary body, 11–12 px captions. Nothing here
+  // is bigger than the slide's display line except the calculator's answer.
+  kicker: {
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  slideTitle: {
-    fontSize: 26,
-    fontWeight: '900',
-    textAlign: 'center',
-    letterSpacing: -0.5,
+    letterSpacing: 1.6,
     marginBottom: 10,
   },
-  slideDesc: {
+  displayTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.7,
+    lineHeight: 33,
+    marginBottom: 10,
+    maxWidth: 320,
+  },
+  lead: {
     fontSize: 14,
-    lineHeight: 22,
-    textAlign: 'center',
+    lineHeight: 21,
+    maxWidth: 320,
+  },
+  // Slide 1 — terms ledger. Spacing plus a hairline leader rule instead of a card.
+  factList: {
+    width: '100%',
+    marginTop: 16,
+  },
+  factRow: {
+    paddingVertical: 9,
+  },
+  factHead: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+  },
+  factLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  factLeader: {
+    flex: 1,
+    height: 1,
+    minWidth: 12,
+    alignSelf: 'center',
+  },
+  factValue: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  factDetail: {
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 3,
+  },
+  // Slide 2 — timeline.
+  timeline: {
+    width: '100%',
+    marginTop: 14,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  stepRail: {
+    width: 10,
+    alignItems: 'center',
+    paddingTop: 4,
+  },
+  stepDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  stepLine: {
+    width: 1,
+    flex: 1,
+    marginVertical: 3,
+  },
+  stepBody: {
+    flex: 1,
+    paddingBottom: 14,
     maxWidth: 300,
   },
-  slideChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 18,
+  stepLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 2,
   },
-  slideChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
-    borderWidth: 1,
+  stepDetail: {
+    fontSize: 12,
+    lineHeight: 17,
   },
-  slideChipText: {
+  note: {
     fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.1,
-  },
-  calcCard: {
-    width: '100%',
+    lineHeight: 16,
+    marginTop: 2,
     maxWidth: 320,
+  },
+  // Slide 3 — statement with a rule, then the plain-terms list.
+  statement: {
+    fontSize: 24,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    lineHeight: 30,
+    maxWidth: 300,
+    borderLeftWidth: 3,
+    paddingLeft: 12,
+    marginBottom: 12,
+  },
+  caveatTitle: {
     marginTop: 20,
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    marginBottom: 10,
+  },
+  caveatRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 9,
+    maxWidth: 330,
+  },
+  caveatMark: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    marginTop: 7,
+  },
+  caveat: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  // Slide 4 — the calculator. Its answer is the largest thing on the screen.
+  calcTitle: {
+    fontSize: 19,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    marginBottom: 14,
+    maxWidth: 300,
   },
   calcSectionLabel: {
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 1,
+    letterSpacing: 1.2,
     marginBottom: 8,
   },
   calcRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   calcChip: {
     flex: 1,
-    paddingVertical: 9,
-    borderRadius: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -506,31 +730,42 @@ const styles = StyleSheet.create({
   },
   calcDivider: {
     height: 1,
-    marginBottom: 12,
+    marginBottom: 14,
   },
-  calcEstimateLabel: {
+  resultLabel: {
     fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    fontWeight: '800',
+    letterSpacing: 1.2,
     marginBottom: 4,
   },
-  calcEstimateValue: {
-    fontSize: 22,
+  resultValue: {
+    fontSize: 34,
     fontWeight: '900',
-    letterSpacing: -0.4,
+    letterSpacing: -1,
+  },
+  resultCaption: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
   },
   calcNote: {
     fontSize: 11,
-    fontWeight: '500',
-    marginTop: 4,
     lineHeight: 16,
+    marginTop: 10,
+    maxWidth: 330,
   },
+  // Pagination — dots anchored to the same left edge as the slide copy.
   paginationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    alignSelf: 'stretch',
+    marginTop: 22,
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
-    marginTop: 28,
   },
   dot: {
     height: 6,
@@ -542,6 +777,18 @@ const styles = StyleSheet.create({
   inactiveDot: {
     width: 6,
   },
+  nextButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: 4,
+    paddingLeft: 12,
+  },
+  nextText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  // Bottom action area — unchanged behaviour.
   actionContainer: {
     paddingTop: 12,
   },

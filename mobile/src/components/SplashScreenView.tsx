@@ -6,6 +6,7 @@ import {
   Animated,
   Dimensions,
 } from 'react-native';
+import { useTheme } from '../theme/ThemeContext';
 
 const { width } = Dimensions.get('window');
 const LOGO_IMG = require('../../assets/logo.png');
@@ -15,6 +16,7 @@ interface SplashScreenViewProps {
 }
 
 export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) => {
+  const { colors } = useTheme();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.88)).current;
 
@@ -49,7 +51,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
   }, []);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Animated.View
         style={[
           styles.logoWrapper,
@@ -68,7 +70,8 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0A0D14',
+    // No backgroundColor here: it is applied from the theme at the call site so
+    // the in-app splash matches the themed background it hands over to.
     justifyContent: 'center',
     alignItems: 'center',
   },

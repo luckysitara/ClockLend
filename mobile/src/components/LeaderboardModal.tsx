@@ -76,17 +76,20 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   const getTierColor = (tier: string) => {
     switch (tier) {
       case 'Tier 2':
-        return '#38bdf8';
+        return colors.accent;
       case 'Tier 1':
-        return '#f59e0b';
+        return colors.warning;
       default:
         return colors.textMuted;
     }
   };
 
   const getRankBadge = (rank: number) => {
-    if (rank === 1) return { icon: '🥇', color: '#eab308' };
-    if (rank === 2) return { icon: '🥈', color: '#94a3b8' };
+    // The medal itself is an emoji, so its colour is chrome, not the medal
+    // scale: route it through the theme (bronze #b45309 stays, it has no token
+    // and is dark enough to read on both backgrounds).
+    if (rank === 1) return { icon: '🥇', color: colors.warning };
+    if (rank === 2) return { icon: '🥈', color: colors.textSecondary };
     if (rank === 3) return { icon: '🥉', color: '#b45309' };
     return { icon: `#${rank}`, color: colors.textSecondary };
   };
@@ -98,8 +101,8 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.cardBorder }]}>
             <View style={styles.titleRow}>
-              <View style={[styles.trophyCircle, { backgroundColor: 'rgba(234, 179, 8, 0.15)' }]}>
-                <Ionicons name="trophy" size={20} color="#eab308" />
+              <View style={[styles.trophyCircle, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
+                <Ionicons name="trophy" size={20} color={colors.warning} />
               </View>
               <View>
                 <Text style={[styles.title, { color: colors.text }]}>Seeker Hall of Fame</Text>
@@ -199,7 +202,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                       styles.entryCard,
                       { backgroundColor: colors.card, borderColor: colors.cardBorder },
                       entry.isCurrentUser && { borderColor: colors.primary, borderWidth: 1.5 },
-                      entry.rank === 1 && { borderColor: 'rgba(234, 179, 8, 0.4)' },
+                      entry.rank === 1 && { borderColor: 'rgba(245, 158, 11, 0.4)' },
                     ]}
                   >
                     <View style={styles.rankCol}>

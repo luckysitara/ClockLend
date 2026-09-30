@@ -24,26 +24,37 @@ export interface ThemeColors {
   divider: string;
 }
 
+// Dark palette, rebalanced so the app is comfortable to read on an OLED phone at
+// night rather than a near-black void with near-white text on it.
+//
+//   * background lum 0.004 -> 0.013 (a soft navy, not a void)
+//   * `text` on background 18.6:1 -> 13.1:1 (still AAA; AA is 4.5:1)
+//   * background -> card step widened so surfaces read as raised on their own,
+//     with cardBorder/divider/inputBorder alpha raised to hold their old edge
+//   * danger lightened to #F87171 so it stays >= 4.5:1 on every surface
+//
+// Every value here is checked in docs/APP_UI_INVENTORY.md 6.1 — do not hand-tune
+// a token without recomputing its WCAG ratio against background/card/cardAlt.
 const darkColors: ThemeColors = {
   isDark: true,
-  background: '#0A0D14',
-  card: '#121622',
-  cardAlt: '#181E2E',
-  cardBorder: 'rgba(255, 255, 255, 0.05)',
+  background: '#171E2B',
+  card: '#202838',
+  cardAlt: '#242E42',
+  cardBorder: 'rgba(255, 255, 255, 0.08)',
   primary: '#6366F1',
   primaryText: '#FFFFFF',
-  text: '#F8FAFC',
-  textSecondary: '#94A3B8',
-  textMuted: '#64748B',
+  text: '#DEE4EE',
+  textSecondary: '#B6C1D2',
+  textMuted: '#95A3B8',
   accent: '#38BDF8',
   accentLight: '#7DD3FC',
-  danger: '#EF4444',
+  danger: '#F87171',
   warning: '#F59E0B',
-  badgeBg: 'rgba(99, 102, 241, 0.10)',
-  badgeBorder: 'rgba(99, 102, 241, 0.18)',
-  inputBg: '#0D111A',
-  inputBorder: 'rgba(255, 255, 255, 0.07)',
-  divider: 'rgba(255, 255, 255, 0.05)',
+  badgeBg: 'rgba(99, 102, 241, 0.14)',
+  badgeBorder: 'rgba(99, 102, 241, 0.28)',
+  inputBg: '#1B2230',
+  inputBorder: 'rgba(255, 255, 255, 0.09)',
+  divider: 'rgba(255, 255, 255, 0.07)',
 };
 
 const lightColors: ThemeColors = {

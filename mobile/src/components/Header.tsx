@@ -71,14 +71,19 @@ export const Header: React.FC<HeaderProps> = ({
 
         {onOpenLeaderboard && (
           <TouchableOpacity
-            style={[styles.themeChip, { backgroundColor: 'rgba(234, 179, 8, 0.12)', borderColor: 'rgba(234, 179, 8, 0.3)' }]}
+            style={[
+              styles.themeChip,
+              // Leaderboard gold -> the nearest theme token (`warning`), so the
+              // trophy stays visible on the light theme too.
+              { backgroundColor: 'rgba(245, 158, 11, 0.12)', borderColor: 'rgba(245, 158, 11, 0.3)' },
+            ]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               onOpenLeaderboard();
             }}
             activeOpacity={0.7}
           >
-            <Ionicons name="trophy-outline" size={17} color="#eab308" />
+            <Ionicons name="trophy-outline" size={17} color={colors.warning} />
           </TouchableOpacity>
         )}
 

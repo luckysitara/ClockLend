@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../theme/ThemeContext';
 import { terminateApplication, DeviceIntegrityResult } from '../services/securityService';
 
 interface SecurityLockdownViewProps {
@@ -8,105 +9,127 @@ interface SecurityLockdownViewProps {
 }
 
 export const SecurityLockdownView: React.FC<SecurityLockdownViewProps> = ({ integrity }) => {
+  const { colors, mode } = useTheme();
+
+  // The theme has `danger` but no success/green token, so the PASS pill is the
+  // one colour on this screen that cannot come from the theme. These two values
+  // are the green-400/green-700 pair: >= 7:1 on the dark card and >= 5:1 on the
+  // light one, so neither theme gets a green that disappears into the surface.
+  const passColor = colors.isDark ? '#4ADE80' : '#15803D';
+  // Translucent danger wash behind the shield, tinted from `colors.danger`.
+  const dangerTint = colors.isDark ? 'rgba(248, 113, 113, 0.16)' : 'rgba(220, 38, 38, 0.10)';
+  // Solid fills carry `primaryText`, which must stay readable on the fill, so
+  // the destructive CTA uses red-600 (white on it is 4.83:1) rather than
+  // `colors.danger`, which is tuned for danger *text* on each theme's surfaces.
+  const dangerFill = '#DC2626';
+
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#08090C" />
-      
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar
+        barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.background}
+      />
+
       <View style={styles.content}>
         {/* Glowing Shield Alert Icon */}
         <View style={styles.iconContainer}>
-          <View style={styles.iconGlow} />
-          <View style={styles.iconCircle}>
-            <Ionicons name="shield-half" size={54} color="#FF3B30" />
+          <View style={[styles.iconGlow, { backgroundColor: dangerTint }]} />
+          <View style={[styles.iconCircle, { backgroundColor: dangerTint, borderColor: colors.danger }]}>
+            <Ionicons name="shield-half" size={54} color={colors.danger} />
           </View>
         </View>
 
-        <Text style={styles.title}>SECURITY VIOLATION</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.title, { color: colors.danger }]}>SECURITY VIOLATION</Text>
+        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
           {integrity.violationReason || 'Virtualized or Compromised Runtime'}
         </Text>
 
         {/* Security Diagnostics Card */}
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           <View style={styles.diagRow}>
             <View style={styles.diagLeft}>
               <Ionicons
                 name={integrity.isEmulator ? 'close-circle' : 'checkmark-circle'}
                 size={18}
-                color={integrity.isEmulator ? '#FF453A' : '#30D158'}
+                color={integrity.isEmulator ? colors.danger : passColor}
               />
-              <Text style={styles.diagLabel}>Physical Device Hardware</Text>
+              <Text style={[styles.diagLabel, { color: colors.text }]}>Physical Device Hardware</Text>
             </View>
-            <Text style={[styles.diagStatus, integrity.isEmulator && styles.diagStatusFail]}>
+            <Text style={[styles.diagStatus, { color: integrity.isEmulator ? colors.danger : passColor }]}>
               {integrity.isEmulator ? 'FAIL (Emulator)' : 'PASS'}
             </Text>
           </View>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.divider }]} />
 
           <View style={styles.diagRow}>
             <View style={styles.diagLeft}>
               <Ionicons
                 name={integrity.isRooted ? 'close-circle' : 'checkmark-circle'}
                 size={18}
-                color={integrity.isRooted ? '#FF453A' : '#30D158'}
+                color={integrity.isRooted ? colors.danger : passColor}
               />
-              <Text style={styles.diagLabel}>OS Integrity (Anti-Root)</Text>
+              <Text style={[styles.diagLabel, { color: colors.text }]}>OS Integrity (Anti-Root)</Text>
             </View>
-            <Text style={[styles.diagStatus, integrity.isRooted && styles.diagStatusFail]}>
+            <Text style={[styles.diagStatus, { color: integrity.isRooted ? colors.danger : passColor }]}>
               {integrity.isRooted ? 'FAIL (Rooted)' : 'PASS'}
             </Text>
           </View>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.divider }]} />
 
           <View style={styles.diagRow}>
             <View style={styles.diagLeft}>
               <Ionicons
                 name={integrity.isHooking ? 'close-circle' : 'checkmark-circle'}
                 size={18}
-                color={integrity.isHooking ? '#FF453A' : '#30D158'}
+                color={integrity.isHooking ? colors.danger : passColor}
               />
-              <Text style={styles.diagLabel}>Runtime Hooking (Anti-Frida)</Text>
+              <Text style={[styles.diagLabel, { color: colors.text }]}>Runtime Hooking (Anti-Frida)</Text>
             </View>
-            <Text style={[styles.diagStatus, integrity.isHooking && styles.diagStatusFail]}>
+            <Text style={[styles.diagStatus, { color: integrity.isHooking ? colors.danger : passColor }]}>
               {integrity.isHooking ? 'FAIL (Injected)' : 'PASS'}
             </Text>
           </View>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.divider }]} />
 
           <View style={styles.diagRow}>
             <View style={styles.diagLeft}>
               <Ionicons
                 name={integrity.isDebugger ? 'close-circle' : 'checkmark-circle'}
                 size={18}
-                color={integrity.isDebugger ? '#FF453A' : '#30D158'}
+                color={integrity.isDebugger ? colors.danger : passColor}
               />
-              <Text style={styles.diagLabel}>Process Debugger</Text>
+              <Text style={[styles.diagLabel, { color: colors.text }]}>Process Debugger</Text>
             </View>
-            <Text style={[styles.diagStatus, integrity.isDebugger && styles.diagStatusFail]}>
+            <Text style={[styles.diagStatus, { color: integrity.isDebugger ? colors.danger : passColor }]}>
               {integrity.isDebugger ? 'FAIL (Attached)' : 'PASS'}
             </Text>
           </View>
         </View>
 
         {/* Security Policy Advisory */}
-        <View style={styles.advisoryBox}>
-          <Ionicons name="information-circle-outline" size={18} color="#8E8E93" style={styles.advisoryIcon} />
-          <Text style={styles.advisoryText}>
+        <View style={[styles.advisoryBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+          <Ionicons
+            name="information-circle-outline"
+            size={18}
+            color={colors.textSecondary}
+            style={styles.advisoryIcon}
+          />
+          <Text style={[styles.advisoryText, { color: colors.textSecondary }]}>
             ClockLend is cryptographically locked to physical hardware (Solana Seeker). To protect escrow contracts, borrower collateral, and private key safety, execution is barred on virtualized simulators and tampered operating systems.
           </Text>
         </View>
 
         {/* Exit Button */}
         <TouchableOpacity
-          style={styles.exitButton}
+          style={[styles.exitButton, { backgroundColor: dangerFill }]}
           activeOpacity={0.8}
           onPress={() => terminateApplication()}
         >
-          <Ionicons name="power-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-          <Text style={styles.exitButtonText}>Terminate Application</Text>
+          <Ionicons name="power-outline" size={20} color={colors.primaryText} style={{ marginRight: 8 }} />
+          <Text style={[styles.exitButtonText, { color: colors.primaryText }]}>Terminate Application</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -114,9 +137,10 @@ export const SecurityLockdownView: React.FC<SecurityLockdownViewProps> = ({ inte
 };
 
 const styles = StyleSheet.create({
+  // Colours in this sheet are applied from the theme at the call site so the
+  // lockdown screen follows the light/dark toggle like the rest of the app.
   container: {
     flex: 1,
-    backgroundColor: '#08090C',
   },
   content: {
     flex: 1,
@@ -135,39 +159,32 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: 'rgba(255, 59, 48, 0.25)',
   },
   iconCircle: {
     width: 86,
     height: 86,
     borderRadius: 43,
-    backgroundColor: '#1C1517',
     borderWidth: 1.5,
-    borderColor: '#FF3B30',
     alignItems: 'center',
     justifyContent: 'center',
   },
   title: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#FF453A',
     letterSpacing: 1.2,
     textAlign: 'center',
     marginBottom: 6,
   },
   subtitle: {
     fontSize: 14,
-    color: '#8E8E93',
     textAlign: 'center',
     marginBottom: 28,
   },
   card: {
     width: '100%',
-    backgroundColor: '#12151C',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#262934',
     marginBottom: 20,
   },
   diagRow: {
@@ -182,29 +199,21 @@ const styles = StyleSheet.create({
   },
   diagLabel: {
     fontSize: 14,
-    color: '#FFFFFF',
     fontWeight: '500',
     marginLeft: 10,
   },
   diagStatus: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#30D158',
-  },
-  diagStatusFail: {
-    color: '#FF453A',
   },
   divider: {
     height: 1,
-    backgroundColor: '#1E2330',
   },
   advisoryBox: {
     flexDirection: 'row',
-    backgroundColor: '#161922',
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#242838',
     marginBottom: 28,
   },
   advisoryIcon: {
@@ -214,14 +223,12 @@ const styles = StyleSheet.create({
   advisoryText: {
     flex: 1,
     fontSize: 12,
-    color: '#8E8E93',
     lineHeight: 18,
   },
   exitButton: {
     width: '100%',
     height: 52,
     borderRadius: 14,
-    backgroundColor: '#FF3B30',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -229,6 +236,5 @@ const styles = StyleSheet.create({
   exitButtonText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#FFFFFF',
   },
 });

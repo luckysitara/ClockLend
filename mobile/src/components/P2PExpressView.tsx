@@ -199,6 +199,21 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
     }
   };
 
+  // ONE source of truth for both "is it disabled" and "does it look disabled".
+  // These were previously written independently: `disabled` had six conditions
+  // but the dimming had three, so isSubmitting, numAmount <= 0 and
+  // !priceAvailable disabled the button while it still looked fully enabled and
+  // tappable. !priceAvailable is the one a user actually meets — when the oracle
+  // feeds lapse, every price is untrusted and the CTA reads as live but does
+  // nothing at all. Deriving both from one expression means they cannot diverge.
+  const isDisabled =
+    isSubmitting ||
+    numAmount <= 0 ||
+    isInsufficientCollateral ||
+    hasNoLiquidity ||
+    exceedsLiquidity ||
+    !priceAvailable;
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
@@ -514,17 +529,10 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
         style={[
           styles.borrowButton,
           { backgroundColor: colors.primary },
-          (isInsufficientCollateral || hasNoLiquidity || exceedsLiquidity) && { opacity: 0.6 },
+          isDisabled && { opacity: 0.6 },
         ]}
         onPress={handleBorrow}
-        disabled={
-          isSubmitting ||
-          numAmount <= 0 ||
-          isInsufficientCollateral ||
-          hasNoLiquidity ||
-          exceedsLiquidity ||
-          !priceAvailable
-        }
+        disabled={isDisabled}
         activeOpacity={0.85}
       >
         {isSubmitting ? (
