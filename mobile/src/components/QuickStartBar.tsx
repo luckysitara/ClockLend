@@ -7,8 +7,6 @@ import { useTheme } from '../theme/ThemeContext';
 interface QuickStartBarProps {
   /** Preset borrow amount in USDC — prefills the borrow flow and opens the BORROW tab. */
   onPresetAmount: (amountUsd: string) => void;
-  onNavigateBorrow: () => void;
-  onNavigateMarket: () => void;
   onDismiss: () => void;
 }
 
@@ -21,8 +19,6 @@ const PRESET_AMOUNTS = ['10', '25', '50'];
  */
 export const QuickStartBar: React.FC<QuickStartBarProps> = ({
   onPresetAmount,
-  onNavigateBorrow,
-  onNavigateMarket,
   onDismiss,
 }) => {
   const { colors } = useTheme();
@@ -39,8 +35,8 @@ export const QuickStartBar: React.FC<QuickStartBarProps> = ({
       {/* Grace shield + dismiss */}
       <View style={styles.shieldRow}>
         <View style={styles.shieldBadge}>
-          <Ionicons name="shield-checkmark" size={13} color="#10B981" />
-          <Text style={[styles.shieldText, { color: '#10B981' }]}>
+          <Ionicons name="shield-checkmark" size={13} color={colors.success} />
+          <Text style={[styles.shieldText, { color: colors.success }]}>
             24H GRACE SHIELD · NO INSTANT LIQUIDATION
           </Text>
         </View>
@@ -64,30 +60,6 @@ export const QuickStartBar: React.FC<QuickStartBarProps> = ({
         ))}
       </View>
 
-      {/* Feature discovery pills */}
-      <View style={styles.pillsRow}>
-        <TouchableOpacity
-          style={[styles.pill, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
-          onPress={tap(onNavigateBorrow)}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.pillText, { color: colors.textSecondary }]}>⚡ Express Borrow</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.pill, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
-          onPress={tap(onNavigateMarket)}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.pillText, { color: colors.textSecondary }]}>🤝 Community Desks</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.pill, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
-          onPress={tap(onNavigateMarket)}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.pillText, { color: colors.textSecondary }]}>🎴 Pawn Cards</Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
 };
@@ -138,20 +110,5 @@ const styles = StyleSheet.create({
   presetChipText: {
     fontSize: 13,
     fontWeight: '800',
-  },
-  pillsRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  pill: {
-    flex: 1,
-    paddingVertical: 7,
-    borderRadius: 10,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  pillText: {
-    fontSize: 10,
-    fontWeight: '700',
   },
 });

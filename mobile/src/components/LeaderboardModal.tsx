@@ -34,6 +34,10 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  // A failed read used to be console.warn only, so it rendered as the empty
+  // state — "No On-Chain Profiles Found" for a query that never answered.
+  // Cleared only by a read that actually succeeds.
+  const [loadFailed, setLoadFailed] = useState<boolean>(false);
   // C-2: filters mirror the program's bond tiers (the only tiers it grants).
   const [tierFilter, setTierFilter] = useState<'ALL' | CreditTier>('ALL');
 
@@ -48,8 +52,10 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     try {
       const data = await fetchLiveLeaderboard(network, currentUserPubkey);
       setEntries(data);
+      setLoadFailed(false);
     } catch (e) {
       console.warn('Error loading leaderboard:', e);
+      setLoadFailed(true);
     } finally {
       setIsLoading(false);
     }
@@ -61,8 +67,10 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       const data = await fetchLiveLeaderboard(network, currentUserPubkey);
       setEntries(data);
+      setLoadFailed(false);
     } catch (e) {
       console.warn('Refresh error:', e);
+      setLoadFailed(true);
     } finally {
       setIsRefreshing(false);
     }
@@ -165,13 +173,50 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
             ))}
           </View>
 
-          {/* Leaderboard List */}
-          {isLoading ? (
+          {/* Leaderboard List — the states are mutually exclusive by
+              construction. 'error' is unreachable while entries are on screen
+              (they render with a banner above them instead), and it takes over
+              whenever the failed read would otherwise leave nothing to show —
+              so the empty state below is never reachable while loadFailed is
+              set, for any tier filter. */}
+          {isLoading && entries.length === 0 && !loadFailed ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={colors.primary} />
               <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
                 Scanning Solana Mainnet User Profiles...
               </Text>
+            </View>
+          ) : loadFailed && filteredEntries.length === 0 ? (
+            <View style={styles.errorWrap}>
+              <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.danger }]}>
+                <Text style={styles.emptyIcon}>⚠️</Text>
+                <Text style={[styles.stateLabel, { color: colors.danger }]}>RANKINGS NOT READ</Text>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                  Could Not Load the Leaderboard
+                </Text>
+                <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+                  Reading UserProfile PDAs from Solana Mainnet failed, so the rankings are unknown —
+                  this is not an empty result.
+                </Text>
+                <TouchableOpacity
+                  style={[
+                    styles.retryBtn,
+                    { backgroundColor: colors.primary },
+                    isLoading && styles.stateDisabled,
+                  ]}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    loadData();
+                  }}
+                  disabled={isLoading}
+                  activeOpacity={0.85}
+                >
+                  {isLoading && <ActivityIndicator size="small" color={colors.primaryText} />}
+                  <Text style={[styles.retryBtnText, { color: colors.primaryText }]}>
+                    {isLoading ? 'Retrying...' : 'Retry'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ) : (
             <ScrollView
@@ -182,6 +227,18 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                 <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
               }
             >
+              {loadFailed && (
+                <View
+                  style={[styles.refreshFailedCard, { backgroundColor: colors.cardAlt, borderColor: colors.danger }]}
+                >
+                  <Text style={[styles.stateLabel, { color: colors.danger }]}>REFRESH FAILED</Text>
+                  <Text style={[styles.refreshFailedText, { color: colors.textSecondary }]}>
+                    Could not refresh from Solana just now — these rankings are the last result we
+                    read, not a fresh confirmation.
+                  </Text>
+                </View>
+              )}
+
               {filteredEntries.length === 0 ? (
                 <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
                   <Text style={styles.emptyIcon}>🏆</Text>
@@ -363,6 +420,45 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  errorWrap: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
+  stateLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  // Same dimming discipline as the rest of the app: a disabled control must
+  // look disabled.
+  stateDisabled: {
+    opacity: 0.6,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginTop: 16,
+  },
+  retryBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  refreshFailedCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+  },
+  refreshFailedText: {
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 15,
   },
   entryCard: {
     flexDirection: 'row',

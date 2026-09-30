@@ -7,6 +7,7 @@ import {
   ScrollView,
   Modal,
   TextInput,
+  ActivityIndicator,
   Alert,
   Linking,
 } from 'react-native';
@@ -33,7 +34,23 @@ interface MerchantDesksViewProps {
     initialLiquidity: number
   ) => void;
   onDepositLiquidity?: (pool: LendingPool, amount: number) => void;
+  /** A protocol read is in flight right now. */
+  isLoading?: boolean;
+  /** Aggregate: at least one of the two reads this screen renders failed. Used
+   *  as the fallback when the caller cannot tell the slices apart. */
+  loadFailed?: boolean;
+  /** Per-slice refinement. Without these, one failed read would be reported
+   *  against the other sub-tab's list, and a genuine empty result on one tab
+   *  would be reported as a failure on the other. */
+  poolsLoadFailed?: boolean;
+  offersLoadFailed?: boolean;
+  /** Re-runs the protocol read. Without it the error states are still shown,
+   *  just without a retry control. */
+  onRetry?: () => void;
 }
+
+/** The four mutually exclusive things a list on this screen can be showing. */
+type DesksListState = 'list' | 'loading' | 'error' | 'empty';
 
 export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
   pools,
@@ -46,6 +63,11 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
   onCancelPawnOffer,
   onCreatePool,
   onDepositLiquidity,
+  isLoading = false,
+  loadFailed = false,
+  poolsLoadFailed,
+  offersLoadFailed,
+  onRetry,
 }) => {
   const { colors } = useTheme();
   const [subTab, setSubTab] = useState<'POOLS' | 'PAWNS'>('POOLS');
@@ -137,6 +159,30 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
     onCreatePawnOffer(assetName, amt, prof, d);
   };
 
+  // Each sub-tab gets exactly one of the four states, derived from its OWN
+  // slice, so a failed read can never fall through to an empty-state claim:
+  //   'list'    rows are on screen (a failed refresh is reported as a banner
+  //             above them, never instead of them)
+  //   'error'   the last read of that slice failed AND nothing is on screen.
+  //             Never 'empty'.
+  //   'loading' a read is in flight and that slice has never been populated.
+  //             Only shown when there is nothing to show yet.
+  //   'empty'   the last read SUCCEEDED and there is genuinely nothing there.
+  const poolsFailed = poolsLoadFailed ?? loadFailed;
+  const offersFailed = offersLoadFailed ?? loadFailed;
+
+  const poolsState: DesksListState =
+    pools.length > 0 ? 'list' : poolsFailed ? 'error' : isLoading ? 'loading' : 'empty';
+
+  const offersState: DesksListState =
+    filteredOffers.length > 0
+      ? 'list'
+      : offersFailed
+      ? 'error'
+      : isLoading && offers.length === 0
+      ? 'loading'
+      : 'empty';
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Top Controls: Segmented Switcher & Action */}
@@ -208,7 +254,82 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
         {/* SUBTAB 1: LENDING DESKS */}
         {subTab === 'POOLS' && (
           <View>
-            {pools.length === 0 ? (
+            {/* Loading — only when there is nothing to show yet. */}
+            {poolsState === 'loading' && (
+              <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[styles.stateLabel, { color: colors.textMuted }]}>READING ON-CHAIN DESKS</Text>
+                <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+                  Querying lending desks on Solana Mainnet. No desks are shown until the read
+                  answers.
+                </Text>
+              </View>
+            )}
+
+            {/* Error — the desk read genuinely failed. This is NOT the empty
+                state: an unread list is not an empty list. */}
+            {poolsState === 'error' && (
+              <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.danger }]}>
+                <Text style={styles.emptyIcon}>⚠️</Text>
+                <Text style={[styles.stateLabel, { color: colors.danger }]}>DESKS NOT READ</Text>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>Could Not Load Lending Desks</Text>
+                <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+                  Reading lending desks from Solana Mainnet failed, so the desk list is unknown —
+                  this is not an empty result.
+                </Text>
+                {onRetry && (
+                  <TouchableOpacity
+                    style={[
+                      styles.retryBtn,
+                      { backgroundColor: colors.primary },
+                      isLoading && styles.stateDisabled,
+                    ]}
+                    onPress={onRetry}
+                    disabled={isLoading}
+                    activeOpacity={0.85}
+                  >
+                    {isLoading && <ActivityIndicator size="small" color={colors.primaryText} />}
+                    <Text style={[styles.retryBtnText, { color: colors.primaryText }]}>
+                      {isLoading ? 'Retrying...' : 'Retry'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* A failed refresh with desks already on screen: banner, not a
+                replacement. */}
+            {poolsState === 'list' && poolsFailed && (
+              <View
+                style={[styles.refreshFailedCard, { backgroundColor: colors.cardAlt, borderColor: colors.danger }]}
+              >
+                <Text style={[styles.stateLabel, { color: colors.danger }]}>REFRESH FAILED</Text>
+                <Text style={[styles.refreshFailedText, { color: colors.textSecondary }]}>
+                  Could not refresh from Solana just now — these desks are the last state we read,
+                  not a fresh confirmation.
+                </Text>
+                {onRetry && (
+                  <TouchableOpacity
+                    style={[
+                      styles.refreshRetryChip,
+                      { backgroundColor: colors.primary },
+                      isLoading && styles.stateDisabled,
+                    ]}
+                    onPress={onRetry}
+                    disabled={isLoading}
+                    activeOpacity={0.85}
+                  >
+                    {isLoading && <ActivityIndicator size="small" color={colors.primaryText} />}
+                    <Text style={[styles.refreshRetryChipText, { color: colors.primaryText }]}>
+                      {isLoading ? 'Retrying...' : 'Retry'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* Empty — only when the desk read succeeded. */}
+            {pools.length === 0 && poolsState === 'empty' ? (
               <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
                 <Text style={styles.emptyIcon}>🏦</Text>
                 <Text style={[styles.emptyTitle, { color: colors.text }]}>No Lending Desks Found</Text>
@@ -394,7 +515,83 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
               ))}
             </ScrollView>
 
-            {filteredOffers.length === 0 ? (
+            {/* Loading — only when there is nothing to show yet. */}
+            {offersState === 'loading' && (
+              <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={[styles.stateLabel, { color: colors.textMuted }]}>READING ON-CHAIN PAWNS</Text>
+                <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+                  Querying P2P pawn listings on Solana Mainnet. No pawns are shown until the read
+                  answers.
+                </Text>
+              </View>
+            )}
+
+            {/* Error — the pawn read genuinely failed. This is NOT the empty
+                state, for any filter: an unread list is not an empty list. */}
+            {offersState === 'error' && (
+              <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.danger }]}>
+                <Text style={styles.emptyIcon}>⚠️</Text>
+                <Text style={[styles.stateLabel, { color: colors.danger }]}>PAWNS NOT READ</Text>
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>Could Not Load P2P Pawns</Text>
+                <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+                  Reading P2P pawn listings from Solana Mainnet failed, so this list is unknown —
+                  this is not an empty result.
+                </Text>
+                {onRetry && (
+                  <TouchableOpacity
+                    style={[
+                      styles.retryBtn,
+                      { backgroundColor: colors.primary },
+                      isLoading && styles.stateDisabled,
+                    ]}
+                    onPress={onRetry}
+                    disabled={isLoading}
+                    activeOpacity={0.85}
+                  >
+                    {isLoading && <ActivityIndicator size="small" color={colors.primaryText} />}
+                    <Text style={[styles.retryBtnText, { color: colors.primaryText }]}>
+                      {isLoading ? 'Retrying...' : 'Retry'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* A failed refresh with pawns already on screen: banner, not a
+                replacement. */}
+            {offersState === 'list' && offersFailed && (
+              <View
+                style={[styles.refreshFailedCard, { backgroundColor: colors.cardAlt, borderColor: colors.danger }]}
+              >
+                <Text style={[styles.stateLabel, { color: colors.danger }]}>REFRESH FAILED</Text>
+                <Text style={[styles.refreshFailedText, { color: colors.textSecondary }]}>
+                  Could not refresh from Solana just now — these pawns are the last state we read,
+                  not a fresh confirmation.
+                </Text>
+                {onRetry && (
+                  <TouchableOpacity
+                    style={[
+                      styles.refreshRetryChip,
+                      { backgroundColor: colors.primary },
+                      isLoading && styles.stateDisabled,
+                    ]}
+                    onPress={onRetry}
+                    disabled={isLoading}
+                    activeOpacity={0.85}
+                  >
+                    {isLoading && <ActivityIndicator size="small" color={colors.primaryText} />}
+                    <Text style={[styles.refreshRetryChipText, { color: colors.primaryText }]}>
+                      {isLoading ? 'Retrying...' : 'Retry'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {/* Empty — only when the pawn read succeeded and the active filter
+                genuinely matches nothing. */}
+            {filteredOffers.length === 0 && offersState === 'empty' ? (
               <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
                 <Text style={styles.emptyIcon}>🃏</Text>
                 <Text style={[styles.emptyTitle, { color: colors.text }]}>
@@ -1071,6 +1268,56 @@ const styles = StyleSheet.create({
   newPawnActionText: {
     fontSize: 14,
     fontWeight: '700',
+  },
+  // Loading / error / refresh-failed surfaces. They reuse the empty card's
+  // metrics so the four states occupy the same place on screen.
+  stateLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  // Same dimming discipline as the rest of the app: a disabled control must
+  // look disabled.
+  stateDisabled: {
+    opacity: 0.6,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  retryBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  refreshFailedCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 14,
+  },
+  refreshFailedText: {
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 15,
+  },
+  refreshRetryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 10,
+    marginTop: 8,
+  },
+  refreshRetryChipText: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   deskCard: {
     borderRadius: 20,

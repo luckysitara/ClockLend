@@ -1,5 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Linking } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+  Linking,
+} from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { LoanOrder } from '../types';
@@ -18,7 +27,18 @@ interface ActiveOrdersViewProps {
   onRepay: (order: LoanOrder) => void;
   onTriggerGrace: (orderId: number) => void;
   onNavigateBorrow: () => void;
+  /** A protocol read is in flight right now (all three optional so the view
+   *  stays usable from a caller that tracks none of this). */
+  isLoading?: boolean;
+  /** The last completed read of the loan accounts failed. */
+  loadFailed?: boolean;
+  /** Re-runs the protocol read. Without it the error state is still shown, just
+   *  without a retry control. */
+  onRetry?: () => void;
 }
+
+/** The four mutually exclusive things this screen can be showing. */
+type OrdersListState = 'list' | 'loading' | 'error' | 'empty';
 
 /** due_time -> urgency for every tracked loan; 'unknown' when the account
  *  carries no due_time yet (rendered as the due-date-unknown card). */
@@ -39,6 +59,9 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
   onRepay,
   onTriggerGrace,
   onNavigateBorrow,
+  isLoading = false,
+  loadFailed = false,
+  onRetry,
 }) => {
   const { colors } = useTheme();
 
@@ -95,13 +118,113 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackedKey]);
 
+  // Exactly one of these four renders, so a failed read can never fall through
+  // to the empty copy — "we could not read your loans" and "you have no loans"
+  // are different facts and are never interchanged:
+  //   'list'    rows are on screen. A failed refresh is reported as a banner
+  //             above them; the rows themselves are never hidden behind a
+  //             spinner or replaced by an error card.
+  //   'error'   the last read failed AND nothing is on screen. Never 'empty'.
+  //   'loading' a read is in flight and the slice has never been populated.
+  //             Only shown when there is nothing to show yet — never over
+  //             cached/stale rows, which stay visible with their own warning.
+  //   'empty'   the last read SUCCEEDED and this wallet genuinely has no active
+  //             loan orders.
+  const hasRows = activeOrders.length > 0;
+  const listState: OrdersListState = hasRows
+    ? 'list'
+    : loadFailed
+    ? 'error'
+    : isLoading && orders.length === 0
+    ? 'loading'
+    : 'empty';
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {activeOrders.length === 0 ? (
+      {/* Loading — only when there is nothing to show yet. Cached rows (marked
+          "not confirmed on-chain") are deliberately left visible underneath
+          rather than covered by a spinner. */}
+      {listState === 'loading' && (
+        <View style={[styles.stateBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.stateLabel, { color: colors.textMuted }]}>READING ON-CHAIN LOANS</Text>
+          <Text style={[styles.stateBody, { color: colors.textSecondary }]}>
+            Querying your loan accounts on Solana Mainnet. No rows are shown until the read answers.
+          </Text>
+        </View>
+      )}
+
+      {/* Error — the last read genuinely failed and nothing is on screen. This
+          is NOT the empty state: an unread wallet is not an empty wallet. */}
+      {listState === 'error' && (
+        <View style={[styles.stateBox, { backgroundColor: colors.card, borderColor: colors.danger }]}>
+          <Text style={styles.emptyIcon}>⚠️</Text>
+          <Text style={[styles.stateLabel, { color: colors.danger }]}>LOANS NOT READ</Text>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>Could Not Load Your Loans</Text>
+          <Text style={[styles.stateBody, { color: colors.textSecondary }]}>
+            Reading your loan accounts from Solana Mainnet failed, so your current loan state is
+            unknown — this is not an empty result.
+          </Text>
+          {onRetry && (
+            <TouchableOpacity
+              style={[
+                styles.retryBtn,
+                { backgroundColor: colors.primary },
+                isLoading && styles.stateDisabled,
+              ]}
+              onPress={onRetry}
+              disabled={isLoading}
+              activeOpacity={0.85}
+            >
+              {isLoading && <ActivityIndicator size="small" color={colors.primaryText} />}
+              <Text style={[styles.retryBtnText, { color: colors.primaryText }]}>
+                {isLoading ? 'Retrying...' : 'Retry'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* A failed refresh while rows are on screen: report it above the rows
+          instead of replacing confirmed data with an error state. */}
+      {listState === 'list' && loadFailed && (
+        <View
+          style={[styles.refreshFailedCard, { backgroundColor: colors.cardAlt, borderColor: colors.danger }]}
+        >
+          <Text style={[styles.stateLabel, { color: colors.danger }]}>REFRESH FAILED</Text>
+          <Text style={[styles.warningCardText, { color: colors.textSecondary }]}>
+            Could not refresh from Solana just now — these rows are the last state we read, not a
+            fresh confirmation.
+          </Text>
+          {onRetry && (
+            <TouchableOpacity
+              style={[
+                styles.refreshRetryChip,
+                { backgroundColor: colors.primary },
+                isLoading && styles.stateDisabled,
+              ]}
+              onPress={onRetry}
+              disabled={isLoading}
+              activeOpacity={0.85}
+            >
+              {isLoading && <ActivityIndicator size="small" color={colors.primaryText} />}
+              <Text style={[styles.refreshRetryChipText, { color: colors.primaryText }]}>
+                {isLoading ? 'Retrying...' : 'Retry'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* Empty — only when the read succeeded ('empty' is unreachable while
+          loadFailed is set) and the wallet genuinely has no active loans. The
+          map below is empty in the loading/error states, so nothing renders
+          there. */}
+      {activeOrders.length === 0 && listState === 'empty' ? (
         <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           <Text style={styles.emptyIcon}>⏳</Text>
           <Text style={[styles.emptyTitle, { color: colors.text }]}>No Active On-Chain Loans</Text>
@@ -407,6 +530,65 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     marginTop: 30,
+  },
+  // Loading / error cards share the empty box's metrics so the three states
+  // occupy the same place on screen.
+  stateBox: {
+    paddingHorizontal: 28,
+    paddingVertical: 32,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    marginTop: 30,
+    gap: 10,
+  },
+  stateLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  stateBody: {
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 17,
+  },
+  // Same dimming discipline as the rest of the app: a disabled control must
+  // look disabled.
+  stateDisabled: {
+    opacity: 0.6,
+  },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginTop: 4,
+  },
+  retryBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  refreshFailedCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 14,
+  },
+  refreshRetryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 10,
+    marginTop: 8,
+  },
+  refreshRetryChipText: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   emptyIcon: {
     fontSize: 44,

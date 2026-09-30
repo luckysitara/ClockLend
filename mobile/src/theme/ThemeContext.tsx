@@ -17,6 +17,9 @@ export interface ThemeColors {
   accentLight: string;
   danger: string;
   warning: string;
+  /** Success/positive state. Added because success greens were hard-coded
+   *  per-component, and several were unreadable on the light theme. */
+  success: string;
   badgeBg: string;
   badgeBorder: string;
   inputBg: string;
@@ -50,6 +53,7 @@ const darkColors: ThemeColors = {
   accentLight: '#7DD3FC',
   danger: '#F87171',
   warning: '#F59E0B',
+  success: '#4ADE80',
   badgeBg: 'rgba(99, 102, 241, 0.14)',
   badgeBorder: 'rgba(99, 102, 241, 0.28)',
   inputBg: '#1B2230',
@@ -72,6 +76,7 @@ const lightColors: ThemeColors = {
   accentLight: '#38BDF8',
   danger: '#DC2626',
   warning: '#D97706',
+  success: '#15803D',
   badgeBg: 'rgba(87, 45, 253, 0.08)',
   badgeBorder: 'rgba(87, 45, 253, 0.20)',
   inputBg: '#FFFFFF',

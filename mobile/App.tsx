@@ -78,6 +78,15 @@ import { LendingPool, LoanOrder, P2POffer, OfferStatus, UserProfile, WalletAsset
 
 type Tab = 'BORROW' | 'MARKET' | 'LOANS' | 'PROFILE';
 
+/**
+ * Outcome of the last COMPLETED read for one protocol slice. `loadProtocolData`
+ * uses Promise.allSettled, so a rejected fetch leaves that slice's previous
+ * value in place and reports nothing — the status is the only place a failure
+ * is visible. 'loading' means no completed result exists for the current
+ * session/network yet; it is never used to represent progress.
+ */
+type SliceStatus = 'loading' | 'ok' | 'error';
+
 const INITIAL_COMMUNITY_OFFERS: P2POffer[] = [];
 
 function MainApp() {
@@ -250,6 +259,12 @@ function MainApp() {
   });
   const [solBalance, setSolBalance] = useState<number>(0);
   const [isLoadingPools, setIsLoadingPools] = useState<boolean>(false);
+  // Per-slice outcome, tracked separately from `isLoadingPools` ("a load is in
+  // flight right now"). A retry deliberately leaves the previous 'error' in
+  // place so the screen keeps saying what failed while it retries.
+  const [ordersStatus, setOrdersStatus] = useState<SliceStatus>('loading');
+  const [poolsStatus, setPoolsStatus] = useState<SliceStatus>('loading');
+  const [offersStatus, setOffersStatus] = useState<SliceStatus>('loading');
   const [showAssetsModal, setShowAssetsModal] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimeoutRef = useRef<any>(null);
@@ -288,6 +303,14 @@ function MainApp() {
         fetchUserYieldPosition(net, userPubkey, USDC_MAINNET_MINT),
       ]);
 
+      // Derive each rendered slice's status from the settled result itself.
+      // allSettled never rejects, so this is the only place a failed slice read
+      // can be recorded — the `catch` below is unreachable for a plain RPC
+      // rejection.
+      setPoolsStatus(livePools.status === 'fulfilled' ? 'ok' : 'error');
+      setOrdersStatus(liveOrders.status === 'fulfilled' ? 'ok' : 'error');
+      setOffersStatus(liveOffers.status === 'fulfilled' ? 'ok' : 'error');
+
       if (livePools.status === 'fulfilled') setPools(livePools.value);
       if (profile.status === 'fulfilled') setUserProfile(profile.value);
       if (yieldVault.status === 'fulfilled') setSkrYieldVault(yieldVault.value);
@@ -312,9 +335,26 @@ function MainApp() {
       }
     } catch (e) {
       console.log('Error loading protocol data:', e);
+      // Reachable when the load itself threw before any slice settled (a
+      // synchronous throw from a fetcher, or a throw from the cache write
+      // below). Any slice still sitting at 'loading' has no verified result, so
+      // it must become 'error' rather than a spinner that never resolves; a
+      // slice that already settled above keeps its real outcome.
+      setPoolsStatus((s) => (s === 'loading' ? 'error' : s));
+      setOrdersStatus((s) => (s === 'loading' ? 'error' : s));
+      setOffersStatus((s) => (s === 'loading' ? 'error' : s));
     } finally {
       setIsLoadingPools(false);
     }
+  };
+
+  // Retry for the Loans / Desks screens: re-runs the same per-slice load for the
+  // CURRENT session and network. Deliberately does not reset a slice's status —
+  // the screen keeps showing what failed, with the retry button reporting that
+  // the new attempt is in flight, until that attempt settles.
+  const retryProtocolData = () => {
+    if (!session?.publicKey) return;
+    loadProtocolData(session.publicKey, session.skrHandle, selectedNetwork).catch(() => {});
   };
 
   // When wallet connects or network changes, trigger instant cache hydration, asset query, and parallel protocol fetch
@@ -322,6 +362,13 @@ function MainApp() {
     if (session?.publicKey) {
       const pubkey = session.publicKey;
       const pubkeyStr = pubkey.toBase58();
+
+      // A different wallet or network invalidates every previous slice result:
+      // nothing has been read for THIS subject yet, and a previous session's
+      // 'ok' must not be inherited.
+      setOrdersStatus('loading');
+      setPoolsStatus('loading');
+      setOffersStatus('loading');
 
       // 1. Fast 0ms local hybrid cache hydration (strictly isolated by network).
       // These rows are UNCONFIRMED until the chain read below completes, so
@@ -1303,6 +1350,15 @@ function MainApp() {
 
   const activeCount = orders.filter((o) => o.status.toUpperCase().includes('ACTIVE') || o.status.toUpperCase().includes('GRACE')).length;
 
+  // "A protocol read is in flight right now." A slice's own 'loading' status is
+  // included so the very first frame (before the mount effect fires) reads as
+  // loading rather than as a verified-empty list.
+  const isProtocolLoading =
+    isLoadingPools ||
+    ordersStatus === 'loading' ||
+    poolsStatus === 'loading' ||
+    offersStatus === 'loading';
+
   const currentProfile: UserProfile = userProfile || {
     pubkey: session.publicKey.toBase58(),
     stakedSkr: 0,
@@ -1348,8 +1404,6 @@ function MainApp() {
       {session && showQuickStart && (activeTab === 'BORROW' || activeTab === 'MARKET') && (
         <QuickStartBar
           onPresetAmount={handleQuickStartPreset}
-          onNavigateBorrow={() => setActiveTab('BORROW')}
-          onNavigateMarket={() => setActiveTab('MARKET')}
           onDismiss={handleQuickStartDismiss}
         />
       )}
@@ -1382,6 +1436,14 @@ function MainApp() {
             onCancelPawnOffer={handleCancelPawnOffer}
             onCreatePool={handleCreatePool}
             onDepositLiquidity={handleDepositLiquidity}
+            isLoading={isProtocolLoading}
+            loadFailed={poolsStatus === 'error' || offersStatus === 'error'}
+            // Per sub-tab: a failed desk read must not be reported as a failed
+            // pawn read, and a genuine empty result on one must not be reported
+            // as a failure on the other.
+            poolsLoadFailed={poolsStatus === 'error'}
+            offersLoadFailed={offersStatus === 'error'}
+            onRetry={retryProtocolData}
           />
         )}
 
@@ -1391,6 +1453,9 @@ function MainApp() {
             onRepay={handleRepay}
             onTriggerGrace={handleTriggerGrace}
             onNavigateBorrow={() => setActiveTab('BORROW')}
+            isLoading={isProtocolLoading}
+            loadFailed={ordersStatus === 'error'}
+            onRetry={retryProtocolData}
           />
         )}
 
