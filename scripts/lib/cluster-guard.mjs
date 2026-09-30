@@ -27,7 +27,29 @@ export function normalizeCluster(raw) {
   const s = String(raw || '').trim().toLowerCase();
   if (s === 'mainnet' || s === 'mainnet-beta' || s === 'mainnetbeta') return 'mainnet-beta';
   if (s === 'devnet' || s === 'testnet') return 'devnet';
+  if (s === 'local' || s === 'localnet' || s === 'localhost') return 'localnet';
   return s;
+}
+
+/**
+ * True only for a loopback HTTP RPC endpoint.
+ *
+ * `localnet` cannot be identified by genesis hash: a `solana-test-validator`
+ * mints a fresh random genesis on every run. It is therefore validated by
+ * ENDPOINT instead, and only a loopback host qualifies. This is what stops
+ * `--cluster localnet` from becoming a way to bypass the guard entirely:
+ * pointing it at a remote endpoint is rejected rather than accepted, so
+ * mainnet and devnet remain exactly as strictly enforced as before.
+ */
+export function isLoopbackRpc(rpcUrl) {
+  try {
+    const u = new URL(String(rpcUrl));
+    if (u.protocol !== 'http:' && u.protocol !== 'ws:') return false;
+    const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -36,10 +58,27 @@ export function normalizeCluster(raw) {
  */
 export async function assertCluster(conn, expectedCluster) {
   const expected = normalizeCluster(expectedCluster);
+
+  if (expected === 'localnet') {
+    const endpoint = conn?.rpcEndpoint || '';
+    if (!isLoopbackRpc(endpoint)) {
+      throw new Error(
+        `CLUSTER MISMATCH — refusing to continue.\n` +
+          `  intended cluster: localnet\n` +
+          `  RPC endpoint is : ${endpoint || '(unset)'} (not loopback)\n` +
+          `  A test validator's genesis hash is random, so localnet is authorised by\n` +
+          `  ENDPOINT, not by hash, and only a loopback address is accepted. Point\n` +
+          `  RPC_URL at 127.0.0.1/localhost, or use --cluster devnet/mainnet-beta.`
+      );
+    }
+    // Nothing to compare against — the genesis is unique per validator run.
+    return await conn.getGenesisHash();
+  }
+
   const want = GENESIS_HASHES[expected];
   if (!want) {
     throw new Error(
-      `Unknown cluster "${expectedCluster}" — expected one of: ${Object.keys(GENESIS_HASHES).join(', ')}`
+      `Unknown cluster "${expectedCluster}" — expected one of: ${[...Object.keys(GENESIS_HASHES), 'localnet'].join(', ')}`
     );
   }
   let actual;

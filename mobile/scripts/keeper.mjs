@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { pathToFileURL } from 'url';
 import {
   Connection, Keypair, PublicKey, Transaction, TransactionInstruction,
   SystemProgram, SYSVAR_CLOCK_PUBKEY, sendAndConfirmTransaction,
@@ -48,8 +49,30 @@ const RPC = network === 'devnet'
 // After --rotate-oracle, feeds are signed by the keeper key (the rotated
 // oracle_authority), never by the full admin/upgrade key.
 const keypairPath = process.env.KEEPER_KEY || process.env.ORACLE_KEY || `${process.env.HOME}/.config/solana/mainnet-keeper.json`;
-const keypair = Keypair.fromSecretKey(new Uint8Array(JSON.parse(fs.readFileSync(keypairPath, 'utf8'))));
 const conn = new Connection(RPC, 'confirmed');
+
+// Loaded lazily: reading the keypair at import time made this module
+// unimportable (and therefore untestable) on any machine without the key, and
+// threw before any argument validation or usage message could run.
+let _keypair = null;
+function getKeypair() {
+  if (_keypair) return _keypair;
+  let raw;
+  try {
+    raw = fs.readFileSync(keypairPath, 'utf8');
+  } catch (e) {
+    throw new Error(
+      `Cannot read the keeper keypair at ${keypairPath} (${e.code || e.message}).\n` +
+        'Set KEEPER_KEY=/path/to/keypair.json or place it at the default location.'
+    );
+  }
+  try {
+    _keypair = Keypair.fromSecretKey(new Uint8Array(JSON.parse(raw)));
+  } catch (e) {
+    throw new Error(`Keypair at ${keypairPath} is not a valid JSON secret-key array: ${e.message}`);
+  }
+  return _keypair;
+}
 
 const w64 = (n) => { const b = Buffer.alloc(8); b.writeBigUInt64LE(BigInt(n)); return b; };
 
@@ -97,6 +120,40 @@ async function readFeedState(oraclePda) {
   }
 }
 
+/**
+ * Read a feed for post-update verification, retrying briefly.
+ *
+ * Verification must not be fooled by a transient RPC error (429, timeout): a
+ * single failed read used to be indistinguishable from "the update worked", so
+ * the keeper reported success for cranks it never confirmed. Retry, then let
+ * the caller fail closed.
+ */
+async function readFeedStateVerified(oraclePda, attempts = 3) {
+  let last = null;
+  for (let i = 0; i < attempts; i++) {
+    last = await readFeedState(oraclePda);
+    if (last.exists && last.decodable) return last;
+    if (i < attempts - 1) await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+  }
+  return last;
+}
+
+/**
+ * Decide the outcome of a post-update verification read.
+ *
+ * Pulled out as a pure function so the fail-closed rules are unit-testable
+ * without a network: a write we cannot CONFIRM is a failure, not a success.
+ *   - 'unverified' : the read failed or the account is not a decodable feed
+ *   - 'stale'      : the feed is readable but still past the on-chain bound
+ *   - 'ok'         : readable and inside the bound
+ */
+export function classifyPostUpdate(after) {
+  if (!after || !after.exists || !after.decodable || after.ageSeconds === null || after.ageSeconds === undefined) {
+    return 'unverified';
+  }
+  return after.ageSeconds > ONCHAIN_PRICE_AGE_LIMIT_SECONDS ? 'stale' : 'ok';
+}
+
 function describeStaleness(label, state) {
   if (!state.exists) return `${label}: feed account does not exist yet (first crank will create it)`;
   if (state.readError) return `${label}: could not read feed (${state.readError})`;
@@ -113,9 +170,13 @@ async function main() {
   console.log(`network:    ${network}`);
   console.log(`rpc:        ${RPC}`);
   console.log(`program:    ${PROGRAM_ID.toBase58()}`);
-  console.log(`signer:     ${keypair.publicKey.toBase58()}`);
+  console.log(`signer:     ${getKeypair().publicKey.toBase58()}`);
   const genesis = await assertCluster(conn, network);
   console.log(`genesis:    ${genesis} (matches ${network})`);
+
+  // Declared before the target list so a missing price source can be recorded
+  // as a failure rather than logged and forgotten.
+  const failures = [];
 
   const targets = [];
   const solUsd = solPriceOverride > 0
@@ -132,11 +193,13 @@ async function main() {
     if (skrUsd > 0) {
       targets.push({ mint: SKR_MINT, priceMicroUsd: Math.round(skrUsd * 1e6), decimals: 6, label: `SKR $${skrUsd}` });
     } else {
-      console.log('  SKR price unavailable from Jupiter — feed left unchanged.');
+      // Previously this was logged and ignored, so the SKR feed could drift past
+      // the 600s on-chain pricing bound while the keeper still exited 0 and
+      // printed success. On mainnet the SKR feed is a required target.
+      console.error('  FAILED SKR: no price from Jupiter or the CoinGecko fallback — feed NOT updated.');
+      failures.push('SKR (no price source)');
     }
   }
-
-  const failures = [];
 
   for (const t of targets) {
     const [oraclePda] = PublicKey.findProgramAddressSync([ORACLE_SEED, t.mint.toBuffer()], PROGRAM_ID);
@@ -149,8 +212,20 @@ async function main() {
       continue;
     }
 
-    const after = await readFeedState(oraclePda);
-    if (after.exists && after.decodable && after.ageSeconds !== null && after.ageSeconds > ONCHAIN_PRICE_AGE_LIMIT_SECONDS) {
+    const after = await readFeedStateVerified(oraclePda);
+    const outcome = classifyPostUpdate(after);
+    if (outcome === 'unverified') {
+      // Cannot confirm the write. Previously this fell through to the success
+      // branch, so an RPC failure during the post-check was reported as a
+      // successful crank and the process exited 0. Absence of evidence is not
+      // evidence of a landed update: fail closed.
+      console.error(
+        `  UNVERIFIED ${t.label}: write not confirmed after retries` +
+          (after?.readError ? ` (${after.readError})` : '') +
+          ' — treating as failure so the run exits non-zero and alerts.'
+      );
+      failures.push(t.label);
+    } else if (outcome === 'stale') {
       // The transaction confirmed but the account did not change as expected —
       // treat that as a failed update rather than reporting success.
       console.error(`  FAILED ${t.label}: post-update age is still ${after.ageSeconds}s — feed did not advance.`);
@@ -175,7 +250,7 @@ async function setFeed(oraclePda, mint, priceMicroUsd, decimals, adminPda, label
     const sig = await sendAndConfirmTransaction(conn, new Transaction().add(new TransactionInstruction({
       programId: PROGRAM_ID,
       keys: [
-        { pubkey: keypair.publicKey, isSigner: true, isWritable: true }, // writable: first-time feed creation pays rent
+        { pubkey: getKeypair().publicKey, isSigner: true, isWritable: true }, // writable: first-time feed creation pays rent
         { pubkey: oraclePda, isSigner: false, isWritable: true },
         { pubkey: mint, isSigner: false, isWritable: false },
         { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
@@ -183,7 +258,7 @@ async function setFeed(oraclePda, mint, priceMicroUsd, decimals, adminPda, label
         { pubkey: adminPda, isSigner: false, isWritable: false },
       ],
       data,
-    })), [keypair], { commitment: 'confirmed' });
+    })), [getKeypair()], { commitment: 'confirmed' });
     console.log(`  feed updated (${label}): ${sig}`);
     return true;
   } catch (e) {
@@ -212,4 +287,7 @@ async function fetchUsdPrice(coingeckoId) {
   return price;
 }
 
-main().catch((e) => { console.error('FAILED:', e.message || e); process.exit(1); });
+// Only run when executed directly, so the module can be imported by tests.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => { console.error('FAILED:', e.message || e); process.exit(1); });
+}
