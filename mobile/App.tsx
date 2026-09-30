@@ -1405,14 +1405,6 @@ function MainApp() {
         onOpenJudgeBriefing={() => setShowJudgeBriefing(true)}
       />
 
-      {/* First-time Quick-Start guided bar (dismissible, once per device) */}
-      {session && showQuickStart && (activeTab === 'BORROW' || activeTab === 'MARKET') && (
-        <QuickStartBar
-          onPresetAmount={handleQuickStartPreset}
-          onDismiss={handleQuickStartDismiss}
-        />
-      )}
-
       {/* Main Content Area */}
       <View style={styles.body}>
         {activeTab === 'BORROW' && (

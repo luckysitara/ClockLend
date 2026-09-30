@@ -1,5 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView, ActivityIndicator, Image } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+  ScrollView,
+  ActivityIndicator,
+  Image,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { LendingPool, UserProfile, WalletAssets } from '../types';
@@ -12,7 +23,6 @@ import {
   calculateOriginationFee,
   formatUsdcMicro,
   isAssetPriceUsable,
-  tierDiscountLabel,
 } from '../solana/onChainService';
 
 const SOL_LOGO = require('../../assets/tokens/sol.png');
@@ -22,10 +32,15 @@ interface P2PExpressViewProps {
   pools: LendingPool[];
   userProfile: UserProfile;
   walletAssets?: WalletAssets;
-  onBorrow: (borrowAmount: number, collateralUnits: number, collateralName: string, pool: LendingPool, durationDays: number) => void;
+  onBorrow: (
+    borrowAmount: number,
+    collateralUnits: number,
+    collateralName: string,
+    pool: LendingPool,
+    durationDays: number
+  ) => void;
   onRequestAirdrop?: () => void;
   isLoadingPools?: boolean;
-  /** Prefills the borrow amount when the Quick-Start bar presets are tapped. */
   initialAmount?: string;
 }
 
@@ -34,24 +49,15 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
   userProfile,
   walletAssets,
   onBorrow,
-  onRequestAirdrop,
   isLoadingPools = false,
   initialAmount,
 }) => {
-  const { colors, mode } = useTheme();
+  const { colors } = useTheme();
   const [amountStr, setAmountStr] = useState<string>(initialAmount ?? '50');
-  const [collateralType, setCollateralType] = useState<'SKR' | 'SOL'>('SKR');
+  const [collateralType, setCollateralType] = useState<'SKR' | 'SOL'>('SOL');
   const [durationDays, setDurationDays] = useState<number>(7);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [prices, setPrices] = useState(livePrices);
-  // Collateral sizing MUST use a live price: sizing with a hardcoded price
-  // reverts the borrow when the market moves up and silently over-locks when
-  // it moves down. If the price source is unavailable or only baseline-fallback, borrowing is disabled.
-  //
-  // H-2/M-5: tracked PER ASSET, because this screen sizes the escrow against
-  // exactly one of them. The two legs are independent feeds — a fresh SOL feed
-  // says nothing about SKR, whose stale/unreadable leg silently falls back to
-  // the hardcoded baseline price.
   const [usableAssets, setUsableAssets] = useState<{ sol: boolean; skr: boolean }>({
     sol: false,
     skr: false,
@@ -64,18 +70,14 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
     fetchLivePrices()
       .then((p) => {
         setPrices({ ...p });
-        // Only a feed the program itself would accept counts as a price — an
-        // on-chain/WSS source inside the 600s window, per asset.
         syncPriceTrust();
       })
       .catch(() => setUsableAssets({ sol: false, skr: false }));
 
-    // Real-time Helius LaserStream WebSocket subscription
     const unsubscribe = subscribeToPriceUpdates((updated) => {
       setPrices({ ...updated });
       syncPriceTrust();
     });
-    // The trust window is time-based, so re-evaluate it while the screen is open.
     const freshnessTimer = setInterval(syncPriceTrust, 15_000);
     return () => {
       unsubscribe();
@@ -85,10 +87,6 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
 
   const numAmount = parseFloat(amountStr) || 0;
 
-  // C-3: the route must be a desk that can actually fund the borrow. Prefer
-  // the lowest-APR desk that covers the amount; fall back to the lowest-APR
-  // funded desk (so the user sees a concrete shortfall) and only then to an
-  // unfunded desk, which renders as an empty state rather than a signable tx.
   const fundedPools = pools.filter((p) => p.totalLiquidity > 0);
   const affordablePools = pools.filter((p) => p.totalLiquidity >= numAmount);
   const lowestApr = (list: typeof pools) =>
@@ -101,40 +99,28 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
 
   const solBalance = walletAssets?.solBalance || 0;
   const skrBalance = walletAssets?.skrBalance || 0;
-  const solHolding = walletAssets?.tokenList?.find((t) => t.symbol === 'SOL');
-  const skrHolding = walletAssets?.tokenList?.find((t) => t.symbol === 'SKR');
 
-  // Real-time on-chain prices pushed over Helius WebSocket (with Jupiter / CoinGecko fallbacks)
   const solPrice = prices.sol;
   const skrPrice = prices.skr;
 
   const collateralPrice = collateralType === 'SOL' ? solPrice : skrPrice;
-  // H-2/M-5: gate the CTA on the SELECTED collateral asset's own fresh trusted
-  // feed — never on the other leg's freshness.
   const priceAvailable = collateralType === 'SOL' ? usableAssets.sol : usableAssets.skr;
   const userBalance = collateralType === 'SOL' ? solBalance : skrBalance;
 
-  const ltv = (bestPool ? bestPool.maxLtvBps : 8500) / 10000;
-  const rawCollateral = numAmount > 0 ? (numAmount / ltv) / collateralPrice : 0;
+  const ltv = (bestPool ? bestPool.maxLtvBps : 7000) / 10000;
+  const rawCollateral = numAmount > 0 && collateralPrice > 0 ? numAmount / ltv / collateralPrice : 0;
   const isDecimal = collateralType === 'SOL';
   const requiredCollateralUnits = isDecimal ? rawCollateral : Math.ceil(rawCollateral);
 
   const isInsufficientCollateral = requiredCollateralUnits > userBalance;
-
-  // C-3: the program refuses a borrow larger than pool.total_liquidity
-  // (processor.rs:1348) — gate the CTA instead of letting the user sign a
-  // transaction that cannot succeed.
   const poolLiquidity = bestPool ? bestPool.totalLiquidity : 0;
   const hasNoLiquidity = fundedPools.length === 0;
   const exceedsLiquidity = !!bestPool && numAmount > poolLiquidity;
 
-  // C-2: the effective rate is the program's own integer discount math on the
-  // on-chain rate — never a client-invented tier.
-  const baseRateBps = bestPool ? bestPool.interestRateBps : 0;
+  const baseRateBps = bestPool ? bestPool.interestRateBps : 800;
   const effectiveRateBps = applyAprDiscountBps(baseRateBps, userProfile.aprDiscount);
-  const baseApr = baseRateBps / 100;
   const effectiveApr = effectiveRateBps / 100;
-  // Exact program integer math (floor), not a float estimate.
+
   const estInterestMicro = calculateExactInterestDue(
     BigInt(Math.round(numAmount * 1_000_000)),
     baseRateBps,
@@ -143,8 +129,6 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
   );
   const estInterest = Number(estInterestMicro) / 1_000_000;
 
-  // H-3: the program withholds the origination fee from the disbursement
-  // (25 bps on SOL collateral, 50 bps on SKR) — borrower receives the net.
   const origination = calculateOriginationFee(
     BigInt(Math.round(numAmount * 1_000_000)),
     collateralType === 'SOL'
@@ -155,43 +139,36 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
       Alert.alert('Invalid Amount', 'Please enter a valid loan amount.');
       return;
     }
-
     if (!bestPool) {
       Alert.alert('No Pools Available', 'Loading available lending pools...');
       return;
     }
-
     if (hasNoLiquidity || exceedsLiquidity) {
       Alert.alert(
-        'This Pool Has No Liquidity Yet',
+        'Pool Liquidity Exceeded',
         hasNoLiquidity
-          ? 'This lending desk has not been funded yet, so there is nothing to borrow. Pick another desk or check back later.'
-          : `This desk only has $${poolLiquidity.toLocaleString()} USDC available right now. Lower the amount to $${poolLiquidity.toLocaleString()} or less, or choose another desk.`
+          ? 'No funded lending desk is currently open. Check back shortly.'
+          : `This desk has $${poolLiquidity.toLocaleString()} USDC available right now.`
       );
       return;
     }
-
     if (isInsufficientCollateral) {
       Alert.alert(
         'Insufficient Collateral',
-        `You need ${requiredCollateralUnits.toFixed(collateralType === 'SOL' ? 3 : 0)} ${collateralType}, but your connected Seeker wallet holds ${userBalance.toFixed(collateralType === 'SOL' ? 3 : 0)} ${collateralType}.`
+        `You need ${requiredCollateralUnits.toFixed(isDecimal ? 3 : 0)} ${collateralType}, but your connected wallet holds ${userBalance.toFixed(isDecimal ? 3 : 0)} ${collateralType}.`
       );
       return;
     }
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch {}
     setIsSubmitting(true);
     try {
-      const collUnits = collateralType === 'SOL'
+      const collUnits = isDecimal
         ? parseFloat(requiredCollateralUnits.toFixed(3))
         : Math.ceil(requiredCollateralUnits);
-      await onBorrow(
-        numAmount,
-        collUnits,
-        collateralType,
-        bestPool,
-        durationDays
-      );
+      await onBorrow(numAmount, collUnits, collateralType, bestPool, durationDays);
     } catch (e: any) {
       Alert.alert('Transaction Notice', e?.message || 'Failed to submit borrow transaction');
     } finally {
@@ -199,13 +176,6 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
     }
   };
 
-  // ONE source of truth for both "is it disabled" and "does it look disabled".
-  // These were previously written independently: `disabled` had six conditions
-  // but the dimming had three, so isSubmitting, numAmount <= 0 and
-  // !priceAvailable disabled the button while it still looked fully enabled and
-  // tappable. !priceAvailable is the one a user actually meets — when the oracle
-  // feeds lapse, every price is untrusted and the CTA reads as live but does
-  // nothing at all. Deriving both from one expression means they cannot diverge.
   const isDisabled =
     isSubmitting ||
     numAmount <= 0 ||
@@ -214,346 +184,260 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
     exceedsLiquidity ||
     !priceAvailable;
 
+  const getCtaLabel = () => {
+    if (isSubmitting) return 'Submitting Transaction...';
+    if (!bestPool || isLoadingPools) return 'Discovering Desks...';
+    if (hasNoLiquidity) return 'No Liquidity Available';
+    if (exceedsLiquidity) return `Exceeds Desk Max ($${poolLiquidity.toLocaleString()})`;
+    if (isInsufficientCollateral) return `Insufficient ${collateralType} Collateral`;
+    if (!priceAvailable) return 'Awaiting Live Price...';
+    if (numAmount <= 0) return 'Enter Loan Amount';
+    return `Borrow ${numAmount} USDC`;
+  };
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
     >
-      {/* Hero Header */}
-      <View style={[styles.heroSection, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        <View style={styles.badgeRow}>
-          <View style={[styles.liveBadge, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
-            <View style={[styles.liveDot, { backgroundColor: colors.primary }]} />
-            <Text style={[styles.liveBadgeText, { color: colors.primaryLabel }]}>BEST AVAILABLE ROUTE</Text>
-          </View>
-        </View>
-
-        <Text style={[styles.heroSub, { color: colors.textSecondary }]}>P2P EXPRESS BORROW</Text>
-        <View style={styles.amountRow}>
-          <Text style={[styles.currencyPrefix, { color: colors.primaryLabel }]}>$</Text>
-          <TextInput
-            style={[styles.heroInput, { color: colors.text }]}
-            value={amountStr}
-            onChangeText={setAmountStr}
-            keyboardType="numeric"
-            placeholder="0"
-            placeholderTextColor={colors.textMuted}
-          />
-          <Text style={[styles.currencySuffix, { color: colors.textSecondary }]}>USDC</Text>
-        </View>
-
-        {/* Amount Quick Presets */}
-        <View style={styles.presetsRow}>
-          {['25', '50', '100', '250'].map((val) => (
-            <TouchableOpacity
-              key={val}
-              style={[
-                styles.presetChip,
-                { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder },
-                amountStr === val && { backgroundColor: colors.primary, borderColor: colors.primary },
-              ]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setAmountStr(val);
-              }}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.presetText,
-                  { color: colors.textSecondary },
-                  amountStr === val && { color: colors.primaryText, fontWeight: '800' },
-                ]}
-              >
-                ${val}
+      {/* Jupiter-Style Main Card */}
+      <View style={[styles.mainCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        
+        {/* Section 1: You Borrow */}
+        <View style={[styles.inputBox, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+          <View style={styles.inputHeaderRow}>
+            <Text style={[styles.inputHeaderLabel, { color: colors.textSecondary }]}>YOU BORROW</Text>
+            {poolLiquidity > 0 && (
+              <Text style={[styles.poolAvailText, { color: colors.textMuted }]}>
+                Avail: ${poolLiquidity.toLocaleString()} USDC
               </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-
-      {/* Collateral Selection Card */}
-      <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        <View style={styles.sectionHeaderRow}>
-          <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>COLLATERAL TO ESCROW</Text>
-          {userBalance > 0 && (
-            <TouchableOpacity
-              style={[styles.maxBadge, { backgroundColor: colors.badgeBg }]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                const maxUsdc = Math.max(10, Math.floor(userBalance * 0.9 * collateralPrice * ltv));
-                setAmountStr(maxUsdc.toString());
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.maxBadgeText, { color: colors.primaryLabel }]}>BORROW MAX</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <View style={styles.collateralTabs}>
-          {[
-            {
-              id: 'SKR' as const,
-              label: 'SKR',
-              logo: SKR_LOGO,
-              sub: 'Stake for yield',
-            },
-            {
-              id: 'SOL' as const,
-              label: 'SOL',
-              logo: SOL_LOGO,
-              sub: `${solBalance.toFixed(2)} avail`,
-            },
-          ].map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              style={[
-                styles.collateralChip,
-                { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder },
-                collateralType === item.id && { borderColor: colors.primary, backgroundColor: colors.badgeBg },
-              ]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setCollateralType(item.id);
-              }}
-              activeOpacity={0.7}
-            >
-              <Image source={item.logo} style={styles.collateralLogo} resizeMode="contain" />
-              <Text
-                style={[
-                  styles.collateralLabel,
-                  { color: colors.text },
-                  collateralType === item.id && { color: colors.primaryLabel, fontWeight: '800' },
-                ]}
-              >
-                {item.label}
-              </Text>
-              <Text style={[styles.collateralSub, { color: colors.textSecondary }]}>{item.sub}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Dynamic Collateral Required Display */}
-        <View style={[styles.collateralDisplay, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-          <View>
-            <Text style={[styles.calcLabel, { color: colors.textSecondary }]}>Required Escrow Deposit</Text>
-            <View style={styles.calcValueRow}>
-              <Image
-                source={collateralType === 'SKR' ? SKR_LOGO : SOL_LOGO}
-                style={styles.calcMiniLogo}
-                resizeMode="contain"
-              />
-              <Text style={[styles.calcValue, { color: colors.text }]}>
-                {requiredCollateralUnits > 0
-                  ? `${requiredCollateralUnits.toFixed(isDecimal ? 3 : 0)} ${collateralType}`
-                  : '—'}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.calcRight}>
-            <Text style={[styles.calcSubLabel, { color: colors.textMuted }]}>Wallet Holdings</Text>
-            <View style={styles.calcValueRow}>
-              <Image
-                source={collateralType === 'SKR' ? SKR_LOGO : SOL_LOGO}
-                style={styles.calcMiniLogo}
-                resizeMode="contain"
-              />
-              <Text style={[styles.calcSubValue, { color: isInsufficientCollateral ? colors.danger : colors.primary }]}>
-                {`${userBalance.toFixed(isDecimal ? 2 : 0)} ${collateralType}`}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Collateral Yield Bonus Banner */}
-        <View style={{ marginTop: 6, marginBottom: 8, paddingHorizontal: 4 }}>
-          {collateralType === 'SKR' ? (
-            <Text style={{ fontSize: 11, color: colors.primaryLabel, fontWeight: '600' }}>
-              🔒 Escrowed SKR earns nothing in escrow — stake SKR in your Profile to earn protocol-fee dividends.
-            </Text>
-          ) : (
-            <Text style={{ fontSize: 11, color: colors.accent, fontWeight: '600' }}>
-              🔓 SOL in escrow is released on repayment. No yield accrues to escrowed collateral.
-            </Text>
-          )}
-        </View>
-
-        {/* Insufficient balance warning + quick airdrop/fallback button */}
-        {isInsufficientCollateral && (
-          <View
-            style={[
-              styles.warningBox,
-              { backgroundColor: 'rgba(239, 68, 68, 0.08)', borderColor: colors.danger },
-            ]}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.warningText, { color: colors.danger }]}>
-                Need {requiredCollateralUnits.toFixed(isDecimal ? 2 : 0)} {collateralType}, you hold {userBalance.toFixed(isDecimal ? 2 : 0)} {collateralType}
-              </Text>
-            </View>
-            {collateralType !== 'SOL' && (
-              <TouchableOpacity
-                style={[styles.airdropBtn, { backgroundColor: colors.primary }]}
-                onPress={() => setCollateralType('SOL')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.airdropBtnText, { color: colors.primaryText }]}>Use SOL Instead</Text>
-              </TouchableOpacity>
             )}
           </View>
-        )}
-      </View>
 
-      {/* Loan Term Selection */}
-      <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        <Text style={[styles.sectionHeader, { color: colors.textSecondary }]}>LOAN DURATION</Text>
-        <View style={styles.durationRow}>
-          {[3, 7, 14, 30].map((days) => (
+          <View style={styles.inputRow}>
+            <TextInput
+              style={[styles.numberInput, { color: colors.text }]}
+              value={amountStr}
+              onChangeText={setAmountStr}
+              keyboardType="numeric"
+              placeholder="0"
+              placeholderTextColor={colors.textMuted}
+            />
+            <View style={[styles.tokenPill, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+              <View style={[styles.tokenDot, { backgroundColor: '#2775CA' }]} />
+              <Text style={[styles.tokenName, { color: colors.text }]}>USDC</Text>
+            </View>
+          </View>
+
+          {/* Quick Amount Chips */}
+          <View style={styles.presetsRow}>
+            {['25', '50', '100', '250'].map((val) => (
+              <TouchableOpacity
+                key={val}
+                style={[
+                  styles.presetChip,
+                  { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder },
+                  amountStr === val && { backgroundColor: colors.primary, borderColor: colors.primary },
+                ]}
+                onPress={() => {
+                  try { Haptics.selectionAsync(); } catch {}
+                  setAmountStr(val);
+                }}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`Preset $${val} USDC`}
+              >
+                <Text
+                  style={[
+                    styles.presetText,
+                    { color: colors.textSecondary },
+                    amountStr === val && { color: colors.primaryText, fontWeight: '700' },
+                  ]}
+                >
+                  ${val}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Connector Badge */}
+        <View style={styles.connectorRow}>
+          <View style={[styles.connectorLine, { backgroundColor: colors.cardBorder }]} />
+          <View style={[styles.connectorCircle, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+            <Ionicons name="arrow-down" size={16} color={colors.primaryLabel} />
+          </View>
+          <View style={[styles.connectorLine, { backgroundColor: colors.cardBorder }]} />
+        </View>
+
+        {/* Section 2: Collateral Required */}
+        <View style={[styles.inputBox, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+          <View style={styles.inputHeaderRow}>
+            <Text style={[styles.inputHeaderLabel, { color: colors.textSecondary }]}>COLLATERAL TO LOCK</Text>
             <TouchableOpacity
-              key={days}
-              style={[
-                styles.durationChip,
-                { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder },
-                durationDays === days && { borderColor: colors.primary, backgroundColor: colors.badgeBg },
-              ]}
               onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setDurationDays(days);
+                try { Haptics.selectionAsync(); } catch {}
+                if (userBalance > 0) {
+                  const maxUsdc = Math.max(10, Math.floor(userBalance * 0.9 * collateralPrice * ltv));
+                  setAmountStr(maxUsdc.toString());
+                }
               }}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Borrow max collateral"
             >
-              <Text
-                style={[
-                  styles.durationText,
-                  { color: colors.text },
-                  durationDays === days && { color: colors.primaryLabel, fontWeight: '800' },
-                ]}
-              >
-                {days} Days
+              <Text style={[styles.balanceText, { color: colors.textMuted }]}>
+                Bal: {userBalance.toFixed(isDecimal ? 2 : 0)} {collateralType}{' '}
+                <Text style={{ color: colors.primaryLabel, fontWeight: '700' }}>MAX</Text>
               </Text>
             </TouchableOpacity>
-          ))}
-        </View>
-      </View>
+          </View>
 
-      {/* C-3: an unfunded desk is an empty state, never a signable borrow */}
-      {hasNoLiquidity && !isLoadingPools && (
-        <View
-          style={[
-            styles.routeCard,
-            { backgroundColor: 'rgba(245, 158, 11, 0.08)', borderColor: colors.warning },
-          ]}
-        >
-          <Text style={[styles.routeTitle, { color: colors.warning }]}>
-            {pools.length === 0 ? 'No lending desks found yet' : 'This pool has no liquidity yet'}
-          </Text>
-          <Text style={[styles.metricLabel, { color: colors.textSecondary, marginTop: 6 }]}>
-            {pools.length === 0
-              ? 'No on-chain lending desk was found for this network. Create one from the Market tab to get started.'
-              : 'No desk is currently funded, so there is nothing to borrow. Fund a desk from the Market tab, or check back after a desk authority deposits liquidity.'}
-          </Text>
-        </View>
-      )}
+          <View style={styles.inputRow}>
+            <Text style={[styles.collateralAmountText, { color: colors.text }]}>
+              {requiredCollateralUnits > 0
+                ? requiredCollateralUnits.toFixed(isDecimal ? 3 : 0)
+                : '0.00'}
+            </Text>
 
-      {/* Execution Route Card */}
-      <View style={[styles.routeCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-        <View style={styles.routeHeader}>
-          <Text style={[styles.routeTitle, { color: colors.text }]}>
-            {isLoadingPools ? 'Discovering Pools...' : (bestPool?.name || 'No lending pools available')}
-          </Text>
-          <View style={[styles.aprPill, { backgroundColor: colors.badgeBg }]}>
-            <Text style={[styles.aprPillText, { color: colors.primaryLabel }]}>{effectiveApr.toFixed(1)}% APR</Text>
+            {/* Collateral Selector (SOL / SKR) */}
+            <View style={styles.tokenSelectorGroup}>
+              {(['SOL', 'SKR'] as const).map((t) => {
+                const isSelected = collateralType === t;
+                return (
+                  <TouchableOpacity
+                    key={t}
+                    style={[
+                      styles.tokenSelectBtn,
+                      { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder },
+                      isSelected && { backgroundColor: colors.badgeBg, borderColor: colors.primary },
+                    ]}
+                    onPress={() => {
+                      try { Haptics.selectionAsync(); } catch {}
+                      setCollateralType(t);
+                    }}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Select ${t} collateral`}
+                  >
+                    <Image
+                      source={t === 'SOL' ? SOL_LOGO : SKR_LOGO}
+                      style={styles.tokenIcon}
+                      resizeMode="contain"
+                    />
+                    <Text
+                      style={[
+                        styles.tokenSelectText,
+                        { color: colors.text },
+                        isSelected && { color: colors.primaryLabel, fontWeight: '800' },
+                      ]}
+                    >
+                      {t}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
         </View>
 
-        <View style={styles.metricsGrid}>
-          <View style={styles.metricItem}>
-            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Interest Due</Text>
-            <Text style={[styles.metricValue, { color: colors.text }]}>${estInterest.toFixed(3)}</Text>
+        {/* Section 3: Duration Selector */}
+        <View style={styles.durationSection}>
+          <Text style={[styles.durationLabel, { color: colors.textSecondary }]}>LOAN DURATION</Text>
+          <View style={styles.durationPillsRow}>
+            {[3, 7, 14, 30].map((days) => {
+              const isSelected = durationDays === days;
+              return (
+                <TouchableOpacity
+                  key={days}
+                  style={[
+                    styles.durationPill,
+                    { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder },
+                    isSelected && { backgroundColor: colors.primary, borderColor: colors.primary },
+                  ]}
+                  onPress={() => {
+                    try { Haptics.selectionAsync(); } catch {}
+                    setDurationDays(days);
+                  }}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${days} days loan duration`}
+                >
+                  <Text
+                    style={[
+                      styles.durationPillText,
+                      { color: colors.textSecondary },
+                      isSelected && { color: colors.primaryText, fontWeight: '800' },
+                    ]}
+                  >
+                    {days}d
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
-          <View style={styles.metricItem}>
-            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Grace Period</Text>
-            <Text style={[styles.metricValue, { color: colors.primaryLabel }]}>+24h Social</Text>
+        </View>
+
+        {/* Section 4: Compact Summary Panel */}
+        <View style={[styles.summaryPanel, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder }]}>
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Fixed Rate</Text>
+            <Text style={[styles.summaryValue, { color: colors.text }]}>{effectiveApr.toFixed(1)}% APR</Text>
           </View>
-          <View style={styles.metricItem}>
-            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Desk Liquidity</Text>
-            <Text
-              style={[
-                styles.metricValue,
-                { color: exceedsLiquidity ? colors.danger : colors.text },
-              ]}
-            >
-              {bestPool ? `$${poolLiquidity.toLocaleString()}` : '—'}
+
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Total Repayment</Text>
+            <Text style={[styles.summaryValue, { color: colors.text }]}>
+              ${(numAmount + estInterest).toFixed(2)} USDC{' '}
+              <Text style={{ color: colors.primaryLabel, fontSize: 11 }}>
+                (+${estInterest.toFixed(3)} int)
+              </Text>
             </Text>
           </View>
+
+          <View style={styles.summaryRow}>
+            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Origination Fee</Text>
+            <Text style={[styles.summaryValue, { color: colors.text }]}>
+              ${formatUsdcMicro(origination.netMicro)} net{' '}
+              <Text style={{ color: colors.textMuted, fontSize: 11 }}>
+                (-${formatUsdcMicro(origination.feeMicro)})
+              </Text>
+            </Text>
+          </View>
+
+          <View style={[styles.summaryRow, { marginBottom: 0 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Ionicons name="shield-checkmark" size={13} color={colors.success} />
+              <Text style={[styles.summaryLabel, { color: colors.success }]}>Safety Shield</Text>
+            </View>
+            <Text style={[styles.summaryValue, { color: colors.success }]}>+24h Social Grace</Text>
+          </View>
         </View>
 
-        {/* C-2: the discount shown is exactly what the program will grant */}
-        <View style={styles.metricItem}>
-          <Text style={[styles.metricLabel, { color: colors.textMuted }]}>SKR Bond Tier (on-chain)</Text>
-          <Text style={[styles.metricValue, { color: colors.accentLight }]}>
-            {tierDiscountLabel(userProfile.tier)}
-          </Text>
-          {userProfile.lockedSkr > 0 && (
-            <Text style={[styles.metricLabel, { color: colors.textMuted, marginTop: 2 }]}>
-              {userProfile.lockedSkr.toLocaleString()} SKR bonded to active loans:{' '}
-              {userProfile.availableSkr.toLocaleString()} SKR counts toward the tier.
-              {userProfile.aprDiscount === 0 ? '' : ` Rate ${baseApr.toFixed(2)}% → ${effectiveApr.toFixed(2)}% APR.`}
+        {/* Primary Action Button */}
+        <TouchableOpacity
+          style={[
+            styles.borrowBtn,
+            { backgroundColor: colors.primary },
+            isDisabled && styles.borrowBtnDisabled,
+          ]}
+          onPress={handleBorrow}
+          disabled={isDisabled}
+          activeOpacity={0.88}
+          accessibilityRole="button"
+          accessibilityLabel={getCtaLabel()}
+        >
+          {isSubmitting ? (
+            <ActivityIndicator size="small" color={colors.primaryText} />
+          ) : (
+            <Text style={[styles.borrowBtnText, { color: colors.primaryText }]}>
+              {getCtaLabel()}
             </Text>
           )}
-        </View>
-
-        {/* H-3: origination fee disclosure — the program disburses the net */}
-        <View style={[styles.collateralDisplay, { backgroundColor: colors.card, marginTop: 12 }]}>
-          <View>
-            <Text style={[styles.calcLabel, { color: colors.textSecondary }]}>
-              Origination fee {(origination.feeBps / 100).toFixed(2)}% ({collateralType} collateral)
-            </Text>
-            <Text style={[styles.calcSubValue, { color: colors.danger, marginTop: 2 }]}>
-              -${formatUsdcMicro(origination.feeMicro)} USDC
-            </Text>
-          </View>
-          <View style={styles.calcRight}>
-            <Text style={[styles.calcLabel, { color: colors.textSecondary }]}>You receive</Text>
-            <Text style={[styles.calcValue, { color: colors.primaryLabel, marginTop: 2 }]}>
-              ${formatUsdcMicro(origination.netMicro)} USDC
-            </Text>
-          </View>
-        </View>
+        </TouchableOpacity>
       </View>
-
-      {/* 1-Tap Borrow Button */}
-      <TouchableOpacity
-        style={[
-          styles.borrowButton,
-          { backgroundColor: colors.primary },
-          isDisabled && { opacity: 0.6 },
-        ]}
-        onPress={handleBorrow}
-        disabled={isDisabled}
-        activeOpacity={0.85}
-      >
-        {isSubmitting ? (
-          <ActivityIndicator color={colors.primaryText} />
-        ) : (
-          <Text style={[styles.borrowButtonText, { color: colors.primaryText }]}>
-            {hasNoLiquidity
-              ? 'This Pool Has No Liquidity Yet'
-              : exceedsLiquidity
-              ? `Exceeds Desk Liquidity ($${poolLiquidity.toLocaleString()})`
-              : isInsufficientCollateral
-              ? `Insufficient ${collateralType} Collateral`
-              : !priceAvailable
-              ? 'Awaiting Live Price Feed...'
-              : `⚡ Instant Borrow $${numAmount > 0 ? numAmount : 0} USDC`}
-          </Text>
-        )}
-      </TouchableOpacity>
-      <Text style={[styles.disclaimer, { color: colors.textMuted }]}>
-        Atomic Escrow • Non-Custodial • Instant Settlement
-      </Text>
     </ScrollView>
   );
 };
@@ -564,262 +448,198 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
-    paddingBottom: 40,
+    paddingBottom: 32,
   },
-  heroSection: {
+  mainCard: {
     borderRadius: 24,
     borderWidth: 1,
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 16,
+    padding: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 6,
   },
-  badgeRow: {
-    marginBottom: 12,
+  inputBox: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 16,
   },
-  liveBadge: {
+  inputHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 6,
-  },
-  liveBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  heroSub: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
+    justifyContent: 'space-between',
     marginBottom: 8,
   },
-  amountRow: {
+  inputHeaderLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  poolAvailText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  balanceText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  inputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
+    justifyContent: 'space-between',
   },
-  currencyPrefix: {
-    fontSize: 44,
+  numberInput: {
+    flex: 1,
+    fontSize: 32,
     fontWeight: '800',
-    marginRight: 4,
+    padding: 0,
+    marginRight: 12,
   },
-  heroInput: {
-    fontSize: 52,
+  tokenPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  tokenDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  tokenName: {
+    fontSize: 14,
     fontWeight: '800',
-    minWidth: 80,
-    textAlign: 'center',
-  },
-  currencySuffix: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginLeft: 8,
-    alignSelf: 'flex-end',
-    marginBottom: 12,
+    letterSpacing: 0.3,
   },
   presetsRow: {
     flexDirection: 'row',
     gap: 8,
+    marginTop: 14,
   },
   presetChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    flex: 1,
+    height: 32,
     borderRadius: 16,
     borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   presetText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
   },
-  sectionCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 16,
-  },
-  sectionHeaderRow: {
+  connectorRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'center',
+    marginVertical: -8,
+    zIndex: 10,
   },
-  sectionHeader: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+  connectorLine: {
+    flex: 1,
+    height: 1,
   },
-  maxBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+  connectorCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 12,
   },
-  maxBadgeText: {
-    fontSize: 10,
+  collateralAmountText: {
+    fontSize: 26,
     fontWeight: '800',
   },
-  collateralTabs: {
+  tokenSelectorGroup: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
+    gap: 6,
   },
-  collateralChip: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  collateralLogo: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    marginBottom: 6,
-  },
-  calcValueRow: {
+  tokenSelectBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
   },
-  calcMiniLogo: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+  tokenIcon: {
+    width: 16,
+    height: 16,
   },
-  collateralLabel: {
+  tokenSelectText: {
     fontSize: 13,
     fontWeight: '700',
   },
-  collateralSub: {
-    fontSize: 10,
-    marginTop: 2,
+  durationSection: {
+    marginTop: 16,
+    marginBottom: 14,
   },
-  collateralDisplay: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 12,
-  },
-  calcLabel: {
-    fontSize: 11,
-    marginBottom: 2,
-  },
-  calcValue: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  calcRight: {
-    alignItems: 'flex-end',
-  },
-  calcSubLabel: {
-    fontSize: 11,
-    marginBottom: 2,
-  },
-  calcSubValue: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  warningBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 10,
-    marginTop: 10,
-  },
-  warningText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  airdropBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    marginLeft: 8,
-  },
-  airdropBtnText: {
+  durationLabel: {
     fontSize: 11,
     fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 8,
   },
-  durationRow: {
+  durationPillsRow: {
     flexDirection: 'row',
     gap: 8,
   },
-  durationChip: {
+  durationPill: {
     flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
+    height: 38,
     borderRadius: 14,
     borderWidth: 1,
-  },
-  durationText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  routeCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 20,
-  },
-  routeHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
-  },
-  routeTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  aprPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  aprPillText: {
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  metricsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  metricItem: {
-    flex: 1,
-  },
-  metricLabel: {
-    fontSize: 11,
-    marginBottom: 4,
-  },
-  metricValue: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  borrowButton: {
-    height: 56,
-    borderRadius: 18,
     justifyContent: 'center',
+  },
+  durationPillText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  summaryPanel: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 16,
+  },
+  summaryRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 8,
   },
-  borrowButtonText: {
-    fontSize: 17,
-    fontWeight: '800',
+  summaryLabel: {
+    fontSize: 12,
+    fontWeight: '500',
   },
-  disclaimer: {
-    fontSize: 11,
-    textAlign: 'center',
+  summaryValue: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  borrowBtn: {
+    height: 56,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  borrowBtnDisabled: {
+    opacity: 0.6,
+  },
+  borrowBtnText: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
 });

@@ -32,7 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.card, borderBottomColor: colors.cardBorder }]}>
-      {/* Left: Dynamic Title or Seeker Handle Button */}
+      {/* Left: Brand Identity or Account Title */}
       {isProfileActive ? (
         <View style={styles.headerTitleGroup}>
           <Text style={[styles.screenTitle, { color: colors.text }]}>Seeker Account</Text>
@@ -51,39 +51,22 @@ export const Header: React.FC<HeaderProps> = ({
           </View>
           <View>
             <View style={styles.handleRow}>
-              <Text style={[styles.handleText, { color: colors.text }]}>{skrHandle}</Text>
+              <Text style={[styles.brandName, { color: colors.text }]}>ClockLend</Text>
               {hasSeekerGenesisToken && (
                 <View style={[styles.verifiedDot, { backgroundColor: colors.primary }]} />
               )}
             </View>
+            <Text style={[styles.handleSub, { color: colors.primaryLabel }]}>{skrHandle}</Text>
           </View>
         </TouchableOpacity>
       )}
 
       {/* Right: Actions */}
       <View style={styles.rightActions}>
-        {onOpenJudgeBriefing && (
-          <TouchableOpacity
-            style={[styles.themeChip, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              onOpenJudgeBriefing();
-            }}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Judge briefing and architecture audit"
-            accessibilityHint="Opens protocol overview and verification info"
-          >
-            <Ionicons name="sparkles" size={16} color={colors.primary} />
-          </TouchableOpacity>
-        )}
-
         {onOpenLeaderboard && (
           <TouchableOpacity
             style={[
               styles.themeChip,
-              // Leaderboard gold -> the nearest theme token (`warning`), so the
-              // trophy stays visible on the light theme too.
               { backgroundColor: 'rgba(245, 158, 11, 0.12)', borderColor: 'rgba(245, 158, 11, 0.3)' },
             ]}
             onPress={() => {
@@ -95,7 +78,7 @@ export const Header: React.FC<HeaderProps> = ({
             accessibilityLabel="Seeker Hall of Fame leaderboard"
             accessibilityHint="View on-chain top borrowers and lenders"
           >
-            <Ionicons name="trophy-outline" size={17} color={colors.warning} />
+            <Ionicons name="trophy-outline" size={16} color={colors.warning} />
           </TouchableOpacity>
         )}
 
@@ -109,18 +92,21 @@ export const Header: React.FC<HeaderProps> = ({
           accessibilityRole="button"
           accessibilityLabel={`Toggle color theme, currently ${mode} mode`}
         >
-          <Ionicons name={mode === 'dark' ? 'sunny-outline' : 'moon-outline'} size={17} color={colors.text} />
+          <Ionicons name={mode === 'dark' ? 'sunny-outline' : 'moon-outline'} size={16} color={colors.text} />
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.walletChip, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
+          style={[styles.walletPill, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
           onPress={onPressBalance || onDisconnectWallet}
           activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="Wallet assets and balances"
           accessibilityHint="View token accounts and balances"
         >
-          <Ionicons name="wallet-outline" size={17} color={colors.text} />
+          <View style={[styles.onlineDot, { backgroundColor: colors.success }]} />
+          <Text style={[styles.walletPillText, { color: colors.text }]}>
+            {solBalance > 0 ? `${solBalance.toFixed(2)} SOL` : 'Assets'}
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -170,6 +156,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 1,
   },
+  brandName: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  handleSub: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 1,
+  },
   handleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -203,18 +199,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  themeIcon: {
-    fontSize: 16,
-  },
-  walletChip: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    justifyContent: 'center',
+  walletPill: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
   },
-  walletIcon: {
-    fontSize: 16,
+  onlineDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  walletPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 });

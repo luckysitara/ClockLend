@@ -334,149 +334,55 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                 </View>
               )}
 
-              {/* H-1: the program has NO LTV liquidation. ClaimDefault is
-                  time-triggered only: due_time + 24h social grace
-                  (processor.rs:2739-2744). So this is a static
-                  borrowed-vs-collateralized ratio, not a health meter — and no
-                  price-derived figure is shown unless the feed is one the
-                  program would accept (H-2). */}
-              {(() => {
-                const isSol = isNativeSolCollateralName(order.collateralName);
-                const debt = order.principalAmount + order.interestDue;
-                const price = isSol ? livePrices.sol : livePrices.skr;
-                const priceUsable = priceTrusted && price > 0;
-                const collVal = priceUsable ? order.collateralAmount * price : null;
-                const ratio =
-                  collVal && collVal > 0 ? Math.min(999, Math.round((debt / collVal) * 100)) : null;
-                const barPct = ratio === null ? 0 : Math.min(100, ratio);
-
-                return (
-                  <View style={[styles.healthCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-                    <View style={styles.healthHeader}>
-                      <View style={styles.healthLabelRow}>
-                        <View style={[styles.healthDot, { backgroundColor: colors.primary }]} />
-                        <Text style={[styles.healthTitle, { color: colors.text }]}>
-                          Borrowed vs Collateralized
-                        </Text>
-                      </View>
-                      <Text style={[styles.healthLtv, { color: colors.text }]}>
-                        {ratio === null ? '—' : `${ratio}%`}
-                      </Text>
-                    </View>
-                    <View style={[styles.healthBarTrack, { backgroundColor: 'rgba(255,255,255,0.08)' }]}>
-                      <View style={[styles.healthBarFill, { width: `${barPct}%`, backgroundColor: colors.primary }]} />
-                    </View>
-                    <View style={styles.healthFooter}>
-                      <Text style={[styles.healthFooterText, { color: colors.textMuted }]}>
-                        {collVal === null
-                          ? `${order.collateralName} locked (USD value unavailable)`
-                          : `${order.collateralName} ≈ $${collVal.toFixed(2)}`}
-                      </Text>
-                      <Text style={[styles.healthFooterText, { color: colors.textMuted }]}>
-                        Debt ${debt.toFixed(2)}
-                      </Text>
-                    </View>
-                    <Text style={[styles.healthFootnote, { color: colors.textMuted }]}>
-                      Liquidation is time-triggered, not price-based: the loan can be claimed by the
-                      desk only after the due date plus a 24h social grace period. Collateral value is
-                      informational.
-                    </Text>
-                    {!priceTrusted && (
-                      <Text style={[styles.healthFootnote, { color: colors.warning }]}>
-                        No verified on-chain price right now — USD figures are hidden rather than
-                        estimated.
-                      </Text>
-                    )}
-                  </View>
-                );
-              })()}
-
-              {/* Loan Details */}
-              <View style={[styles.detailsBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-                <View style={styles.detailRow}>
-                  <Text style={[styles.label, { color: colors.textMuted }]}>Borrowed Principal</Text>
-                  <Text style={[styles.value, { color: colors.text }]}>${order.principalAmount} USDC</Text>
+              {/* Financial Metrics Strip */}
+              <View style={[styles.metricsStrip, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder }]}>
+                <View style={styles.metricColumn}>
+                  <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Principal</Text>
+                  <Text style={[styles.metricVal, { color: colors.text }]}>${order.principalAmount} USDC</Text>
                 </View>
-
-                <View style={styles.detailRow}>
-                  <Text style={[styles.label, { color: colors.textMuted }]}>Locked Collateral</Text>
-                  <Text style={[styles.valuePurple, { color: colors.accentLight }]}>{order.collateralName}</Text>
+                <View style={styles.metricColumn}>
+                  <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Interest</Text>
+                  <Text style={[styles.metricVal, { color: colors.text }]}>+${order.interestDue} USDC</Text>
                 </View>
-
-                <View style={styles.detailRow}>
-                  <Text style={[styles.label, { color: colors.textMuted }]}>Interest Accrued</Text>
-                  <Text style={[styles.value, { color: colors.text }]}>+${order.interestDue} USDC</Text>
-                </View>
-
-                <View style={[styles.detailRow, styles.totalRow, { borderTopColor: colors.cardBorder }]}>
-                  <Text style={[styles.totalLabel, { color: colors.text }]}>Total to Repay</Text>
-                  <Text style={[styles.totalValue, { color: colors.primaryLabel }]}>${totalDue} USDC</Text>
+                <View style={styles.metricColumn}>
+                  <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Collateral</Text>
+                  <Text style={[styles.metricVal, { color: colors.primaryLabel }]}>{order.collateralName}</Text>
                 </View>
               </View>
 
-              {/* On-Chain Evidence Box */}
-              <View style={[styles.evidenceBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-                <View style={styles.evidenceHeader}>
-                  <View style={styles.evidenceTitleRow}>
-                    <View style={[styles.dotLive, { backgroundColor: colors.primary }]} />
-                    <Text style={[styles.evidenceTitle, { color: colors.text }]}>ON-CHAIN VERIFICATION</Text>
-                  </View>
-                  <View style={[styles.networkBadge, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
-                    <Text style={[styles.networkBadgeText, { color: colors.primaryLabel }]}>Solana Mainnet</Text>
-                  </View>
-                </View>
-
-                {order.txSignature ? (
-                  <View style={styles.evidenceRow}>
-                    <Text style={[styles.evidenceLabel, { color: colors.textMuted }]}>Tx Signature</Text>
-                    <View style={styles.evidenceValRow}>
-                      <Text style={[styles.evidenceHash, { color: colors.accentLight }]} numberOfLines={1}>
-                        {order.txSignature.slice(0, 8)}...{order.txSignature.slice(-8)}
-                      </Text>
-                      <TouchableOpacity
-                        style={[styles.solscanChip, { backgroundColor: colors.primary }]}
-                        onPress={() => {
-                          const url = order.solscanUrl || `https://solscan.io/tx/${order.txSignature}`;
-                          Linking.openURL(url).catch(() => {
-                            Alert.alert('Solscan Transaction', order.txSignature!);
-                          });
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={[styles.solscanChipText, { color: colors.primaryText }]}>Solscan ↗</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ) : (
-                  <View style={styles.evidenceRow}>
-                    <Text style={[styles.evidenceLabel, { color: colors.textMuted }]}>Tx Signature</Text>
-                    <TouchableOpacity
-                      onPress={() => {
-                        const url = `https://solscan.io/account/${order.borrower}`;
-                        Linking.openURL(url).catch(() => {});
-                      }}
-                    >
-                      <Text style={[styles.evidenceHash, { color: colors.accentLight }]}>View Wallet on Solscan ↗</Text>
-                    </TouchableOpacity>
-                  </View>
+              {/* On-Chain Evidence Row (Minimal link) */}
+              <View style={styles.evidenceLine}>
+                {order.txSignature && (
+                  <TouchableOpacity
+                    style={styles.evidenceLink}
+                    onPress={() => {
+                      const url = order.solscanUrl || `https://solscan.io/tx/${order.txSignature}`;
+                      Linking.openURL(url).catch(() => {
+                        Alert.alert('Solscan Transaction', order.txSignature!);
+                      });
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.evidenceLinkText, { color: colors.textMuted }]}>
+                      Solscan Tx ({order.txSignature.slice(0, 4)}...{order.txSignature.slice(-4)}) ↗
+                    </Text>
+                  </TouchableOpacity>
                 )}
-
                 {order.escrowAddress && (
-                  <View style={styles.evidenceRow}>
-                    <Text style={[styles.evidenceLabel, { color: colors.textMuted }]}>Escrow PDA</Text>
-                    <TouchableOpacity
-                      onPress={() => {
-                        const url = `https://solscan.io/account/${order.escrowAddress}`;
-                        Linking.openURL(url).catch(() => {
-                          Alert.alert('Escrow Account', order.escrowAddress!);
-                        });
-                      }}
-                    >
-                      <Text style={[styles.evidenceHash, { color: colors.textSecondary }]} numberOfLines={1}>
-                        {order.escrowAddress.slice(0, 8)}...{order.escrowAddress.slice(-8)} ↗
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
+                  <TouchableOpacity
+                    style={styles.evidenceLink}
+                    onPress={() => {
+                      const url = `https://solscan.io/account/${order.escrowAddress}`;
+                      Linking.openURL(url).catch(() => {
+                        Alert.alert('Escrow Account', order.escrowAddress!);
+                      });
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.evidenceLinkText, { color: colors.textMuted }]}>
+                      Escrow PDA ↗
+                    </Text>
+                  </TouchableOpacity>
                 )}
               </View>
 
@@ -658,6 +564,42 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 10,
     fontWeight: '800',
+  },
+  metricsStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginVertical: 12,
+  },
+  metricColumn: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  metricKicker: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  metricVal: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  evidenceLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+    paddingHorizontal: 4,
+  },
+  evidenceLink: {
+    paddingVertical: 2,
+  },
+  evidenceLinkText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   detailsBox: {
     borderRadius: 14,
