@@ -191,6 +191,16 @@ Follow `docs/KEEPER_LIVENESS.md` §4 in order. The short version:
    nine-hour outage happened.
 3. Crank once manually and confirm both feeds advance.
 4. Set `KEEPER_KEYPAIR_JSON` in GitHub Actions and re-enable the workflow.
+5. **If you use the AWS Lambda path, redeploy the function.** Its two auth bypasses are
+   fixed in source only — a deployed Lambda still runs the old handler, which fails open on
+   `/crank` when `CRANK_AUTH_TOKEN` is unset and treats payload-format-2.0 web requests as
+   scheduled events. This is the one fix in the whole set that lives on a server you have to
+   push to; nothing else will surface it.
+
+Not implemented, and worth knowing: there is still **no rate limiting** on `/crank` or
+`/health`. `/health` makes RPC calls per request, so it can be spammed to exhaust the Helius
+quota the cron depends on. That is a liveness lever an attacker can pull, and it needs a
+decision about where to enforce the limit (Cloudflare rules vs. in-worker).
 
 ## 6. Migrate to a multisig
 
