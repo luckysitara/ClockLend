@@ -17,34 +17,26 @@ plain keypair. Migrating first makes the redeploy a 24-hour process for no benef
 
 ---
 
-## 1. Land the work (this machine)
+## 1. Land the work (this machine) — ✅ DONE 2026-09-30
 
-Everything is currently **uncommitted**: 30 modified files plus 5 new documents.
+Committed as five commits (`bcc1dad`, `39744de`, `51d25a8`, `9afe419`, `d1e8247`).
+Pre-commit checks that were run: `node mobile/scripts/keeper.test.mjs` → 12/12;
+`cargo test --release` → 107 passed / 0 failed.
 
-```bash
-cd /home/tiktoor/Clock-It
-git status --porcelain          # review
-node mobile/scripts/keeper.test.mjs              # 12/12
-cd program && cargo test --release && cd ..      # 107 passed / 0 failed
-```
+## 2. Push the rewritten history (this machine) — ✅ DONE
 
-Then commit. Suggested split, so the risky changes are separable from the documentation:
+`git push --force origin master` succeeded; the remote `master` is now `d1e8247` and a fresh
+clone of the public repo confirms **0 commits contain the Helius key**.
 
-1. `fix(program): round-15 hardening — shared LTV cap, borrow PDA check, yield parking, type classifier`
-2. `fix(ops): keeper fails closed; verify feeds after cranking`
-3. `fix(serverless): close Lambda auth bypasses, redact RPC credentials`
-4. `fix(mobile): align desk LTV with the program cap; correct UI claims`
-5. `docs: honest claims pass, app spec, keeper liveness, multisig migration`
+`main` was **not** pushed and does not need to be: it is a stub branch from 18 Sep containing
+zero commits with the key — it predates the mainnet bootstrap entirely. `master` was the only
+branch carrying it. Local `main` and `origin/main` now differ in SHA (the rewrite touched the
+graph) but are content-identical.
 
-## 2. Push the rewritten history (this machine)
-
-```bash
-git push --force origin master
-git push --force origin main
-```
-
-Expect resistance if either branch is protected — GitHub may refuse a force-push to a
-protected branch; temporarily disable the protection, push, re-enable.
+Two follow-ups from this step:
+- Your remote URL still says `Clock-It`; the repo is now `ClockLend`. Pushes work via redirect.
+- `main` is still the GitHub **default** branch, so visitors land on a 1-line stub. Consider
+  making `master` the default.
 
 **Then rotate the Helius key regardless.** GitHub keeps unreachable objects reachable by SHA
 for a while after a force-push, and the repository is **public**, so assume
@@ -57,6 +49,21 @@ real work is on `master`. Consider making `master` the default.
 
 ## 3. Redeploy round-15 (deploy machine)
 
+### 3.0 What must exist on that machine first
+
+Several things this repo needs are **not in git**, so a fresh clone does not have them.
+Check all of these before starting:
+
+| Needed | Why | If missing |
+| :--- | :--- | :--- |
+| `.env` at the repo root | `deploy-mainnet.mjs` calls `loadEnv()`. **Gitignored — it does not travel with a clone.** | Falls back to the public mainnet RPC, which is rate-limited; the upgrade can time out mid-flight while still having spent lamports |
+| `mobile/node_modules` | The script imports `@solana/web3.js`. Also gitignored. | `npm install` in `mobile/` |
+| `solana` CLI + `cargo-build-sbf` | Build and deploy | Install the Agave toolchain. **Record `solana --version`** — hash reproduction depends on it |
+| `~/.config/solana/mainnet-deployer.json` (or `DEPLOYER_KEY`) | Upgrade authority | Cannot upgrade at all |
+| `~/.config/solana/clock-lend-program.json` (or `PROGRAM_KEYPAIR`) | Program identity | Deploy aborts in preflight |
+| `~/.config/solana/mainnet-buffer.json` (or `BUFFER_KEYPAIR`) | Write-buffer step | **Confirm you have this one — it is easy to forget** and the failure is late |
+| Node 18+ | Scripts | — |
+
 ### 3.1 Resync first — mandatory
 
 ```bash
@@ -64,14 +71,30 @@ git fetch origin
 git log --oneline origin/master | head    # confirm the rewritten SHAs (HEAD will not be d7ca71a)
 git reset --hard origin/master            # discard the old history
 ```
-Do **not** merge or pull; the histories are unrelated after the rewrite.
+Do **not** merge or pull; the histories are unrelated after the rewrite. Pushing anything
+from a stale checkout reintroduces the Helius key into a "cleaned" repo.
 
-### 3.2 Build, verify, deploy
+### 3.2 ⚠️ Fund the deployer wallet — the upgrade will otherwise fail
+
+**Measured 2026-09-30: the deployer holds `0.1647 SOL`. An upgrade needs `1.8546 SOL` of
+rent-exempt buffer for the 364,960-byte ELF.**
+
+```bash
+solana balance 8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds --url <MAINNET_RPC>   # 0.1647 SOL today
+# buffer rent needed: 1.8546 SOL (refunded when the buffer closes, but required up front)
+```
+
+Send **at least ~2 SOL** to the deployer wallet before attempting the upgrade. The buffer
+rent is refunded once the deploy completes, so this is temporary liquidity, not a spend —
+but without it `write-buffer` fails and you have burned a trip.
+
+### 3.3 Build, verify, deploy
 
 ```bash
 cd program && cargo-build-sbf --sbf-out-dir target/deploy
 sha256sum target/deploy/clock_lend.so
-# Reference build produced on 2026-09-29: 31b4c68307359583c45173330354794d5e08df2e911b60808cc1677f533c1606 (364,960 B)
+# Reference build produced on 2026-09-29 with this repo's toolchain:
+#   31b4c68307359583c45173330354794d5e08df2e911b60808cc1677f533c1606  (364,960 B)
 # A different toolchain may legitimately produce a different hash — record YOURS.
 ```
 
@@ -79,9 +102,11 @@ sha256sum target/deploy/clock_lend.so
 cd .. && node mobile/scripts/deploy-mainnet.mjs --upgrade --cluster mainnet-beta
 ```
 Do **not** pass `--create-pool` (pool id 1 already exists and would collide) or
-`--rotate-oracle` unless you intend it.
+`--rotate-oracle` unless you intend it. The script verifies the cluster genesis before
+signing and prints a `--dry-run`-style simulation; read its output rather than the exit code
+alone.
 
-### 3.3 Re-verify — and update the record
+### 3.4 Re-verify — and update the record
 
 This is the step that closes the loop on the bug this audit opened with. The moment you
 deploy, every hash recorded in the repo becomes stale.
@@ -106,6 +131,49 @@ Then update **all** of these, which currently describe the round-14 deployment:
 - `docs/MAINNET_RUNBOOK.md` §0 table and the §1.1 `# expect` comment
 - `site/audit-report.html`
 - README open item 7 / runbook item 11 ("round-15 committed but not deployed") — mark resolved
+
+## 3b. Go-live gate — do not open to real money until all six pass
+
+A redeploy that returns exit 0 proves the bytecode changed. It does not prove the protocol
+works. Work through these in order; each one exercises something the previous cannot.
+
+| # | Check | How to prove it | Why it can fail silently |
+| :--- | :--- | :--- | :--- |
+| 1 | **On-chain bytecode verified** | §3.4 recipe: on-chain slice hash == `sha256sum` of your build; then update the four recorded locations | The whole point of the exercise; a stale record is what this audit opened with |
+| 2 | **Feeds fresh** | `curl <worker>/health \| jq '{oldestFeedAgeSeconds, healthy}'` → `healthy: true`, age well under 600 | A keeper that is not running reports nothing at all. This is live right now |
+| 3 | **Keeper monitored** | An external monitor on `/health`, alerting on anything but HTTP 200 | **Without this you are relying on a silent component to report its own silence** — exactly how a 9-hour outage went unnoticed |
+| 4 | **Borrow path actually works** | The smoke test below | Borrows revert with `StaleOraclePrice` if feeds lapsed, and with `InvalidTreasuryAccount` if the treasury ATA is missing. Both produce a UI that looks fine |
+| 5 | **90% LTV pool neutralised** | §4 | It is the only pool that can lend above 70%, with no price-based liquidation. A live pool is a live liability |
+| 6 | **Keys accounted for** | Confirm which key is admin, which is oracle authority, and that the upgrade authority is the one you think | `AdminConfig.admin` and the upgrade authority are **both** `8YvdDpW…` today; oracle is separate |
+
+### The smoke test (gate 4)
+
+Do this with deliberately small amounts on mainnet, as the pool authority:
+
+1. Create a **new** desk (LTV ≤ 7000 bps). Proves `InitializePool` accepts your parameters
+   and that the round-15 cap does not block legitimate use.
+2. `DepositLiquidity` a small amount — enough to cover the borrow plus fees.
+3. Borrow a small amount against SOL or SKR collateral with a **short duration**.
+   This is the single most important step: it exercises the oracle read, the collateral
+   escrow, the origination-fee split, and the treasury ATA in one transaction.
+4. **Repay in full** (`principal + interest`, exactly — there is no partial repayment).
+   Proves the interest take-rate leg and the collateral return.
+5. Confirm the collateral is back in your wallet and the loan reads `Repaid`.
+
+If step 3 reverts, the error code identifies the cause (codes are the `ClockLendError`
+discriminants in `program/src/error.rs`, surfaced as `Custom(n)`):
+
+| Code | Variant | Means |
+| :--- | :--- | :--- |
+| 29 | `StaleOraclePrice` | The feed is older than 600 s — the keeper is not running |
+| 24 | `InvalidTreasuryAccount` | The treasury token account for that mint is missing |
+| 28 | `InvalidOracleAccount` | No usable feed was supplied or it is misconfigured |
+| 10 | `InvalidCollateralRatio` | LTV above the 7000 bps cap, or a bad `max_ltv_bps` at pool init |
+| 11 | `InsufficientLiquidity` | The pool vault cannot cover the borrow |
+
+**Known prerequisite:** the treasury PDA has no account on chain, but its **USDC** ATA
+(`9UozceLNGCansqNeDcGFvirwLrnCyrTQFRSKGvmfnG63`) exists, so USDC-pool borrows can pay fees
+today. A **WSOL** pool would need a WSOL treasury ATA created first, or every borrow reverts.
 
 ## 4. Neutralise the 90% LTV pool
 
