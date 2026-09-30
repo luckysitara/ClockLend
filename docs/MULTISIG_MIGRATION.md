@@ -879,7 +879,7 @@ transaction, that is roughly `480 × 5000 = 2,400,000` lamports/day ≈ **0.0024
 ~0.12 SOL/day (**under a day**).
 
 ⚠️ I could not determine the exact per-crank fee from the repo (the fee configuration is not
-visible in `crank_oracles.mjs` / `lambda.ts` as read), so **measure it**: check the recent crank
+visible in `crank_oracles.mjs` / the keeper CLI as read), so **measure it**: check the recent crank
 transactions' fee on Solscan and compute the real daily burn.
 
 Either way the lesson is the same, and it is urgent independently of this migration: **when this

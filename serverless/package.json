@@ -1,7 +1,7 @@
 {
   "name": "clocklend-serverless-oracle",
   "version": "1.0.0",
-  "description": "Serverless Oracle Crank for ClockLend Protocol (Cloudflare Workers & AWS Lambda)",
+  "description": "Serverless Oracle Crank for ClockLend Protocol (Cloudflare Workers)",
   "main": "src/index.ts",
   "type": "module",
   "scripts": {

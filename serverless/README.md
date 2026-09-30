@@ -2,7 +2,7 @@
 
 Zero-server, production-ready serverless oracle crank for the **ClockLend** Solana lending protocol.
 
-Replaces dedicated 24/7 Linux keeper servers with modern serverless edge functions (**Cloudflare Workers**, **AWS Lambda**, or **Vercel Cron**).
+Replaces dedicated 24/7 Linux keeper servers with a serverless edge function (**Cloudflare Workers**). See the note at the end on why there is only one runner.
 
 ---
 
@@ -164,18 +164,26 @@ Base58 string) is what the code reads.
 
 ---
 
-## ☁️ Alternative: Deploying to AWS Lambda
+## Why there is only one runner (Cloudflare)
 
-If you prefer AWS:
-1. Entry point: `src/lambda.ts` (`export const handler`).
-2. Add an **EventBridge Rule** with rate `cron(0/3 * * * ? *)` (every 3 minutes).
-3. Set environment variables in Lambda Configuration:
-   - `ORACLE_KEYPAIR` (required — store via Secrets Manager / SSM, not plaintext)
-   - `CRANK_AUTH_TOKEN` (**required** — the Lambda's `POST /crank` now fails closed with 503
-     when it is unset, matching the Cloudflare worker. Authenticate only genuine scheduled
-     events: EventBridge sets `source: "aws.events"`, and an HTTP request can never reach the
-     cron branch — payload-format-2.0 events from HTTP APIs / Function URLs carry no top-level
-     `httpMethod`, which previously caused web requests to be treated as scheduled events.)
-   - `RPC_URL`
-   - `PROGRAM_ID`
-   - `NETWORK` (`mainnet-beta`)
+The AWS Lambda handler has been **removed**. It was a third deployment of the same
+`crankOracles` code — thin wrapper, no unique logic — and it carried real costs:
+
+- **A third copy of the oracle signing key** (Cloudflare secret, GitHub secret, Lambda
+  environment). Every additional copy of a signing key is another chance to leak it.
+- **Two auth bypasses**, both fixed and then rendered moot by deleting the file: it ran the
+  crank unauthenticated when `CRANK_AUTH_TOKEN` was unset, and payload-format-2.0 events
+  (HTTP APIs / Function URLs) carry no top-level `httpMethod`, so ordinary web requests fell
+  into the unauthenticated cron branch.
+- **A deploy surface nothing surfaces.** Unlike the Worker and the GitHub workflow, a stale
+  Lambda announces nothing — no CI job, no health endpoint.
+
+If you want a second runner, note what you are choosing between: EventBridge has a *more
+reliable* scheduler than GitHub Actions, which auto-disables scheduled workflows on a repo
+with no activity for 60 days and delays runs under load against a 600 s staleness bound. A
+`systemd` timer on any always-on host running `mobile/scripts/keeper.mjs` is a better
+secondary than either.
+
+What actually makes a single runner safe is **monitoring**, not redundancy: an external
+uptime check on `/health`, which returns 503 when a feed is stale. Without it you are relying
+on a silent component to report its own silence. See `docs/KEEPER_LIVENESS.md`.

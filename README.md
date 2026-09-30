@@ -49,10 +49,11 @@ collected.
 3. No third-party audit has been performed
 4. A Helius RPC API key is committed in `serverless/wrangler.toml` (now a comment) and is
    still live — **it must be rotated with the provider**, not merely deleted from the repo
-5. The AWS Lambda keeper has two auth bypasses: `lambda.ts` runs the crank unauthenticated
-   when `CRANK_AUTH_TOKEN` is unset (the Cloudflare worker correctly fails closed), and
-   payload-format-2.0 events (HTTP APIs / Function URLs) carry no top-level `httpMethod`, so
-   ordinary web requests fall into the unauthenticated cron branch
+5. ~~The AWS Lambda keeper has two auth bypasses~~ **resolved** — the Lambda has been removed
+   entirely rather than maintained. It was a third deployment of the same `crankOracles` code
+   with no unique logic, and it held a third copy of the oracle signing key. Cloudflare is now
+   the only scheduled runner; see `serverless/README.md` for the failover trade-off and
+   `docs/KEEPER_LIVENESS.md` for what actually makes a single runner safe
 6. `/health` on the Cloudflare worker returns `rpcUrl` unredacted, exposing the API key to
    anonymous callers
 7. **Round-15 hardening is committed but not deployed.** Source-side fixes for four issues
