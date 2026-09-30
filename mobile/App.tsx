@@ -13,9 +13,13 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { PublicKey } from '@solana/web3.js';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { Header } from './src/components/Header';
 import { QuickStartBar } from './src/components/QuickStartBar';
+import { HomeDashboardView } from './src/components/HomeDashboardView';
+import { QuickHubView } from './src/components/QuickHubView';
 import { P2PExpressView } from './src/components/P2PExpressView';
 import { MerchantDesksView } from './src/components/MerchantDesksView';
 import { ActiveOrdersView } from './src/components/ActiveOrdersView';
@@ -76,7 +80,7 @@ import {
 } from './src/solana/seekerWallet';
 import { LendingPool, LoanOrder, P2POffer, OfferStatus, UserProfile, WalletAssets, SolanaNetwork } from './src/types';
 
-type Tab = 'BORROW' | 'MARKET' | 'LOANS' | 'PROFILE';
+type Tab = 'HOME' | 'BORROW' | 'HUB' | 'MARKET' | 'LOANS' | 'PROFILE';
 
 /**
  * Outcome of the last COMPLETED read for one protocol slice. `loadProtocolData`
@@ -99,7 +103,7 @@ function MainApp() {
   const [session, setSession] = useState<SeekerSession | null>(null);
   // Mainnet-only app: the devnet toggle was removed (round-14 audit M-7).
   const selectedNetwork: SolanaNetwork = 'mainnet-beta';
-  const [activeTab, setActiveTab] = useState<Tab>('BORROW');
+  const [activeTab, setActiveTab] = useState<Tab>('HOME');
   // First-time Quick-Start guided bar (post-auth feature discovery, shown once per device)
   const [showQuickStart, setShowQuickStart] = useState<boolean>(false);
   const [borrowPreset, setBorrowPreset] = useState<string | null>(null);
@@ -1321,6 +1325,7 @@ function MainApp() {
     return (
       <SecurityLockScreen
         mode={lockScreenMode}
+        userName={session?.skrHandle ?? 'Seeker'}
         onUnlock={() => {
           lastUnlockAtRef.current = Date.now();
           setIsLocked(false);
@@ -1392,21 +1397,43 @@ function MainApp() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
 
-      {/* Top Header */}
-      <Header
-        skrHandle={session.skrHandle}
-        solBalance={solBalance}
-        onPressProfile={() => setActiveTab('PROFILE')}
-        onPressBalance={() => setShowAssetsModal(true)}
-        onDisconnectWallet={handleDisconnect}
-        hasSeekerGenesisToken={walletAssets.hasSeekerGenesisToken}
-        isProfileActive={activeTab === 'PROFILE'}
-        onOpenLeaderboard={() => setShowLeaderboard(true)}
-        onOpenJudgeBriefing={() => setShowJudgeBriefing(true)}
-      />
+      {/* Top Header (shown on secondary tabs) */}
+      {activeTab !== 'HOME' && activeTab !== 'HUB' && (
+        <Header
+          skrHandle={session.skrHandle}
+          solBalance={solBalance}
+          onPressProfile={() => setActiveTab('PROFILE')}
+          onPressBalance={() => setShowAssetsModal(true)}
+          onDisconnectWallet={handleDisconnect}
+          hasSeekerGenesisToken={walletAssets.hasSeekerGenesisToken}
+          isProfileActive={activeTab === 'PROFILE'}
+          onOpenLeaderboard={() => setShowLeaderboard(true)}
+          onOpenJudgeBriefing={() => setShowJudgeBriefing(true)}
+        />
+      )}
 
       {/* Main Content Area */}
       <View style={styles.body}>
+        {activeTab === 'HOME' && (
+          <HomeDashboardView
+            skrHandle={session.skrHandle}
+            userProfile={currentProfile}
+            walletAssets={walletAssets}
+            activeOrders={orders.filter((o) => {
+              const s = o.status.toUpperCase();
+              return s === 'ACTIVE' || s === 'INGRACEPERIOD' || s === 'GRACE_PERIOD';
+            })}
+            solBalance={solBalance}
+            onNavigateBorrow={() => setActiveTab('BORROW')}
+            onNavigateRepay={() => setActiveTab('LOANS')}
+            onNavigateDesks={() => setActiveTab('MARKET')}
+            onOpenAssetsModal={() => setShowAssetsModal(true)}
+            onOpenLeaderboard={() => setShowLeaderboard(true)}
+            onRefresh={retryProtocolData}
+            isLoading={isProtocolLoading}
+          />
+        )}
+
         {activeTab === 'BORROW' && (
           <P2PExpressView
             key={`borrow-${borrowPreset ?? 'default'}`}
@@ -1416,6 +1443,22 @@ function MainApp() {
             walletAssets={walletAssets}
             onBorrow={handleBorrow}
             isLoadingPools={isLoadingPools}
+          />
+        )}
+
+        {activeTab === 'HUB' && (
+          <QuickHubView
+            onNavigateBorrow={() => setActiveTab('BORROW')}
+            onNavigateDesks={() => setActiveTab('MARKET')}
+            onNavigateLoans={() => setActiveTab('LOANS')}
+            onNavigateProfile={() => setActiveTab('PROFILE')}
+            onOpenAssetsModal={() => setShowAssetsModal(true)}
+            onOpenLeaderboard={() => setShowLeaderboard(true)}
+            onOpenJudgeBriefing={() => setShowJudgeBriefing(true)}
+            onLockApp={() => {
+              setLockScreenMode('unlock');
+              setIsLocked(true);
+            }}
           />
         )}
 
@@ -1435,9 +1478,6 @@ function MainApp() {
             onDepositLiquidity={handleDepositLiquidity}
             isLoading={isProtocolLoading}
             loadFailed={poolsStatus === 'error' || offersStatus === 'error'}
-            // Per sub-tab: a failed desk read must not be reported as a failed
-            // pawn read, and a genuine empty result on one must not be reported
-            // as a failure on the other.
             poolsLoadFailed={poolsStatus === 'error'}
             offersLoadFailed={offersStatus === 'error'}
             onRetry={retryProtocolData}
@@ -1486,8 +1526,34 @@ function MainApp() {
         )}
       </View>
 
-      {/* Modern Bottom Navigation Bar */}
+      {/* Modern 5-Item Bottom Navigation Bar with Center Floating Button (Matches Screenshots) */}
       <View style={[styles.tabBar, { backgroundColor: colors.card, borderTopColor: colors.cardBorder }]}>
+        {/* 1. Home */}
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() => setActiveTab('HOME')}
+          activeOpacity={0.7}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'HOME' }}
+          accessibilityLabel="Home tab"
+        >
+          <Ionicons
+            name={activeTab === 'HOME' ? 'home' : 'home-outline'}
+            size={22}
+            color={activeTab === 'HOME' ? '#D97706' : colors.textSecondary}
+          />
+          <Text
+            style={[
+              styles.tabLabel,
+              { color: colors.textSecondary },
+              activeTab === 'HOME' && { color: '#D97706', fontWeight: '800' },
+            ]}
+          >
+            Home
+          </Text>
+        </TouchableOpacity>
+
+        {/* 2. Borrow */}
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => setActiveTab('BORROW')}
@@ -1499,19 +1565,43 @@ function MainApp() {
           <Ionicons
             name={activeTab === 'BORROW' ? 'flash' : 'flash-outline'}
             size={22}
-            color={activeTab === 'BORROW' ? colors.primary : colors.textSecondary}
+            color={activeTab === 'BORROW' ? '#D97706' : colors.textSecondary}
           />
           <Text
             style={[
               styles.tabLabel,
               { color: colors.textSecondary },
-              activeTab === 'BORROW' && { color: colors.primary, fontWeight: '800' },
+              activeTab === 'BORROW' && { color: '#D97706', fontWeight: '800' },
             ]}
           >
             Borrow
           </Text>
         </TouchableOpacity>
 
+        {/* 3. Center Elevated Golden Circular Button (Matches Screenshots) */}
+        <View style={styles.centerFabWrapper}>
+          <TouchableOpacity
+            style={styles.centerFab}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setActiveTab('HUB');
+            }}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="ClockLend Hub"
+          >
+            <LinearGradient
+              colors={['#D97706', '#F59E0B']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.centerFabGradient}
+            >
+              <Ionicons name="grid" size={22} color="#FFFFFF" />
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+
+        {/* 4. Desks */}
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => setActiveTab('MARKET')}
@@ -1523,50 +1613,20 @@ function MainApp() {
           <Ionicons
             name={activeTab === 'MARKET' ? 'storefront' : 'storefront-outline'}
             size={22}
-            color={activeTab === 'MARKET' ? colors.primary : colors.textSecondary}
+            color={activeTab === 'MARKET' ? '#D97706' : colors.textSecondary}
           />
           <Text
             style={[
               styles.tabLabel,
               { color: colors.textSecondary },
-              activeTab === 'MARKET' && { color: colors.primary, fontWeight: '800' },
+              activeTab === 'MARKET' && { color: '#D97706', fontWeight: '800' },
             ]}
           >
-            P2P Desks
+            Desks
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => setActiveTab('LOANS')}
-          activeOpacity={0.7}
-          accessibilityRole="tab"
-          accessibilityState={{ selected: activeTab === 'LOANS' }}
-          accessibilityLabel={activeCount > 0 ? `Active Loans tab, ${activeCount} active loans` : 'Active Loans tab'}
-        >
-          <View style={{ position: 'relative' }}>
-            <Ionicons
-              name={activeTab === 'LOANS' ? 'receipt' : 'receipt-outline'}
-              size={22}
-              color={activeTab === 'LOANS' ? colors.primary : colors.textSecondary}
-            />
-            {activeCount > 0 && (
-              <View style={[styles.tabBadge, { backgroundColor: colors.accent }]}>
-                <Text style={styles.tabBadgeText}>{activeCount}</Text>
-              </View>
-            )}
-          </View>
-          <Text
-            style={[
-              styles.tabLabel,
-              { color: colors.textSecondary },
-              activeTab === 'LOANS' && { color: colors.primary, fontWeight: '800' },
-            ]}
-          >
-            Active Loans
-          </Text>
-        </TouchableOpacity>
-
+        {/* 5. Account / Profile */}
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => setActiveTab('PROFILE')}
@@ -1576,18 +1636,18 @@ function MainApp() {
           accessibilityLabel="Account profile tab"
         >
           <Ionicons
-            name={activeTab === 'PROFILE' ? 'person-circle' : 'person-circle-outline'}
-            size={23}
-            color={activeTab === 'PROFILE' ? colors.primary : colors.textSecondary}
+            name={activeTab === 'PROFILE' ? 'person' : 'person-outline'}
+            size={22}
+            color={activeTab === 'PROFILE' ? '#D97706' : colors.textSecondary}
           />
           <Text
             style={[
               styles.tabLabel,
               { color: colors.textSecondary },
-              activeTab === 'PROFILE' && { color: colors.primary, fontWeight: '800' },
+              activeTab === 'PROFILE' && { color: '#D97706', fontWeight: '800' },
             ]}
           >
-            Account
+            Profile
           </Text>
         </TouchableOpacity>
       </View>
@@ -1658,15 +1718,41 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    paddingVertical: 12,
+    paddingTop: 8,
     paddingBottom: 22,
     paddingHorizontal: 8,
     justifyContent: 'space-around',
     alignItems: 'center',
+    position: 'relative',
   },
   tabItem: {
     alignItems: 'center',
+    justifyContent: 'center',
     flex: 1,
+  },
+  centerFabWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  centerFab: {
+    position: 'absolute',
+    top: -24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    shadowColor: '#D97706',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  centerFabGradient: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   tabIcon: {
     fontSize: 22,

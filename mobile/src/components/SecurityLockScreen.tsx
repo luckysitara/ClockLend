@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Animated,
   Image,
+  Dimensions,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,28 +19,30 @@ import {
   recordFailedAttempt,
   resetFailedAttempts,
   isPinConfigured,
-  setLockEnabled,
   isBiometricsEnabled,
   checkBiometricHardware,
   authenticateWithBiometrics,
 } from '../services/securityService';
 
+const { width } = Dimensions.get('window');
 const LOGO_IMG = require('../../assets/logo.png');
 
 export type LockScreenMode = 'unlock' | 'setup' | 'change_pin';
 
 interface SecurityLockScreenProps {
   mode?: LockScreenMode;
+  userName?: string;
   onUnlock: () => void;
   onCancel?: () => void;
 }
 
 export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
   mode = 'unlock',
+  userName = 'Seeker',
   onUnlock,
   onCancel,
 }) => {
-  const { colors } = useTheme();
+  const { colors, mode: themeMode } = useTheme();
 
   // Screen State
   const [currentMode, setCurrentMode] = useState<LockScreenMode>(mode);
@@ -50,14 +53,33 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
   const [hasBiometrics, setHasBiometrics] = useState<boolean>(false);
   const [biometricsActive, setBiometricsActive] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
-  const [attempts, setAttempts] = useState<number>(0);
+  const [showKeypad, setShowKeypad] = useState<boolean>(false);
 
   // Animations
   const shakeAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     initSecurity();
   }, [mode]);
+
+  useEffect(() => {
+    // Subtle pulse for biometric ring
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.06,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
 
   useEffect(() => {
     if (lockoutSeconds <= 0) return;
@@ -79,34 +101,35 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
     if (remaining > 0) {
       setLockoutSeconds(remaining);
       setErrorMsg(`Device temporarily locked. Retry in ${remaining}s.`);
+      setShowKeypad(true);
     }
 
     const pinConfigured = await isPinConfigured();
 
-    // If in unlock mode but no PIN has EVER been configured, switch to setup mode
     if (mode === 'unlock' && !pinConfigured) {
       setCurrentMode('setup');
       setStep('enter_new');
+      setShowKeypad(true);
       return;
     }
 
     if (mode === 'setup') {
       setCurrentMode('setup');
       setStep('enter_new');
+      setShowKeypad(true);
       return;
     }
 
     if (mode === 'change_pin') {
       setCurrentMode('change_pin');
       setStep('enter_current');
+      setShowKeypad(true);
       return;
     }
 
-    // Default unlock mode (FAIL CLOSED: stays in unlock mode even if read has a transient error)
     setCurrentMode('unlock');
     setStep('unlock');
 
-    // Check hardware biometrics & auto-prompt
     const { hasHardware, isEnrolled } = await checkBiometricHardware();
     const bioPref = await isBiometricsEnabled();
     const canUseBio = hasHardware && isEnrolled && bioPref;
@@ -114,15 +137,19 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
     setBiometricsActive(canUseBio);
 
     if (canUseBio && remaining === 0) {
+      // Auto-prompt biometrics like 09802503 reference
+      setShowKeypad(false);
       setTimeout(() => {
         triggerBiometric();
       }, 350);
+    } else {
+      setShowKeypad(true);
     }
   };
 
   const triggerBiometric = async () => {
     if (lockoutSeconds > 0) return;
-    const success = await authenticateWithBiometrics('Unlock ClockLend with Biometrics');
+    const success = await authenticateWithBiometrics('Unlock ClockLend');
     if (success) {
       await resetFailedAttempts();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -133,11 +160,11 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
   const shake = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
     Animated.sequence([
-      Animated.timing(shakeAnim, { toValue: 12, duration: 55, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: -12, duration: 55, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 8, duration: 55, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: -8, duration: 55, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 0, duration: 55, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 6, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: -6, duration: 50, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
     ]).start();
   };
 
@@ -150,34 +177,27 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
     setErrorMsg('');
 
     if (newPin.length === 4) {
-      processCompletedPin(newPin);
+      setTimeout(() => processPin(newPin), 80);
     }
   };
 
-  const processCompletedPin = async (inputPin: string) => {
-    if (lockoutSeconds > 0) {
-      setErrorMsg(`Device temporarily locked. Retry in ${lockoutSeconds}s.`);
-      setPin('');
-      return;
-    }
-
+  const processPin = async (inputPin: string) => {
     if (currentMode === 'unlock') {
-      // Validate with hashed PIN & salt
-      const isValid = await verifyUserPin(inputPin);
-      if (isValid) {
+      const valid = await verifyUserPin(inputPin);
+      if (valid) {
         await resetFailedAttempts();
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        setTimeout(() => onUnlock(), 100);
+        onUnlock();
       } else {
-        const { locked, remainingSeconds } = await recordFailedAttempt();
         shake();
-        if (locked) {
-          setLockoutSeconds(remainingSeconds);
-          setErrorMsg(`Too many incorrect attempts. Locked for ${remainingSeconds}s.`);
+        const res = await recordFailedAttempt();
+        if (res.locked && res.remainingSeconds > 0) {
+          setLockoutSeconds(res.remainingSeconds);
+          setErrorMsg(`Device temporarily locked. Retry in ${res.remainingSeconds}s.`);
         } else {
           setErrorMsg('Incorrect PIN. Please try again.');
         }
-        setTimeout(() => setPin(''), 450);
+        setTimeout(() => setPin(''), 400);
       }
     } else if (currentMode === 'setup') {
       if (step === 'enter_new') {
@@ -186,31 +206,29 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
         setStep('confirm_new');
       } else if (step === 'confirm_new') {
         if (inputPin === firstEnteredPin) {
-          // PIN verified and confirmed!
           await setUserPin(inputPin);
-          await setLockEnabled(true);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
           setTimeout(() => onUnlock(), 150);
         } else {
           shake();
-          setErrorMsg('PINs do not match. Please try again.');
+          setErrorMsg('PINs do not match. Try again.');
           setTimeout(() => {
             setPin('');
             setStep('enter_new');
             setFirstEnteredPin('');
-          }, 500);
+          }, 450);
         }
       }
     } else if (currentMode === 'change_pin') {
       if (step === 'enter_current') {
-        const isValid = await verifyUserPin(inputPin);
-        if (isValid) {
+        const valid = await verifyUserPin(inputPin);
+        if (valid) {
           setPin('');
           setStep('enter_new');
         } else {
           shake();
           setErrorMsg('Current PIN incorrect.');
-          setTimeout(() => setPin(''), 450);
+          setTimeout(() => setPin(''), 400);
         }
       } else if (step === 'enter_new') {
         setFirstEnteredPin(inputPin);
@@ -228,7 +246,7 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
             setPin('');
             setStep('enter_new');
             setFirstEnteredPin('');
-          }, 500);
+          }, 450);
         }
       }
     }
@@ -242,183 +260,187 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
     }
   };
 
-  const getHeaderTitle = () => {
-    if (currentMode === 'unlock') return 'ClockLend Security';
-    if (currentMode === 'setup') {
-      return step === 'confirm_new' ? 'Confirm Your PIN' : 'Create 4-Digit PIN';
-    }
-    if (currentMode === 'change_pin') {
-      if (step === 'enter_current') return 'Enter Current PIN';
-      if (step === 'confirm_new') return 'Confirm New PIN';
-      return 'Enter New 4-Digit PIN';
-    }
-    return 'Security Verification';
-  };
-
-  const getSubtitle = () => {
-    if (currentMode === 'unlock') {
-      return biometricsActive
-        ? 'Use Fingerprint / Face ID or enter your PIN'
-        : 'Enter your 4-digit PIN to access ClockLend';
-    }
-    if (currentMode === 'setup') {
-      return step === 'confirm_new'
-        ? 'Re-enter your 4-digit PIN to confirm'
-        : 'Choose a personal 4-digit PIN for device security';
-    }
-    if (currentMode === 'change_pin') {
-      if (step === 'enter_current') return 'Enter your existing security PIN to continue';
-      if (step === 'confirm_new') return 'Re-enter your new PIN to confirm change';
-      return 'Enter your new 4-digit security PIN';
-    }
-    return '';
-  };
-
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Top Bar with Cancel (if available in setup/change mode) */}
-      <View style={styles.topBar}>
+    <View style={[styles.container, { backgroundColor: themeMode === 'dark' ? '#0B0E17' : '#FFFFFF' }]}>
+      {/* Top Header Logo */}
+      <View style={styles.topLogoRow}>
+        <View style={styles.smallLogoWrapper}>
+          <Image source={LOGO_IMG} style={styles.smallLogo} resizeMode="contain" />
+        </View>
         {onCancel && (
-          <TouchableOpacity
-            onPress={onCancel}
-            style={styles.cancelBtn}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Cancel PIN entry"
-          >
-            <Text style={[styles.cancelBtnText, { color: colors.textSecondary }]}>Cancel</Text>
+          <TouchableOpacity onPress={onCancel} style={styles.cancelBtn}>
+            <Text style={[styles.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Brand Header */}
-      <View style={styles.header}>
-        <View style={styles.logoBox}>
-          <Image source={LOGO_IMG} style={styles.logo} resizeMode="contain" />
-        </View>
-        <Text style={[styles.title, { color: colors.text }]}>{getHeaderTitle()}</Text>
-        <Text style={[styles.sub, { color: colors.textSecondary }]}>{getSubtitle()}</Text>
+      {/* Main Lock Screen Mode 1: Clean Biometric (09802503 Reference) */}
+      {!showKeypad && currentMode === 'unlock' ? (
+        <View style={styles.biometricScreen}>
+          <Text style={[styles.helloTitle, { color: themeMode === 'dark' ? '#F1F5F9' : '#1C1917' }]}>
+            Hello, {userName}
+          </Text>
 
-        {/* Security Methods Status Pill */}
-        <View style={styles.badgeRow}>
-          <View style={[styles.methodBadge, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-            <Ionicons name="key" size={12} color={colors.primary} />
-            <Text style={[styles.badgeText, { color: colors.text }]}>PIN: Active</Text>
-          </View>
-          {hasBiometrics && (
-            <View
+          {/* Golden Biometric Ring */}
+          <TouchableOpacity
+            style={styles.biometricRingContainer}
+            onPress={triggerBiometric}
+            activeOpacity={0.8}
+          >
+            <Animated.View
               style={[
-                styles.methodBadge,
+                styles.biometricRing,
                 {
-                  backgroundColor: biometricsActive ? 'rgba(16, 185, 129, 0.12)' : colors.cardAlt,
-                  borderColor: biometricsActive ? colors.primary : colors.cardBorder,
+                  transform: [{ scale: pulseAnim }],
+                  borderColor: '#D97706',
+                  backgroundColor: 'rgba(217, 119, 6, 0.08)',
                 },
               ]}
             >
-              <Ionicons
-                name="finger-print"
-                size={12}
-                color={biometricsActive ? colors.primary : colors.textMuted}
-              />
-              <Text
-                style={[
-                  styles.badgeText,
-                  { color: biometricsActive ? colors.primary : colors.textMuted },
-                ]}
-              >
-                Biometrics: {biometricsActive ? 'Active (2/2)' : 'Off'}
-              </Text>
-            </View>
-          )}
+              <Ionicons name="finger-print" size={56} color="#D97706" />
+            </Animated.View>
+          </TouchableOpacity>
+
+          {/* Bottom Card Button: Unlock with PIN */}
+          <TouchableOpacity
+            style={[
+              styles.unlockPinBtn,
+              {
+                backgroundColor: themeMode === 'dark' ? '#131826' : '#FFFFFF',
+                borderColor: colors.cardBorder,
+              },
+            ]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              setShowKeypad(true);
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.unlockPinText, { color: themeMode === 'dark' ? '#F1F5F9' : '#1C1917' }]}>
+              Unlock with PIN
+            </Text>
+          </TouchableOpacity>
         </View>
-      </View>
+      ) : (
+        /* Main Lock Screen Mode 2: Tactile 4-Digit Numeric Keypad */
+        <View style={styles.keypadScreen}>
+          <Text style={[styles.helloTitle, { color: themeMode === 'dark' ? '#F1F5F9' : '#1C1917', marginBottom: 6 }]}>
+            {currentMode === 'setup'
+              ? step === 'confirm_new'
+                ? 'Confirm Your PIN'
+                : 'Create 4-Digit PIN'
+              : currentMode === 'change_pin'
+              ? step === 'enter_current'
+                ? 'Enter Current PIN'
+                : step === 'confirm_new'
+                ? 'Confirm New PIN'
+                : 'Enter New PIN'
+              : `Hello, ${userName}`}
+          </Text>
 
-      {/* 4 PIN Dots */}
-      <Animated.View style={[styles.dotsRow, { transform: [{ translateX: shakeAnim }] }]}>
-        {[0, 1, 2, 3].map((i) => {
-          const filled = pin.length > i;
-          return (
-            <View
-              key={i}
-              style={[
-                styles.dot,
-                {
-                  borderColor: filled ? colors.primary : colors.cardBorder,
-                  backgroundColor: filled ? colors.primary : colors.cardAlt,
-                },
-              ]}
-            />
-          );
-        })}
-      </Animated.View>
+          <Text style={[styles.subText, { color: colors.textSecondary }]}>
+            {currentMode === 'unlock'
+              ? 'Enter your 4-digit security PIN'
+              : 'Choose a PIN for device & Seed Vault security'}
+          </Text>
 
-      {/* Error / Status Indicator */}
-      <View style={styles.hintBox}>
-        {errorMsg ? (
-          <Text style={[styles.errorText, { color: colors.danger }]}>{errorMsg}</Text>
-        ) : null}
-      </View>
+          {/* 4 Golden Indicator Dots */}
+          <Animated.View style={[styles.dotsRow, { transform: [{ translateX: shakeAnim }] }]}>
+            {[0, 1, 2, 3].map((i) => {
+              const filled = pin.length > i;
+              return (
+                <View
+                  key={i}
+                  style={[
+                    styles.dot,
+                    {
+                      borderColor: filled ? '#D97706' : colors.cardBorder,
+                      backgroundColor: filled ? '#D97706' : colors.cardAlt,
+                    },
+                  ]}
+                />
+              );
+            })}
+          </Animated.View>
 
-      {/* Keypad */}
-      <View style={styles.keypad}>
-        {[
-          ['1', '2', '3'],
-          ['4', '5', '6'],
-          ['7', '8', '9'],
-        ].map((row, rIdx) => (
-          <View key={rIdx} style={styles.keyRow}>
-            {row.map((digit) => (
-              <TouchableOpacity
-                key={digit}
-                style={[styles.keyBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
-                onPress={() => handleKeyPress(digit)}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityLabel={`Number ${digit}`}
-              >
-                <Text style={[styles.keyText, { color: colors.text }]}>{digit}</Text>
-              </TouchableOpacity>
+          {errorMsg ? (
+            <Text style={styles.errorText}>{errorMsg}</Text>
+          ) : (
+            <View style={{ height: 20 }} />
+          )}
+
+          {/* Numeric Keypad */}
+          <View style={styles.keypad}>
+            {[
+              ['1', '2', '3'],
+              ['4', '5', '6'],
+              ['7', '8', '9'],
+              ['bio', '0', 'del'],
+            ].map((row, rIdx) => (
+              <View key={rIdx} style={styles.keyRow}>
+                {row.map((k) => {
+                  if (k === 'bio') {
+                    if (currentMode === 'unlock' && biometricsActive) {
+                      return (
+                        <TouchableOpacity
+                          key={k}
+                          style={styles.keyBtn}
+                          onPress={triggerBiometric}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="finger-print" size={28} color="#D97706" />
+                        </TouchableOpacity>
+                      );
+                    }
+                    return <View key={k} style={styles.keyBtn} />;
+                  }
+
+                  if (k === 'del') {
+                    return (
+                      <TouchableOpacity
+                        key={k}
+                        style={styles.keyBtn}
+                        onPress={handleDelete}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons
+                          name="backspace-outline"
+                          size={24}
+                          color={themeMode === 'dark' ? '#F1F5F9' : '#1C1917'}
+                        />
+                      </TouchableOpacity>
+                    );
+                  }
+
+                  return (
+                    <TouchableOpacity
+                      key={k}
+                      style={[
+                        styles.keyBtn,
+                        {
+                          backgroundColor: themeMode === 'dark' ? '#131826' : '#F8FAFC',
+                          borderColor: colors.cardBorder,
+                        },
+                      ]}
+                      onPress={() => handleKeyPress(k)}
+                      activeOpacity={0.65}
+                    >
+                      <Text
+                        style={[
+                          styles.keyText,
+                          { color: themeMode === 'dark' ? '#F1F5F9' : '#1C1917' },
+                        ]}
+                      >
+                        {k}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             ))}
           </View>
-        ))}
-
-        {/* Bottom Row */}
-        <View style={styles.keyRow}>
-          {currentMode === 'unlock' && hasBiometrics && biometricsActive ? (
-            <TouchableOpacity
-              style={[styles.keyBtnSpecial, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}
-              onPress={triggerBiometric}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Unlock with biometrics"
-            >
-              <Ionicons name="finger-print" size={28} color={colors.primary} />
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.keyBtnEmpty} />
-          )}
-
-          <TouchableOpacity
-            style={[styles.keyBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
-            onPress={() => handleKeyPress('0')}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Number 0"
-          >
-            <Text style={[styles.keyText, { color: colors.text }]}>0</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.keyBtnSpecial, { backgroundColor: colors.cardAlt }]}
-            onPress={handleDelete}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Delete last PIN digit"
-          >
-            <Ionicons name="backspace-outline" size={24} color={colors.textSecondary} />
-          </TouchableOpacity>
         </View>
-      </View>
+      )}
     </View>
   );
 };
@@ -426,126 +448,126 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'space-between',
-    paddingHorizontal: 28,
-    paddingTop: 54,
-    paddingBottom: 44,
+    paddingTop: 48,
+    paddingHorizontal: 24,
   },
-  topBar: {
-    height: 30,
-    alignItems: 'flex-start',
-  },
-  cancelBtn: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-  },
-  cancelBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  header: {
+  topLogoRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    height: 48,
+    marginBottom: 40,
   },
-  logoBox: {
-    width: 68,
-    height: 68,
-    borderRadius: 20,
+  smallLogoWrapper: {
+    width: 36,
+    height: 36,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 14,
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 8,
   },
-  logo: {
+  smallLogo: {
     width: '100%',
     height: '100%',
-    borderRadius: 20,
   },
-  title: {
-    fontSize: 21,
-    fontWeight: '900',
-    letterSpacing: 0.3,
-    marginBottom: 6,
-    textAlign: 'center',
-  },
-  sub: {
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
+  cancelBtn: {
+    position: 'absolute',
+    right: 0,
+    paddingVertical: 6,
     paddingHorizontal: 12,
   },
-  badgeRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
+  cancelText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
-  methodBadge: {
-    flexDirection: 'row',
+  biometricScreen: {
+    flex: 1,
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 5,
+    justifyContent: 'space-between',
+    paddingBottom: 60,
   },
-  badgeText: {
-    fontSize: 10,
+  helloTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    textAlign: 'center',
+    letterSpacing: -0.3,
+  },
+  biometricRingContainer: {
+    marginVertical: 'auto',
+  },
+  biometricRing: {
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  unlockPinBtn: {
+    width: '100%',
+    height: 56,
+    borderRadius: 16,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  unlockPinText: {
+    fontSize: 16,
     fontWeight: '700',
+  },
+  keypadScreen: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 40,
+  },
+  subText: {
+    fontSize: 14,
+    marginBottom: 28,
+    textAlign: 'center',
   },
   dotsRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 18,
-    marginVertical: 14,
+    gap: 20,
+    marginBottom: 16,
   },
   dot: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 2,
-  },
-  hintBox: {
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1.5,
   },
   errorText: {
-    fontSize: 12,
-    fontWeight: '700',
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 10,
+    textAlign: 'center',
   },
   keypad: {
-    gap: 14,
+    width: width * 0.78,
+    maxWidth: 320,
+    gap: 16,
+    marginTop: 10,
   },
   keyRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 14,
   },
   keyBtn: {
-    flex: 1,
-    height: 64,
-    borderRadius: 20,
+    width: 68,
+    height: 68,
+    borderRadius: 34,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   keyText: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '700',
-  },
-  keyBtnSpecial: {
-    flex: 1,
-    height: 64,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  keyBtnEmpty: {
-    flex: 1,
-    height: 64,
   },
 });

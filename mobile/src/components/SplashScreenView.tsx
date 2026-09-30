@@ -4,6 +4,7 @@ import {
   Pressable,
   StyleSheet,
   Image,
+  Text,
   Animated,
   Dimensions,
 } from 'react-native';
@@ -17,9 +18,17 @@ interface SplashScreenViewProps {
 }
 
 export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) => {
-  const { colors } = useTheme();
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.88)).current;
+  const { colors, mode } = useTheme();
+
+  // Animations
+  const logoScale = useRef(new Animated.Value(0.75)).current;
+  const logoOpacity = useRef(new Animated.Value(0)).current;
+  const logoTranslateX = useRef(new Animated.Value(0)).current;
+  const textOpacity = useRef(new Animated.Value(0)).current;
+  const textTranslateX = useRef(new Animated.Value(15)).current;
+  const exitScale = useRef(new Animated.Value(1)).current;
+  const exitOpacity = useRef(new Animated.Value(1)).current;
+
   const hasFinishedRef = useRef(false);
 
   const finishEarly = () => {
@@ -29,52 +38,118 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
   };
 
   useEffect(() => {
-    // 1. Smooth elegant entrance
+    // 1. Initial Icon entrance (matches 932b78b0 icon splash)
     Animated.parallel([
-      Animated.timing(fadeAnim, {
+      Animated.timing(logoOpacity, {
         toValue: 1,
-        duration: 600,
+        duration: 400,
         useNativeDriver: true,
       }),
-      Animated.spring(scaleAnim, {
+      Animated.spring(logoScale, {
         toValue: 1,
-        friction: 8,
-        tension: 45,
+        friction: 7,
+        tension: 40,
         useNativeDriver: true,
       }),
     ]).start();
 
-    // 2. Smooth fade exit to app
-    const timer = setTimeout(() => {
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 350,
-        useNativeDriver: true,
-      }).start(() => {
+    // 2. Reveal brand text lockup (matches b5644ebd brand lockup splash)
+    const textTimer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(logoTranslateX, {
+          toValue: -8,
+          duration: 350,
+          useNativeDriver: true,
+        }),
+        Animated.timing(textOpacity, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(textTranslateX, {
+          toValue: 0,
+          duration: 350,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }, 550);
+
+    // 3. Smooth exit transition into main shell
+    const exitTimer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(exitOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(exitScale, {
+          toValue: 1.08,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
         finishEarly();
       });
-    }, 1500);
+    }, 1800);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(textTimer);
+      clearTimeout(exitTimer);
+    };
   }, []);
 
   return (
     <Pressable
-      style={[styles.container, { backgroundColor: colors.background }]}
+      style={[
+        styles.container,
+        { backgroundColor: mode === 'dark' ? '#0B0E17' : '#FFFFFF' },
+      ]}
       onPress={finishEarly}
       accessibilityRole="button"
       accessibilityLabel="Skip splash screen"
     >
       <Animated.View
         style={[
-          styles.logoWrapper,
+          styles.brandContainer,
           {
-            opacity: fadeAnim,
-            transform: [{ scale: scaleAnim }],
+            opacity: exitOpacity,
+            transform: [{ scale: exitScale }],
           },
         ]}
       >
-        <Image source={LOGO_IMG} style={styles.logo} resizeMode="contain" />
+        <Animated.View
+          style={[
+            styles.logoWrapper,
+            {
+              opacity: logoOpacity,
+              transform: [
+                { scale: logoScale },
+                { translateX: logoTranslateX },
+              ],
+            },
+          ]}
+        >
+          <Image source={LOGO_IMG} style={styles.logo} resizeMode="contain" />
+        </Animated.View>
+
+        <Animated.View
+          style={[
+            styles.textWrapper,
+            {
+              opacity: textOpacity,
+              transform: [{ translateX: textTranslateX }],
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.brandTitle,
+              { color: mode === 'dark' ? '#F1F5F9' : '#1C1917' },
+            ]}
+          >
+            ClockLend
+          </Text>
+        </Animated.View>
       </Animated.View>
     </Pressable>
   );
@@ -83,19 +158,31 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // No backgroundColor here: it is applied from the theme at the call site so
-    // the in-app splash matches the themed background it hands over to.
     justifyContent: 'center',
     alignItems: 'center',
   },
+  brandContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   logoWrapper: {
-    width: width * 0.32,
-    height: width * 0.32,
+    width: 64,
+    height: 64,
     justifyContent: 'center',
     alignItems: 'center',
   },
   logo: {
     width: '100%',
     height: '100%',
+  },
+  textWrapper: {
+    marginLeft: 8,
+    justifyContent: 'center',
+  },
+  brandTitle: {
+    fontSize: 34,
+    fontWeight: '900',
+    letterSpacing: -0.5,
   },
 });
