@@ -8,7 +8,7 @@
 
 **All 16 components are covered.** Verified component list: ActiveOrdersView, CircleDeckView, ConnectWalletView, CountdownTimer, CreditProfileView, Header, JudgeBriefingModal, LeaderboardModal, MerchantDesksView, P2PExpressView, QuickStartBar, SecurityLockdownView, SecurityLockScreen, SplashScreenView, TransactionNoticeModal, WalletAssetsModal.
 
-**Cross-cutting fact:** there is **not one `accessibilityLabel`, `accessibilityHint`, `accessibilityRole` or `testID` prop anywhere in the mobile app.** Every icon-only control (Header's four chips, both modal close buttons, the lock screen's biometric/backspace keys, QuickStartBar's dismiss X) is unlabelled for screen readers. There is also **no pull-to-refresh anywhere except the Leaderboard modal**, and **no NFC implementation** (see §8).
+**Cross-cutting accessibility & UX status:** Accessibility labels (`accessibilityLabel`, `accessibilityRole`, and hints) are implemented across the core navigation (Header chips, tab navigation, QuickStart dismiss/presets, Lock Screen keypad, modal dismiss/close buttons). Pull-to-refresh (`RefreshControl`) is wired into Active Loans (`ActiveOrdersView`), P2P Desks (`MerchantDesksView`), and Leaderboard (`LeaderboardModal`). All overlays and modals support Android tap-outside backdrop dismissal and hardware back handling (`onRequestClose`).
 
 ---
 
@@ -20,39 +20,39 @@
 
 | # | Gate (App.tsx line) | Component | Condition |
 |---|---|---|---|
-| 0 | `1221` | `SecurityLockdownView` | `integrity && !integrity.isSecure` — **outranks everything**, including splash and first-run |
-| 1 | `1226` | `SplashScreenView` | `showSplash` (initial `true`) |
+| 0 | `1221` | `SecurityLockdownView` | `integrity && !integrity.isSecure` — **outranks everything**, including splash and first-run (includes hardware re-check retry) |
+| 1 | `1226` | `SplashScreenView` | `showSplash` (initial `true`; tap-to-skip supported) |
 | 2 | `1231` | `SecurityLockScreen` | `isLocked` |
 | 3 | `1245` | `ConnectWalletView` | `!session` (no wallet) |
 | 4 | `1293` | Main app shell | otherwise |
 
-`App` (1534) wraps everything in `<ThemeProvider>`.
+`App` wraps everything in `<ThemeProvider>` (defaults to `'dark'` mode).
 
 ### 1.2 Main app shell (gate 4)
 
 | Element | File | Reached by | What the user sees / does |
 |---|---|---|---|
-| `Header` | `Header.tsx` | always | Avatar+handle (tap → Account tab), sparkles chip (→ Judge Briefing), trophy chip (→ Leaderboard), theme toggle, wallet chip (→ Assets modal). When the Account tab is active the left slot becomes the static title `Seeker Account` / `Identity & Credit Profile`. |
-| `QuickStartBar` | `QuickStartBar.tsx` | `session && showQuickStart && (activeTab === 'BORROW' \|\| 'MARKET')` (App.tsx:1311) | Dismissible first-run guided bar: grace-shield badge, three one-tap borrow presets, three feature-discovery pills, X to dismiss. |
+| `Header` | `Header.tsx` | always | Avatar+handle (tap → Account tab), sparkles chip (→ Judge Briefing), trophy chip (→ Leaderboard), theme toggle, wallet chip (→ Assets modal). All icon chips carry accessibility labels. When the Account tab is active the left slot becomes the static title `Seeker Account` / `Identity & Credit Profile`. |
+| `QuickStartBar` | `QuickStartBar.tsx` | `session && showQuickStart && (activeTab === 'BORROW' \|\| 'MARKET')` | Dismissible first-run guided bar: grace-shield badge, three one-tap borrow presets, X to dismiss (all accessible). |
 | **Borrow** tab | `P2PExpressView.tsx` | tab bar / deep link / QuickStart preset | Hero USDC amount field, collateral selector, duration chips, live APR/interest/liquidity metrics, origination-fee disclosure, `⚡ Instant Borrow` CTA. |
-| **P2P Desks** tab | `MerchantDesksView.tsx` | tab bar / deep link | Two sub-tabs: `Lending Desks` (desk cards, borrow/fund, create-desk modal) and `P2P Pawns` (filter chips, pawn cards, fund/repay/cancel/share, new-pawn modal), plus a disabled NFC modal. |
-| **Active Loans** tab | `ActiveOrdersView.tsx` | tab bar / deep link / post-borrow auto-switch | Loan cards with status badge, countdown, informational ratio bar, cost breakdown, on-chain evidence, repay / grace / TARDIS-rescue actions. |
+| **P2P Desks** tab | `MerchantDesksView.tsx` | tab bar / deep link | Two sub-tabs: `Lending Desks` (desk cards, borrow/fund, create-desk modal) and `P2P Pawns` (filter chips, pawn cards, fund/repay/cancel/share, new-pawn modal). Includes pull-to-refresh. |
+| **Active Loans** tab | `ActiveOrdersView.tsx` | tab bar / deep link / post-borrow auto-switch | Loan cards with status badge, countdown, informational ratio bar, cost breakdown, on-chain evidence, repay / grace / TARDIS-rescue actions. Includes pull-to-refresh. |
 | **Account** tab | `CreditProfileView.tsx` | tab bar / deep link / header avatar / post-logout | Identity passport card, SKR staking desk, wallet holdings summary, security/biometrics toggles, SKR yield card, hardware-security rows, logout, Hall-of-Fame button. |
-| Bottom tab bar | `App.tsx:1393–1484` | always | 4 tabs: `Borrow` (flash), `P2P Desks` (storefront), `Active Loans` (receipt + count badge), `Account` (person-circle). |
-| Toast | `App.tsx:1521–1529` | `showToast()`; auto-clears after 2800 ms | Floating pill, bottom 84, checkmark-circle icon + message. |
+| Bottom tab bar | `App.tsx` | always | 4 tabs: `Borrow` (flash), `P2P Desks` (storefront), `Active Loans` (receipt + count badge), `Account` (person-circle). |
+| Toast | `App.tsx` | `showToast()`; auto-clears after 2800 ms | Floating pill, bottom 84, checkmark-circle icon + message. |
 
 ### 1.3 Modals (all overlay the main shell)
 
 | Modal | File | Opened by | Presentation |
 |---|---|---|---|
-| `WalletAssetsModal` | `WalletAssetsModal.tsx` | Header wallet chip, Account tab's `View & Manage Wallet Assets →` | `transparent`, `animationType="slide"`, bottom sheet. Not backdrop-dismissable; Android back works (`onRequestClose`). |
-| `TransactionNoticeModal` | `TransactionNoticeModal.tsx` | any `setTransactionNotice(...)` — every borrow/repay/grace/pawn/stake/claim/deposit outcome | `transparent`, `animationType="fade"`, centred card, maxHeight 85%. Not backdrop-dismissable. No X button — dismissal is via its own buttons or Android back. |
-| `LeaderboardModal` | `LeaderboardModal.tsx` | Header trophy chip, Account tab's `View Global Seeker Hall of Fame →` | `transparent`, `animationType="slide"`, bottom sheet, height 88%. Not backdrop-dismissable; X button + Android back. |
-| `JudgeBriefingModal` | `JudgeBriefingModal.tsx` | Header sparkles chip **only** (no auto-open, no deep link, no once-flag) | `transparent`, `animationType="slide"`, bottom sheet, height 90%. Not backdrop-dismissable; X button + `Back to Live App` + Android back. |
-| Create Desk modal | inside `MerchantDesksView.tsx:642–886` | `+ Create Desk` chip, `+ Create Lending Desk` empty-state button | `transparent`, `animationType="slide"`. `Cancel` / `🚀 Deploy Desk` only. |
-| NFC modal | `MerchantDesksView.tsx:888–922` | `📡 NFC (Soon)` chip | `transparent`, `animationType="fade"`. `Close` only; its only action button is `disabled={true}` with no `onPress`. |
-| Create Pawn modal | `MerchantDesksView.tsx:924–1039` | `+ New Pawn`, `+ List First Pawn` | `transparent`, `animationType="slide"`. `Cancel` / `Lock Collateral & List on Solana`. |
-| Create Pawn Card modal | `CircleDeckView.tsx:155` | **unreachable** — see §8 | `transparent`, `animationType="slide"`, **no `onRequestClose`** (Android back does not close it). |
+| `WalletAssetsModal` | `WalletAssetsModal.tsx` | Header wallet chip, Account tab's `View & Manage Wallet Assets →` | `transparent`, `animationType="slide"`, bottom sheet. Backdrop-dismissable; close X button + Android back (`onRequestClose`). |
+| `TransactionNoticeModal` | `TransactionNoticeModal.tsx` | any `setTransactionNotice(...)` — every borrow/repay/grace/pawn/stake/claim/deposit outcome | `transparent`, `animationType="fade"`, centred card, maxHeight 85%. Backdrop-dismissable; top-right close X button + action buttons + Android back. |
+| `LeaderboardModal` | `LeaderboardModal.tsx` | Header trophy chip, Account tab's `View Global Seeker Hall of Fame →` | `transparent`, `animationType="slide"`, bottom sheet, height 88%. Pull-to-refresh + backdrop-dismissable; X button + Android back. |
+| `JudgeBriefingModal` | `JudgeBriefingModal.tsx` | Header sparkles chip **only** | `transparent`, `animationType="slide"`, bottom sheet, height 90%. Backdrop-dismissable; X button + `Back to Live App` + Android back. |
+| Create Desk modal | inside `MerchantDesksView.tsx` | `+ Create Desk` chip, `+ Create Lending Desk` empty-state button | `transparent`, `animationType="slide"`. Backdrop-dismissable; `Cancel` / `🚀 Deploy Desk`. |
+| NFC modal | `MerchantDesksView.tsx` | `📡 NFC (Soon)` chip | `transparent`, `animationType="fade"`. `Close` only; its only action button is `disabled={true}` with no `onPress`. |
+| Create Pawn modal | `MerchantDesksView.tsx` | `+ New Pawn`, `+ List First Pawn` | `transparent`, `animationType="slide"`. Backdrop-dismissable; `Cancel` / `Lock Collateral & List on Solana`. |
+| Create Pawn Card modal | `CircleDeckView.tsx` | **unreachable** — see §8 | `transparent`, `animationType="slide"`, **no `onRequestClose`** (Android back does not close it). |
 
 ### 1.4 Hidden / conditional views
 
