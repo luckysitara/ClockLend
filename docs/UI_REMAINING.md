@@ -22,17 +22,17 @@ npx wrangler deploy      # so the */3 cron keeps it fresh
 
 ## Status Overview
 
-All high-priority UI polish items (Items 1 through 5) have been **fully resolved, type-checked, compiled into the debug APK, and pushed to master**:
-1. ✅ **`primaryLabel` WCAG AA contrast split** — `#818CF8` text token with 5.60:1 contrast on dark surfaces.
-2. ✅ **`success` color routing** — All hard-coded greens replaced with dynamic theme tokens.
-3. ✅ **Theme default set to Dark** — Matches `app.json` `userInterfaceStyle: "dark"`.
-4. ✅ **Accessibility labels & roles** — Added across tabs, Header chips, QuickStart presets/dismiss, Lock Screen keypad, and modal close buttons.
-5. ✅ **Device-visible UX polish** — Added pull-to-refresh (`RefreshControl`) on Loans and Desks, tap-outside backdrop modal dismissal, close `✕` button on transaction notices, splash tap-to-skip, and security lockdown re-check button.
-6. ✅ **Oracle keeper live** — Feeds cranked on mainnet-beta, Cloudflare Worker deployed with 3-minute cron trigger and verified healthy.
+All high-priority UI polish items have been **fully resolved, aligned with reference designs, type-checked, compiled into the debug APK, installed on the connected device, and pushed to master**:
+1. ✅ **Status Bar & Notch Clearance**: Resolved edge clipping on Android devices. Replaced fragile fixed insets with dynamic `STATUS_BAR_INSET` (`Math.max(StatusBar.currentHeight, 36) + 12`), ensuring comfortable top margin on any punch-hole / notch screen without double padding.
+2. ✅ **Unified Warm Ivory Light Theme (Default)**: Aligned with the 12 reference screenshots (`#F7F5F0` warm ivory background, pure white cards `#FFFFFF`, and rich golden amber accents `#D97706` / `#F59E0B`), replacing harsh dark contrasts.
+3. ✅ **Streamlined Splash Transition**: Minimalist centered logo animation that seamlessly slides in the "ClockLend" wordmark with tap-to-skip.
+4. ✅ **3-Slide Visual Onboarding Guide**: Replaced bulky text walls with an interactive 3-card carousel (Instant Liquidity, 24h Social Grace, Seeker Seed Vault) with pagination dots and a direct "Connect Seeker Wallet" CTA.
+5. ✅ **5-Tab Navigation with Elevated Center Golden FAB**: Clean layout across Home, Borrow, Hub (elevated center FAB), Markets, and Profile matching the reference architecture.
+6. ✅ **Device Verification & Installation**: Debug APK built and installed onto the attached Solana Seeker device (`SM02G40619122247`). Seed Vault MWA integration verified active.
 
 ## Next on Device & Protocol Track
 
-1. **Connect Seeker via USB**: Run `adb install -r mobile/android/app/build/outputs/apk/debug/app-debug.apk` once the Solana Seeker device is reattached.
+1. **Authorize Seed Vault Connection on Device**: Complete the on-device MWA prompt in the Seeker wallet to test the dashboard with live balance.
 2. **Fund Deployer Wallet**: Deposit ~2 SOL into `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds` to cover the write-buffer rent before running `deploy-mainnet.mjs --upgrade`.
 3. **Execute 5-Step Mainnet Smoke Test**: Follow [`docs/NEXT_STEPS.md`](file:///home/rootkit/lend/docs/NEXT_STEPS.md) §3b.
 
