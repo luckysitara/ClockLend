@@ -246,8 +246,30 @@ export async function crankOracles(env: Env): Promise<{
     'confirmed'
   );
 
+  // Confirm the feeds actually advanced. `confirmTransaction` only proves the
+  // transaction was finalised, not that the accounts ended up in the state we
+  // intended — and it says nothing at all if the read-back is what failed. A
+  // crank that silently did not update a feed is indistinguishable from a
+  // healthy one until the 600s pricing bound lapses and every borrow reverts,
+  // so verify here and fail loudly instead.
+  const crankStartedAt = Math.floor(Date.now() / 1000);
+  const unverified = await verifyFeedsAdvanced(
+    connection,
+    [
+      { pda: solOraclePDA, label: `SOL $${sol}` },
+      { pda: skrOraclePDA, label: `SKR $${skr}` },
+    ],
+    crankStartedAt
+  );
+  if (unverified.length > 0) {
+    throw new Error(
+      `Crank confirmed (${signature}) but these feeds did not advance past ${crankStartedAt}: ` +
+        `${unverified.join(', ')}. Treating the run as failed rather than reporting success.`
+    );
+  }
+
   const timestamp = new Date().toISOString();
-  console.log(`[Serverless Oracle] Crank succeeded. Tx: ${signature}`);
+  console.log(`[Serverless Oracle] Crank succeeded and both feeds verified. Tx: ${signature}`);
   console.log(
     `[Serverless Oracle] Cranked program ${programId.toBase58()} on ${resolveNetwork(env)} ` +
       `(genesis ${genesisHash}) at ${timestamp}`
@@ -269,6 +291,72 @@ export async function crankOracles(env: Env): Promise<{
 }
 
 // Query on-chain PDA health & current price
+/**
+ * Strip credential-bearing query parameters before a URL is handed to a caller.
+ * `getOracleStatus` backs the unauthenticated `/`, `/health` and `/status` routes,
+ * so returning the raw RPC_URL disclosed the provider API key to anyone who asked.
+ * The host is kept so operators can still tell which endpoint is in use.
+ */
+function redactUrl(raw: string): string {
+  try {
+    const u = new URL(raw);
+    for (const k of Array.from(u.searchParams.keys())) {
+      if (/key|token|secret|auth|pass/i.test(k)) u.searchParams.set(k, 'REDACTED');
+    }
+    return u.toString();
+  } catch {
+    return '(unparseable RPC URL)';
+  }
+}
+
+/**
+ * Sanitise an error message before returning it to an anonymous caller.
+ * @solana/web3.js and fetch errors routinely embed the endpoint URL, including
+ * its `?api-key=...` query parameter, so raw `err.message` must not be echoed.
+ */
+/**
+ * Read each feed back and confirm `last_updated_at` moved forward.
+ *
+ * Returns the labels of feeds that could not be confirmed. An unreadable feed
+ * counts as unconfirmed: absence of evidence is not evidence of a landed write.
+ * Retries briefly so a transient RPC blip does not fail an otherwise good crank.
+ *
+ * PriceFeed layout: 0..8 discriminator, 8 is_initialized, 9..41 mint,
+ * 41..49 price (u64 LE), 49 decimals, 50..58 last_updated_at (i64 LE),
+ * 58..90 authority, 90..98 max_staleness_seconds.
+ */
+async function verifyFeedsAdvanced(
+  connection: Connection,
+  feeds: Array<{ pda: PublicKey; label: string }>,
+  sinceUnix: number,
+  attempts = 3
+): Promise<string[]> {
+  const unconfirmed: string[] = [];
+  for (const { pda, label } of feeds) {
+    let confirmed = false;
+    for (let i = 0; i < attempts && !confirmed; i++) {
+      try {
+        const acc = await connection.getAccountInfo(pda);
+        if (acc && acc.data.length >= 58) {
+          const updatedAt = Number(acc.data.readBigInt64LE(50));
+          // Allow a small clock skew between this host and the cluster.
+          if (updatedAt >= sinceUnix - 60) confirmed = true;
+        }
+      } catch {
+        // fall through to the retry
+      }
+      if (!confirmed && i < attempts - 1) await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+    }
+    if (!confirmed) unconfirmed.push(label);
+  }
+  return unconfirmed;
+}
+
+function safeErrorMessage(err: any): string {
+  const raw = String(err?.message ?? err);
+  return raw.replace(/([?&](?:api-?key|token|secret|auth|pass)[^=]*=)[^&\s"']+/gi, '$1REDACTED');
+}
+
 export async function getOracleStatus(env: Env) {
   const programId = new PublicKey(env.PROGRAM_ID || DEFAULT_PROGRAM_ID);
   const rpcUrl = resolveRpcUrl(env);
@@ -336,7 +424,7 @@ export async function getOracleStatus(env: Env) {
     network,
     genesisHash,
     genesisMatchesNetwork: genesisHash === GENESIS_HASHES[network],
-    rpcUrl,
+    rpcUrl: redactUrl(rpcUrl),
     solFeed,
     skrFeed,
     oldestFeedAgeSeconds: ages.length ? Math.max(...ages) : null,
@@ -396,7 +484,7 @@ export default {
           headers: { 'content-type': 'application/json' },
         });
       } catch (err: any) {
-        return new Response(JSON.stringify({ error: err.message }), {
+        return new Response(JSON.stringify({ error: safeErrorMessage(err) }), {
           status: 500,
           headers: { 'content-type': 'application/json' },
         });
@@ -435,7 +523,7 @@ export default {
           headers: { 'content-type': 'application/json' },
         });
       } catch (err: any) {
-        return new Response(JSON.stringify({ error: err.message }), {
+        return new Response(JSON.stringify({ error: safeErrorMessage(err) }), {
           status: 500,
           headers: { 'content-type': 'application/json' },
         });

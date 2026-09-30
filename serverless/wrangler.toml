@@ -23,8 +23,13 @@ PRIORITY_FEE_MICRO_LAMPORTS = "25000"
 # environment exactly as before — it just is not checked in any more:
 #
 #   npx wrangler secret put RPC_URL
-#   # paste this value when prompted (Helius mainnet, previously in [vars]):
-#   # https://mainnet.helius-rpc.com/?api-key=REDACTED-ROTATED-HELIUS-KEY
+#   # paste your provider endpoint when prompted, e.g.
+#   # https://mainnet.helius-rpc.com/?api-key=<YOUR_KEY>
+#
+# DO NOT paste the key into this file. A Helius mainnet key was previously
+# committed here (in [vars] and later in this comment) and remains in git
+# history. It is still valid until rotated with the provider — deleting the
+# text does NOT revoke it. Rotate the key in the Helius dashboard.
 #
 # If RPC_URL is unset the worker falls back to the public endpoint
 # https://api.mainnet-beta.solana.com (rate-limited — fine for smoke tests,

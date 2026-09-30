@@ -51,9 +51,10 @@ Then call it with:
 curl -X POST https://<worker>/crank -H "Authorization: Bearer $CRANK_AUTH_TOKEN"
 ```
 > **Hardening note:** a Helius API key was previously committed inside `wrangler.toml`'s
-> `[vars]` block. It has been moved out of `[vars]` into a comment, and the worker now reads
-> `RPC_URL` from the environment. The committed value still needs to be supplied as a secret
-> and should be rotated when convenient — see step 4.
+> `[vars]` block, and has since been removed from the text entirely. The worker now reads
+> `RPC_URL` from the environment. **The committed value is still valid until it is revoked —
+> deleting the text did not rotate it, and it remains readable in git history. Rotate it in
+> the Helius dashboard and supply the NEW key as a secret; do not reuse the old one** — see step 4.
 
 **RPC endpoint.** `RPC_URL` is intentionally not in `[vars]` (commented values there are
 plaintext in git). Set it as a secret:
@@ -107,7 +108,7 @@ Your deployed worker automatically exposes HTTP endpoints:
     "network": "mainnet-beta",
     "genesisHash": "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
     "genesisMatchesNetwork": true,
-    "rpcUrl": "https://mainnet.helius-rpc.com/?api-key=***",
+    "rpcUrl": "https://mainnet.helius-rpc.com/?api-key=REDACTED",  # credentials are redacted in responses
     "solFeed": {
       "isInitialized": true,
       "priceUsd": 120.18,
@@ -170,7 +171,11 @@ If you prefer AWS:
 2. Add an **EventBridge Rule** with rate `cron(0/3 * * * ? *)` (every 3 minutes).
 3. Set environment variables in Lambda Configuration:
    - `ORACLE_KEYPAIR` (required — store via Secrets Manager / SSM, not plaintext)
-   - `CRANK_AUTH_TOKEN` (required if you expose the HTTP handler)
+   - `CRANK_AUTH_TOKEN` (**required** — the Lambda's `POST /crank` now fails closed with 503
+     when it is unset, matching the Cloudflare worker. Authenticate only genuine scheduled
+     events: EventBridge sets `source: "aws.events"`, and an HTTP request can never reach the
+     cron branch — payload-format-2.0 events from HTTP APIs / Function URLs carry no top-level
+     `httpMethod`, which previously caused web requests to be treated as scheduled events.)
    - `RPC_URL`
    - `PROGRAM_ID`
    - `NETWORK` (`mainnet-beta`)
