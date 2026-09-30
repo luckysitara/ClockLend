@@ -294,12 +294,12 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
                 styles.biometricRing,
                 {
                   transform: [{ scale: pulseAnim }],
-                  borderColor: '#D97706',
-                  backgroundColor: 'rgba(217, 119, 6, 0.08)',
+                  borderColor: colors.primary,
+                  backgroundColor: colors.badgeBg,
                 },
               ]}
             >
-              <Ionicons name="finger-print" size={56} color="#D97706" />
+              <Ionicons name="finger-print" size={56} color={colors.primary} />
             </Animated.View>
           </TouchableOpacity>
 
@@ -356,8 +356,8 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
                   style={[
                     styles.dot,
                     {
-                      borderColor: filled ? '#D97706' : colors.cardBorder,
-                      backgroundColor: filled ? '#D97706' : colors.cardAlt,
+                      borderColor: filled ? colors.primary : colors.cardBorder,
+                      backgroundColor: filled ? colors.primary : colors.cardAlt,
                     },
                   ]}
                 />
@@ -390,7 +390,7 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
                           onPress={triggerBiometric}
                           activeOpacity={0.7}
                         >
-                          <Ionicons name="finger-print" size={28} color="#D97706" />
+                          <Ionicons name="finger-print" size={28} color={colors.primary} />
                         </TouchableOpacity>
                       );
                     }

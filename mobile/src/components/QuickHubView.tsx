@@ -128,8 +128,8 @@ export const QuickHubView: React.FC<QuickHubViewProps> = ({
             }}
             activeOpacity={0.7}
           >
-            <View style={[styles.tileIconCircle, { backgroundColor: 'rgba(217, 119, 6, 0.08)' }]}>
-              <Ionicons name={action.icon} size={24} color="#D97706" />
+            <View style={[styles.tileIconCircle, { backgroundColor: colors.badgeBg }]}>
+              <Ionicons name={action.icon} size={24} color={colors.primary} />
             </View>
             <Text style={[styles.tileTitle, { color: colors.text }]}>{action.title}</Text>
           </TouchableOpacity>

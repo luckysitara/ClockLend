@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   ScrollView,
   RefreshControl,
   Image,
+  Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -45,9 +46,63 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
 }) => {
   const { colors, mode } = useTheme();
   const [showBalance, setShowBalance] = useState<boolean>(true);
+  const [activeBanner, setActiveBanner] = useState<number>(0);
+
+  const bannerFadeAnim = useRef(new Animated.Value(1)).current;
+  const bannerSlideAnim = useRef(new Animated.Value(0)).current;
 
   const availableUsdc = walletAssets?.usdcBalance || 0;
-  const initials = (skrHandle.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2) || 'SK').toUpperCase();
+
+  // 3 Dynamic Rotating Showcase Banners (Matches 8febc333 Dangote banner layout)
+  const BANNER_CARDS = [
+    {
+      id: 'lowest_apr',
+      badge: 'LOWEST APR DESK',
+      title: 'Solana Foundation Desk',
+      sub: '8.5% Fixed APR • $250,000 USDC Capacity',
+      cta: 'Borrow Now →',
+      onPress: onNavigateBorrow,
+      gradient: ['#0369A1', '#0284C7', '#0EA5E9'] as const,
+    },
+    {
+      id: 'leaderboard',
+      badge: 'SEEKER HALL OF FAME',
+      title: 'Top 3 Borrowers',
+      sub: '1. @sol_whale • 2. @alpha_dev • 3. @crypto_king',
+      cta: 'View Rankings →',
+      onPress: onOpenLeaderboard,
+      gradient: ['#1E3A8A', '#2563EB', '#38BDF8'] as const,
+    },
+    {
+      id: 'social_grace',
+      badge: 'ZERO LIQUIDATION CLIFF',
+      title: '24-Hour Social Grace',
+      sub: 'Escrow protection against sudden market flash crashes',
+      cta: 'Explore Desks →',
+      onPress: onNavigateDesks,
+      gradient: ['#0F766E', '#0D9488', '#14B8A6'] as const,
+    },
+  ];
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      Animated.parallel([
+        Animated.timing(bannerFadeAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
+        Animated.timing(bannerSlideAnim, { toValue: -6, duration: 250, useNativeDriver: true }),
+      ]).start(() => {
+        setActiveBanner((prev) => (prev + 1) % BANNER_CARDS.length);
+        bannerSlideAnim.setValue(6);
+        Animated.parallel([
+          Animated.timing(bannerFadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+          Animated.timing(bannerSlideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+        ]).start();
+      });
+    }, 4200);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const banner = BANNER_CARDS[activeBanner];
 
   return (
     <ScrollView
@@ -59,8 +114,8 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
           <RefreshControl
             refreshing={isLoading}
             onRefresh={onRefresh}
-            tintColor="#D97706"
-            colors={['#D97706']}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
           />
         ) : undefined
       }
@@ -81,6 +136,8 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
             style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
             onPress={onOpenAssetsModal}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Notifications"
           >
             <Ionicons name="notifications-outline" size={18} color={colors.text} />
           </TouchableOpacity>
@@ -89,6 +146,8 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
             style={[styles.pointsPill, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
             onPress={onOpenLeaderboard}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Leaderboard points"
           >
             <Text style={styles.trophyIcon}>🏅</Text>
             <Text style={[styles.pointsText, { color: colors.text }]}>
@@ -98,9 +157,9 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
         </View>
       </View>
 
-      {/* ── Golden Gradient Hero Balance Card (Matches 8febc333) ── */}
+      {/* ── Cyan/Ocean Gradient Hero Balance Card (Matches 8febc333) ── */}
       <LinearGradient
-        colors={['#B45309', '#D97706', '#F59E0B']}
+        colors={mode === 'dark' ? ['#0369A1', '#0284C7', '#0EA5E9'] : ['#0284C7', '#0EA5E9', '#38BDF8']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.heroCard}
@@ -114,16 +173,18 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
                 setShowBalance(!showBalance);
               }}
               style={styles.eyeBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Toggle balance visibility"
             >
               <Ionicons
                 name={showBalance ? 'eye-outline' : 'eye-off-outline'}
                 size={18}
-                color="rgba(255, 255, 255, 0.85)"
+                color="rgba(255, 255, 255, 0.9)"
               />
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity onPress={onOpenAssetsModal} style={styles.moreBtn}>
+          <TouchableOpacity onPress={onOpenAssetsModal} style={styles.moreBtn} accessibilityRole="button" accessibilityLabel="More options">
             <Ionicons name="ellipsis-horizontal" size={20} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
@@ -132,7 +193,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
           {showBalance ? `$${availableUsdc.toFixed(2)}` : '$ ••••'}
         </Text>
         <Text style={styles.heroSubBalance}>
-          {showBalance ? `~ ${solBalance.toFixed(3)} SOL • Mainnet` : '•••• SOL'}
+          {showBalance ? `~ ${solBalance.toFixed(3)} SOL • Solana Mainnet` : '•••• SOL'}
         </Text>
       </LinearGradient>
 
@@ -145,8 +206,10 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
             onNavigateBorrow();
           }}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Borrow funds"
         >
-          <Ionicons name="add" size={18} color="#D97706" />
+          <Ionicons name="add" size={18} color={colors.primary} />
           <Text style={[styles.actionBtnText, { color: colors.text }]}>Borrow</Text>
         </TouchableOpacity>
 
@@ -157,8 +220,10 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
             onNavigateRepay();
           }}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Repay loan"
         >
-          <Ionicons name="paper-plane-outline" size={16} color="#D97706" />
+          <Ionicons name="paper-plane-outline" size={16} color={colors.primary} />
           <Text style={[styles.actionBtnText, { color: colors.text }]}>Repay</Text>
         </TouchableOpacity>
 
@@ -169,35 +234,77 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
             onNavigateDesks();
           }}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Explore desks"
         >
-          <Ionicons name="business-outline" size={16} color="#D97706" />
+          <Ionicons name="business-outline" size={16} color={colors.primary} />
           <Text style={[styles.actionBtnText, { color: colors.text }]}>Desks</Text>
         </TouchableOpacity>
       </View>
 
-      {/* ── Banner Card (Matches 8febc333 promo banner) ── */}
+      {/* ── Auto-Rotating Showcase Banner Card (Matches 8febc333 Dangote banner) ── */}
       <TouchableOpacity
-        style={[styles.bannerCard, { backgroundColor: mode === 'dark' ? '#1A1713' : '#FEF3C7', borderColor: '#F59E0B40' }]}
-        onPress={onNavigateBorrow}
-        activeOpacity={0.8}
+        style={styles.bannerWrapper}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          banner.onPress();
+        }}
+        activeOpacity={0.88}
+        accessibilityRole="button"
+        accessibilityLabel={banner.title}
       >
-        <View style={styles.bannerContent}>
-          <Text style={[styles.bannerTitle, { color: mode === 'dark' ? '#FDE68A' : '#92400E' }]}>
-            Instant USDC Liquidity
-          </Text>
-          <Text style={[styles.bannerSub, { color: mode === 'dark' ? '#D1D5DB' : '#78350F' }]}>
-            Borrow against SOL or SKR with 24h Social Grace Shield.
-          </Text>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color="#D97706" />
+        <LinearGradient
+          colors={banner.gradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.bannerGradient}
+        >
+          <Animated.View
+            style={[
+              styles.bannerContent,
+              {
+                opacity: bannerFadeAnim,
+                transform: [{ translateY: bannerSlideAnim }],
+              },
+            ]}
+          >
+            <View style={styles.bannerBadge}>
+              <Text style={styles.bannerBadgeText}>{banner.badge}</Text>
+            </View>
+            <Text style={styles.bannerTitle}>{banner.title}</Text>
+            <Text style={styles.bannerSub}>{banner.sub}</Text>
+
+            <View style={styles.bannerCtaBtn}>
+              <Text style={styles.bannerCtaText}>{banner.cta}</Text>
+            </View>
+          </Animated.View>
+        </LinearGradient>
       </TouchableOpacity>
+
+      {/* Banner Carousel Indicator Dots */}
+      <View style={styles.bannerDotsRow}>
+        {BANNER_CARDS.map((b, idx) => (
+          <TouchableOpacity
+            key={b.id}
+            onPress={() => {
+              try { Haptics.selectionAsync(); } catch {}
+              setActiveBanner(idx);
+            }}
+            style={[
+              styles.bannerDot,
+              { backgroundColor: idx === activeBanner ? colors.primary : colors.cardBorder },
+              idx === activeBanner && styles.activeBannerDot,
+            ]}
+          />
+        ))}
+      </View>
 
       {/* ── Activity Section (Matches 8febc333) ── */}
       <View style={styles.activitySection}>
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Activity</Text>
           <TouchableOpacity onPress={onNavigateRepay} activeOpacity={0.7}>
-            <Text style={[styles.seeMoreLink, { color: '#D97706' }]}>See more</Text>
+            <Text style={[styles.seeMoreLink, { color: colors.primary }]}>See more</Text>
           </TouchableOpacity>
         </View>
 
@@ -205,7 +312,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
           /* Empty Receipt Doodle (Matches 8febc333 exactly) */
           <View style={styles.emptyReceiptBox}>
             <View style={[styles.receiptIconCircle, { backgroundColor: colors.cardAlt }]}>
-              <Ionicons name="receipt-outline" size={44} color="#D97706" />
+              <Ionicons name="receipt-outline" size={44} color={colors.primary} />
             </View>
             <Text style={[styles.emptyReceiptText, { color: colors.textMuted }]}>
               No Transaction yet
@@ -223,11 +330,11 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
                 activeOpacity={0.7}
               >
                 <View style={styles.orderLeft}>
-                  <View style={[styles.orderIconBg, { backgroundColor: inGrace ? 'rgba(245, 158, 11, 0.15)' : 'rgba(52, 211, 153, 0.15)' }]}>
+                  <View style={[styles.orderIconBg, { backgroundColor: inGrace ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)' }]}>
                     <Ionicons
                       name={inGrace ? 'time' : 'checkmark-circle'}
                       size={20}
-                      color={inGrace ? '#F59E0B' : '#34D399'}
+                      color={inGrace ? '#F59E0B' : '#10B981'}
                     />
                   </View>
                   <View>
@@ -242,7 +349,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
                   <Text style={[styles.orderAmount, { color: colors.text }]}>
                     ${order.principalAmount} USDC
                   </Text>
-                  <Text style={[styles.orderStatus, { color: inGrace ? '#F59E0B' : '#34D399' }]}>
+                  <Text style={[styles.orderStatus, { color: inGrace ? '#F59E0B' : '#10B981' }]}>
                     {inGrace ? 'Grace Active' : 'Active'}
                   </Text>
                 </View>
@@ -308,34 +415,34 @@ const styles = StyleSheet.create({
   pointsPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 12,
     borderWidth: 1,
   },
   trophyIcon: {
-    fontSize: 14,
+    fontSize: 15,
   },
   pointsText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   heroCard: {
     borderRadius: 22,
-    padding: 20,
+    padding: 22,
     marginBottom: 16,
-    shadowColor: '#D97706',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 14,
     elevation: 6,
   },
   heroTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   availableLabelRow: {
     flexDirection: 'row',
@@ -343,9 +450,10 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   availableLabel: {
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
+    opacity: 0.9,
   },
   eyeBtn: {
     padding: 2,
@@ -361,7 +469,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   heroSubBalance: {
-    color: 'rgba(255, 255, 255, 0.85)',
+    color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 14,
     fontWeight: '500',
   },
@@ -379,41 +487,99 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 16,
     borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
   actionBtnText: {
     fontSize: 14,
     fontWeight: '700',
   },
-  bannerCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderRadius: 18,
-    borderWidth: 1,
-    marginBottom: 20,
+  bannerWrapper: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  bannerGradient: {
+    padding: 18,
+    borderRadius: 20,
   },
   bannerContent: {
-    flex: 1,
-    marginRight: 10,
+    alignItems: 'flex-start',
+  },
+  bannerBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  bannerBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
   bannerTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    marginBottom: 2,
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '900',
+    marginBottom: 4,
   },
   bannerSub: {
+    color: 'rgba(255, 255, 255, 0.88)',
+    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  bannerCtaBtn: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+  },
+  bannerCtaText: {
+    color: '#0F172A',
     fontSize: 12,
-    lineHeight: 16,
+    fontWeight: '800',
+  },
+  bannerDotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 10,
+    marginBottom: 18,
+  },
+  bannerDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  activeBannerDot: {
+    width: 20,
+    borderRadius: 3,
   },
   activitySection: {
-    marginTop: 4,
+    marginTop: 2,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   sectionTitle: {
     fontSize: 18,
@@ -426,15 +592,15 @@ const styles = StyleSheet.create({
   emptyReceiptBox: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 36,
+    paddingVertical: 32,
   },
   receiptIconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 12,
   },
   emptyReceiptText: {
     fontSize: 14,

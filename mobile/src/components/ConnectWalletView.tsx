@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -7,8 +7,10 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { connectSeekerWallet, SeekerSession } from '../solana/seekerWallet';
@@ -21,6 +23,7 @@ interface ConnectWalletViewProps {
 
 interface OnboardingSlide {
   id: string;
+  badge: string;
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   description: string;
@@ -29,21 +32,24 @@ interface OnboardingSlide {
 const ONBOARDING_SLIDES: OnboardingSlide[] = [
   {
     id: 'instant_borrow',
+    badge: 'INSTANT LIQUIDITY',
     icon: 'flash',
     title: 'Instant USDC Borrow',
-    description: 'Lock SOL or SKR collateral into on-chain escrow and receive instant liquidity.',
+    description: 'Lock SOL or SKR collateral into trustless on-chain escrow and receive instant liquidity.',
   },
   {
     id: 'social_grace',
+    badge: 'ZERO LIQUIDATION CLIFF',
     icon: 'shield-checkmark',
     title: '24-Hour Social Grace',
-    description: 'Time-based micro-loans protect your position against market flash-crashes.',
+    description: 'Time-based micro-loans protect your position against market flash-crashes and sudden price wicks.',
   },
   {
     id: 'seed_vault',
+    badge: 'HARDWARE SECURITY',
     icon: 'hardware-chip',
     title: 'Seeker Seed Vault',
-    description: 'Protected by Solana Mobile hardware security. Your private keys never leave the phone.',
+    description: 'Protected by Solana Mobile hardware security. Private keys never leave your physical device.',
   },
 ];
 
@@ -51,6 +57,47 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
   const { colors, mode, toggleTheme } = useTheme();
   const [isConnecting, setIsConnecting] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
+
+  // Animations for auto-switching card
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
+
+  // Auto-rotate slides every 3.5 seconds
+  useEffect(() => {
+    const timer = setInterval(() => {
+      // Animate out
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: -8,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setActiveSlide((prev) => (prev + 1) % ONBOARDING_SLIDES.length);
+        slideAnim.setValue(8);
+        // Animate in
+        Animated.parallel([
+          Animated.timing(fadeAnim, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+          Animated.timing(slideAnim, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      });
+    }, 3800);
+
+    return () => clearInterval(timer);
+  }, []);
 
   const handleMwaConnect = async () => {
     try {
@@ -69,11 +116,6 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
     } finally {
       setIsConnecting(false);
     }
-  };
-
-  const handleNextSlide = () => {
-    try { Haptics.selectionAsync(); } catch {}
-    setActiveSlide((prev) => (prev + 1) % ONBOARDING_SLIDES.length);
   };
 
   const slide = ONBOARDING_SLIDES[activeSlide];
@@ -105,7 +147,7 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
         </TouchableOpacity>
       </View>
 
-      {/* ── Brand Lockup (Seeker & Nectar Style) ── */}
+      {/* ── Brand Lockup (Electric Cyan Logo & Typography) ── */}
       <View style={styles.heroSection}>
         <View style={[styles.logoContainer, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           <Image source={LOGO_IMG} style={styles.logoImage} resizeMode="contain" />
@@ -113,68 +155,73 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
 
         <Text style={[styles.brandTitle, { color: colors.text }]}>ClockLend</Text>
         <Text style={[styles.brandTagline, { color: colors.textSecondary }]}>
-          Instant Credit on Solana Seeker
+          Next-Gen Credit Protocol on Solana
         </Text>
       </View>
 
-      {/* ── Interactive Onboarding Carousel Card ── */}
-      <TouchableOpacity
-        style={[styles.carouselCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
-        onPress={handleNextSlide}
-        activeOpacity={0.9}
-        accessibilityRole="button"
-        accessibilityLabel={`Onboarding feature ${activeSlide + 1} of ${ONBOARDING_SLIDES.length}. Tap to next.`}
-      >
-        <View style={[styles.carouselIconBox, { backgroundColor: colors.badgeBg }]}>
-          <Ionicons name={slide.icon} size={28} color="#D97706" />
-        </View>
+      {/* ── Sleek Auto-Rotating Feature Showcase Card ── */}
+      <View style={[styles.cardWrapper, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <Animated.View
+          style={[
+            styles.cardInner,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <View style={[styles.badgePill, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
+            <Text style={[styles.badgeText, { color: colors.primaryLabel }]}>{slide.badge}</Text>
+          </View>
 
-        <Text style={[styles.carouselTitle, { color: colors.text }]}>{slide.title}</Text>
-        <Text style={[styles.carouselDesc, { color: colors.textSecondary }]}>{slide.description}</Text>
+          <View style={[styles.iconBox, { backgroundColor: colors.badgeBg }]}>
+            <Ionicons name={slide.icon} size={30} color={colors.primary} />
+          </View>
 
-        {/* Pagination Dots */}
+          <Text style={[styles.cardTitle, { color: colors.text }]}>{slide.title}</Text>
+          <Text style={[styles.cardDesc, { color: colors.textSecondary }]}>{slide.description}</Text>
+        </Animated.View>
+
+        {/* Carousel Indicator Dots */}
         <View style={styles.dotsRow}>
           {ONBOARDING_SLIDES.map((s, idx) => (
-            <TouchableOpacity
+            <View
               key={s.id}
               style={[
                 styles.dot,
-                { backgroundColor: idx === activeSlide ? '#D97706' : colors.cardBorder },
+                { backgroundColor: idx === activeSlide ? colors.primary : colors.cardBorder },
                 idx === activeSlide && styles.activeDot,
               ]}
-              onPress={() => {
-                try { Haptics.selectionAsync(); } catch {}
-                setActiveSlide(idx);
-              }}
             />
           ))}
         </View>
-      </TouchableOpacity>
+      </View>
 
       {/* ── Bottom Action ── */}
       <View style={styles.bottomSection}>
         <TouchableOpacity
-          style={[
-            styles.connectBtn,
-            { backgroundColor: colors.primary },
-            isConnecting && styles.btnDisabled,
-          ]}
+          style={[styles.connectBtnContainer, isConnecting && styles.btnDisabled]}
           onPress={handleMwaConnect}
           disabled={isConnecting}
           activeOpacity={0.88}
           accessibilityRole="button"
           accessibilityLabel="Connect Seeker Hardware Wallet"
         >
-          {isConnecting ? (
-            <ActivityIndicator size="small" color={colors.primaryText} />
-          ) : (
-            <>
-              <Ionicons name="wallet-outline" size={20} color={colors.primaryText} />
-              <Text style={[styles.connectBtnText, { color: colors.primaryText }]}>
-                Connect Seeker Wallet
-              </Text>
-            </>
-          )}
+          <LinearGradient
+            colors={mode === 'dark' ? ['#0284C7', '#38BDF8'] : ['#0284C7', '#0EA5E9', '#38BDF8']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.connectBtnGradient}
+          >
+            {isConnecting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Ionicons name="wallet-outline" size={20} color="#FFFFFF" />
+                <Text style={styles.connectBtnText}>Connect Seeker Wallet</Text>
+              </>
+            )}
+          </LinearGradient>
         </TouchableOpacity>
 
         <View style={styles.secureFooter}>
@@ -230,25 +277,25 @@ const styles = StyleSheet.create({
   },
   heroSection: {
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 8,
   },
   logoContainer: {
-    width: 72,
-    height: 72,
-    borderRadius: 22,
+    width: 76,
+    height: 76,
+    borderRadius: 24,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
-    shadowColor: '#D97706',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
+    marginBottom: 14,
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 16,
     elevation: 4,
   },
   logoImage: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
   },
   brandTitle: {
     fontSize: 28,
@@ -260,39 +307,54 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  carouselCard: {
+  cardWrapper: {
     borderRadius: 24,
     borderWidth: 1,
-    padding: 24,
+    padding: 22,
     alignItems: 'center',
-    marginVertical: 12,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 10,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.05,
+    shadowRadius: 14,
+    elevation: 3,
   },
-  carouselIconBox: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  cardInner: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  badgePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 14,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  iconBox: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
-  carouselTitle: {
-    fontSize: 18,
+  cardTitle: {
+    fontSize: 19,
     fontWeight: '800',
     marginBottom: 8,
     textAlign: 'center',
   },
-  carouselDesc: {
+  cardDesc: {
     fontSize: 14,
     fontWeight: '500',
     lineHeight: 20,
     textAlign: 'center',
-    paddingHorizontal: 8,
-    marginBottom: 20,
+    paddingHorizontal: 12,
+    marginBottom: 18,
   },
   dotsRow: {
     flexDirection: 'row',
@@ -305,24 +367,27 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   activeDot: {
-    width: 24,
+    width: 22,
     borderRadius: 4,
   },
   bottomSection: {
     gap: 12,
   },
-  connectBtn: {
+  connectBtnContainer: {
+    borderRadius: 28,
+    overflow: 'hidden',
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  connectBtnGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     height: 56,
-    borderRadius: 28,
     gap: 10,
-    shadowColor: '#D97706',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 5,
   },
   btnDisabled: {
     opacity: 0.6,
@@ -330,6 +395,7 @@ const styles = StyleSheet.create({
   connectBtnText: {
     fontSize: 16,
     fontWeight: '800',
+    color: '#FFFFFF',
     letterSpacing: 0.3,
   },
   secureFooter: {

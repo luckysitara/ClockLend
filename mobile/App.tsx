@@ -1540,13 +1540,13 @@ function MainApp() {
           <Ionicons
             name={activeTab === 'HOME' ? 'home' : 'home-outline'}
             size={22}
-            color={activeTab === 'HOME' ? '#D97706' : colors.textSecondary}
+            color={activeTab === 'HOME' ? colors.primary : colors.textSecondary}
           />
           <Text
             style={[
               styles.tabLabel,
               { color: colors.textSecondary },
-              activeTab === 'HOME' && { color: '#D97706', fontWeight: '800' },
+              activeTab === 'HOME' && { color: colors.primary, fontWeight: '800' },
             ]}
           >
             Home
@@ -1565,20 +1565,20 @@ function MainApp() {
           <Ionicons
             name={activeTab === 'BORROW' ? 'flash' : 'flash-outline'}
             size={22}
-            color={activeTab === 'BORROW' ? '#D97706' : colors.textSecondary}
+            color={activeTab === 'BORROW' ? colors.primary : colors.textSecondary}
           />
           <Text
             style={[
               styles.tabLabel,
               { color: colors.textSecondary },
-              activeTab === 'BORROW' && { color: '#D97706', fontWeight: '800' },
+              activeTab === 'BORROW' && { color: colors.primary, fontWeight: '800' },
             ]}
           >
             Borrow
           </Text>
         </TouchableOpacity>
 
-        {/* 3. Center Elevated Golden Circular Button (Matches Screenshots) */}
+        {/* 3. Center Elevated Circular Button (Electric Cyan Logo Gradient) */}
         <View style={styles.centerFabWrapper}>
           <TouchableOpacity
             style={styles.centerFab}
@@ -1591,7 +1591,7 @@ function MainApp() {
             accessibilityLabel="ClockLend Hub"
           >
             <LinearGradient
-              colors={['#D97706', '#F59E0B']}
+              colors={mode === 'dark' ? ['#0284C7', '#38BDF8'] : ['#0284C7', '#0EA5E9', '#38BDF8']}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.centerFabGradient}
@@ -1613,13 +1613,13 @@ function MainApp() {
           <Ionicons
             name={activeTab === 'MARKET' ? 'storefront' : 'storefront-outline'}
             size={22}
-            color={activeTab === 'MARKET' ? '#D97706' : colors.textSecondary}
+            color={activeTab === 'MARKET' ? colors.primary : colors.textSecondary}
           />
           <Text
             style={[
               styles.tabLabel,
               { color: colors.textSecondary },
-              activeTab === 'MARKET' && { color: '#D97706', fontWeight: '800' },
+              activeTab === 'MARKET' && { color: colors.primary, fontWeight: '800' },
             ]}
           >
             Desks
@@ -1638,13 +1638,13 @@ function MainApp() {
           <Ionicons
             name={activeTab === 'PROFILE' ? 'person' : 'person-outline'}
             size={22}
-            color={activeTab === 'PROFILE' ? '#D97706' : colors.textSecondary}
+            color={activeTab === 'PROFILE' ? colors.primary : colors.textSecondary}
           />
           <Text
             style={[
               styles.tabLabel,
               { color: colors.textSecondary },
-              activeTab === 'PROFILE' && { color: '#D97706', fontWeight: '800' },
+              activeTab === 'PROFILE' && { color: colors.primary, fontWeight: '800' },
             ]}
           >
             Profile
@@ -1742,7 +1742,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    shadowColor: '#D97706',
+    shadowColor: '#0EA5E9',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,

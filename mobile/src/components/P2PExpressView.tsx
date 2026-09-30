@@ -9,8 +9,10 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { LendingPool, UserProfile, WalletAssets } from '../types';
@@ -52,11 +54,12 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
   isLoadingPools = false,
   initialAmount,
 }) => {
-  const { colors } = useTheme();
+  const { colors, mode } = useTheme();
   const [amountStr, setAmountStr] = useState<string>(initialAmount ?? '50');
   const [collateralType, setCollateralType] = useState<'SKR' | 'SOL'>('SOL');
   const [durationDays, setDurationDays] = useState<number>(7);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [prices, setPrices] = useState(livePrices);
   const [usableAssets, setUsableAssets] = useState<{ sol: boolean; skr: boolean }>({
     sol: false,
@@ -134,13 +137,13 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
     collateralType === 'SOL'
   );
 
-  const handleBorrow = async () => {
+  const handleOpenConfirm = () => {
     if (numAmount <= 0) {
       Alert.alert('Invalid Amount', 'Please enter a valid loan amount.');
       return;
     }
     if (!bestPool) {
-      Alert.alert('No Pools Available', 'Loading available lending pools...');
+      Alert.alert('No Available Desk', 'No matching lending desk was found. Please check back later.');
       return;
     }
     if (hasNoLiquidity || exceedsLiquidity) {
@@ -159,6 +162,16 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
       );
       return;
     }
+
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {}
+    setShowConfirmModal(true);
+  };
+
+  const handleExecuteBorrow = async () => {
+    setShowConfirmModal(false);
+    if (!bestPool) return;
 
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -202,7 +215,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
-      {/* Top Header Row with ClockLend Logo */}
+      {/* ── Top Header Row ── */}
       <View style={styles.topHeaderRow}>
         <View style={styles.brandRow}>
           <Image source={require('../../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
@@ -217,11 +230,10 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
         )}
       </View>
 
-      {/* Jupiter-Style Main Card */}
+      {/* ── Jupiter-Style Main Card ── */}
       <View style={[styles.mainCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        
         {/* Section 1: You Borrow */}
-        <View style={[styles.inputBox, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+        <View style={[styles.inputBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
           <View style={styles.inputHeaderRow}>
             <Text style={[styles.inputHeaderLabel, { color: colors.textSecondary }]}>YOU BORROW</Text>
             {poolLiquidity > 0 && (
@@ -240,72 +252,29 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
               placeholder="0"
               placeholderTextColor={colors.textMuted}
             />
-            <View style={[styles.tokenPill, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-              <View style={[styles.tokenDot, { backgroundColor: '#2775CA' }]} />
-              <Text style={[styles.tokenName, { color: colors.text }]}>USDC</Text>
+            <View style={[styles.tokenTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
+              <Text style={styles.tokenIconText}>$</Text>
+              <Text style={[styles.tokenTagText, { color: colors.primaryLabel }]}>USDC</Text>
             </View>
           </View>
-
-          {/* Quick Amount Chips */}
-          <View style={styles.presetsRow}>
-            {['25', '50', '100', '250'].map((val) => (
-              <TouchableOpacity
-                key={val}
-                style={[
-                  styles.presetChip,
-                  { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder },
-                  amountStr === val && { backgroundColor: colors.primary, borderColor: colors.primary },
-                ]}
-                onPress={() => {
-                  try { Haptics.selectionAsync(); } catch {}
-                  setAmountStr(val);
-                }}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityLabel={`Preset $${val} USDC`}
-              >
-                <Text
-                  style={[
-                    styles.presetText,
-                    { color: colors.textSecondary },
-                    amountStr === val && { color: colors.primaryText, fontWeight: '700' },
-                  ]}
-                >
-                  ${val}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
         </View>
 
-        {/* Connector Badge */}
-        <View style={styles.connectorRow}>
-          <View style={[styles.connectorLine, { backgroundColor: colors.cardBorder }]} />
-          <View style={[styles.connectorCircle, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-            <Ionicons name="arrow-down" size={16} color={colors.primaryLabel} />
-          </View>
-          <View style={[styles.connectorLine, { backgroundColor: colors.cardBorder }]} />
-        </View>
-
-        {/* Section 2: Collateral Required */}
-        <View style={[styles.inputBox, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+        {/* Section 2: Collateral Locked */}
+        <View style={[styles.inputBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder, marginTop: 12 }]}>
           <View style={styles.inputHeaderRow}>
-            <Text style={[styles.inputHeaderLabel, { color: colors.textSecondary }]}>COLLATERAL TO LOCK</Text>
+            <Text style={[styles.inputHeaderLabel, { color: colors.textSecondary }]}>YOU LOCK IN ESCROW</Text>
             <TouchableOpacity
               onPress={() => {
-                try { Haptics.selectionAsync(); } catch {}
-                if (userBalance > 0) {
-                  const maxUsdc = Math.max(10, Math.floor(userBalance * 0.9 * collateralPrice * ltv));
-                  setAmountStr(maxUsdc.toString());
+                if (collateralPrice > 0) {
+                  const maxAmt = Math.floor(userBalance * ltv * collateralPrice);
+                  setAmountStr(maxAmt > 0 ? String(maxAmt) : '0');
                 }
               }}
               activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Borrow max collateral"
             >
               <Text style={[styles.balanceText, { color: colors.textMuted }]}>
                 Bal: {userBalance.toFixed(isDecimal ? 2 : 0)} {collateralType}{' '}
-                <Text style={{ color: colors.primaryLabel, fontWeight: '700' }}>MAX</Text>
+                <Text style={{ color: colors.primaryLabel, fontWeight: '800' }}>MAX</Text>
               </Text>
             </TouchableOpacity>
           </View>
@@ -326,7 +295,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
                     key={t}
                     style={[
                       styles.tokenSelectBtn,
-                      { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder },
+                      { backgroundColor: colors.card, borderColor: colors.cardBorder },
                       isSelected && { backgroundColor: colors.badgeBg, borderColor: colors.primary },
                     ]}
                     onPress={() => {
@@ -334,8 +303,6 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
                       setCollateralType(t);
                     }}
                     activeOpacity={0.7}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Select ${t} collateral`}
                   >
                     <Image
                       source={t === 'SOL' ? SOL_LOGO : SKR_LOGO}
@@ -377,14 +344,12 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
                     setDurationDays(days);
                   }}
                   activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${days} days loan duration`}
                 >
                   <Text
                     style={[
                       styles.durationPillText,
                       { color: colors.textSecondary },
-                      isSelected && { color: colors.primaryText, fontWeight: '800' },
+                      isSelected && { color: '#FFFFFF', fontWeight: '800' },
                     ]}
                   >
                     {days}d
@@ -395,8 +360,8 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
           </View>
         </View>
 
-        {/* Section 4: Compact Summary Panel */}
-        <View style={[styles.summaryPanel, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder }]}>
+        {/* Section 4: Loan Breakdown */}
+        <View style={[styles.summaryPanel, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
           <View style={styles.summaryRow}>
             <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Fixed Rate</Text>
             <Text style={[styles.summaryValue, { color: colors.text }]}>{effectiveApr.toFixed(1)}% APR</Text>
@@ -412,16 +377,6 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
             </Text>
           </View>
 
-          <View style={styles.summaryRow}>
-            <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Origination Fee</Text>
-            <Text style={[styles.summaryValue, { color: colors.text }]}>
-              ${formatUsdcMicro(origination.netMicro)} net{' '}
-              <Text style={{ color: colors.textMuted, fontSize: 11 }}>
-                (-${formatUsdcMicro(origination.feeMicro)})
-              </Text>
-            </Text>
-          </View>
-
           <View style={[styles.summaryRow, { marginBottom: 0 }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <Ionicons name="shield-checkmark" size={13} color={colors.success} />
@@ -433,26 +388,123 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
 
         {/* Primary Action Button */}
         <TouchableOpacity
-          style={[
-            styles.borrowBtn,
-            { backgroundColor: colors.primary },
-            isDisabled && styles.borrowBtnDisabled,
-          ]}
-          onPress={handleBorrow}
+          style={[styles.borrowBtnContainer, isDisabled && styles.borrowBtnDisabled]}
+          onPress={handleOpenConfirm}
           disabled={isDisabled}
           activeOpacity={0.88}
-          accessibilityRole="button"
-          accessibilityLabel={getCtaLabel()}
         >
-          {isSubmitting ? (
-            <ActivityIndicator size="small" color={colors.primaryText} />
-          ) : (
-            <Text style={[styles.borrowBtnText, { color: colors.primaryText }]}>
-              {getCtaLabel()}
-            </Text>
-          )}
+          <LinearGradient
+            colors={mode === 'dark' ? ['#0284C7', '#38BDF8'] : ['#0284C7', '#0EA5E9', '#38BDF8']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.borrowBtnGradient}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Ionicons name="flash" size={18} color="#FFFFFF" />
+                <Text style={styles.borrowBtnText}>{getCtaLabel()}</Text>
+              </>
+            )}
+          </LinearGradient>
         </TouchableOpacity>
       </View>
+
+      {/* ── Sleek Loan Confirmation Modal / Bottom Sheet ── */}
+      <Modal
+        visible={showConfirmModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowConfirmModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowConfirmModal(false)}
+          />
+          <View style={[styles.confirmSheet, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <View style={styles.sheetHandle} />
+
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.sheetTitle, { color: colors.text }]}>Confirm Instant Loan</Text>
+              <TouchableOpacity onPress={() => setShowConfirmModal(false)} style={styles.sheetCloseBtn}>
+                <Ionicons name="close" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Terms Summary */}
+            <View style={[styles.confirmCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+              <View style={styles.confirmRow}>
+                <Text style={[styles.confirmLabel, { color: colors.textMuted }]}>Disbursed to Wallet</Text>
+                <Text style={[styles.confirmValueBold, { color: colors.primaryLabel }]}>
+                  ${numAmount.toFixed(2)} USDC
+                </Text>
+              </View>
+
+              <View style={[styles.divider, { backgroundColor: colors.divider }]} />
+
+              <View style={styles.confirmRow}>
+                <Text style={[styles.confirmLabel, { color: colors.textMuted }]}>Collateral Escrowed</Text>
+                <Text style={[styles.confirmValue, { color: colors.text }]}>
+                  {requiredCollateralUnits.toFixed(3)} {collateralType}
+                </Text>
+              </View>
+
+              <View style={[styles.divider, { backgroundColor: colors.divider }]} />
+
+              <View style={styles.confirmRow}>
+                <Text style={[styles.confirmLabel, { color: colors.textMuted }]}>Term & Due Date</Text>
+                <Text style={[styles.confirmValue, { color: colors.text }]}>
+                  {durationDays} Days (+24h Grace)
+                </Text>
+              </View>
+
+              <View style={[styles.divider, { backgroundColor: colors.divider }]} />
+
+              <View style={styles.confirmRow}>
+                <Text style={[styles.confirmLabel, { color: colors.textMuted }]}>Total to Repay</Text>
+                <Text style={[styles.confirmValue, { color: colors.text }]}>
+                  ${(numAmount + estInterest).toFixed(2)} USDC
+                </Text>
+              </View>
+            </View>
+
+            {/* Seed Vault Protection Notice */}
+            <View style={styles.securityNoticeRow}>
+              <Ionicons name="shield-checkmark" size={16} color={colors.success} />
+              <Text style={[styles.securityNoticeText, { color: colors.textSecondary }]}>
+                Authorized via Solana Mobile Seed Vault hardware key
+              </Text>
+            </View>
+
+            {/* Execute Button */}
+            <TouchableOpacity
+              style={styles.confirmActionBtn}
+              onPress={handleExecuteBorrow}
+              activeOpacity={0.88}
+            >
+              <LinearGradient
+                colors={mode === 'dark' ? ['#0284C7', '#38BDF8'] : ['#0284C7', '#0EA5E9', '#38BDF8']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.confirmActionGradient}
+              >
+                <Ionicons name="hardware-chip-outline" size={18} color="#FFFFFF" />
+                <Text style={styles.confirmActionText}>Sign & Borrow with Seed Vault</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelActionBtn}
+              onPress={() => setShowConfirmModal(false)}
+            >
+              <Text style={[styles.cancelActionText, { color: colors.textMuted }]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -498,12 +550,12 @@ const styles = StyleSheet.create({
   mainCard: {
     borderRadius: 24,
     borderWidth: 1,
-    padding: 18,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 6,
+    padding: 20,
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    elevation: 4,
   },
   inputBox: {
     borderRadius: 18,
@@ -519,15 +571,15 @@ const styles = StyleSheet.create({
   inputHeaderLabel: {
     fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 0.5,
   },
   poolAvailText: {
     fontSize: 11,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   balanceText: {
-    fontSize: 11,
-    fontWeight: '500',
+    fontSize: 12,
+    fontWeight: '600',
   },
   inputRow: {
     flexDirection: 'row',
@@ -536,69 +588,31 @@ const styles = StyleSheet.create({
   },
   numberInput: {
     flex: 1,
-    fontSize: 32,
+    fontSize: 26,
     fontWeight: '800',
-    padding: 0,
-    marginRight: 12,
-  },
-  tokenPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  tokenDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  tokenName: {
-    fontSize: 14,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  presetsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 14,
-  },
-  presetChip: {
-    flex: 1,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  presetText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  connectorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: -8,
-    zIndex: 10,
-  },
-  connectorLine: {
-    flex: 1,
-    height: 1,
-  },
-  connectorCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 12,
+    paddingVertical: 0,
   },
   collateralAmountText: {
-    fontSize: 26,
+    flex: 1,
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  tokenTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 6,
+  },
+  tokenIconText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0EA5E9',
+  },
+  tokenTagText: {
+    fontSize: 14,
     fontWeight: '800',
   },
   tokenSelectorGroup: {
@@ -608,29 +622,28 @@ const styles = StyleSheet.create({
   tokenSelectBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: 12,
     borderWidth: 1,
+    gap: 6,
   },
   tokenIcon: {
-    width: 16,
-    height: 16,
+    width: 18,
+    height: 18,
   },
   tokenSelectText: {
     fontSize: 13,
     fontWeight: '700',
   },
   durationSection: {
-    marginTop: 16,
-    marginBottom: 14,
+    marginTop: 18,
   },
   durationLabel: {
     fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.8,
-    marginBottom: 8,
+    letterSpacing: 0.5,
+    marginBottom: 10,
   },
   durationPillsRow: {
     flexDirection: 'row',
@@ -638,53 +651,162 @@ const styles = StyleSheet.create({
   },
   durationPill: {
     flex: 1,
-    height: 38,
+    paddingVertical: 10,
     borderRadius: 14,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   durationPillText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
   },
   summaryPanel: {
+    marginTop: 18,
     borderRadius: 16,
     borderWidth: 1,
     padding: 14,
-    marginBottom: 16,
   },
   summaryRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    alignItems: 'center',
+    marginBottom: 10,
   },
   summaryLabel: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 13,
+    fontWeight: '600',
   },
   summaryValue: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
   },
-  borrowBtn: {
-    height: 56,
+  borrowBtnContainer: {
+    marginTop: 20,
     borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  borrowBtnGradient: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#6366F1',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 6,
+    height: 54,
+    gap: 8,
   },
   borrowBtnDisabled: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   borrowBtnText: {
     fontSize: 16,
     fontWeight: '800',
+    color: '#FFFFFF',
     letterSpacing: 0.3,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  confirmSheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    padding: 22,
+    paddingBottom: 36,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: 'rgba(150, 150, 150, 0.3)',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+  },
+  sheetTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  sheetCloseBtn: {
+    padding: 4,
+  },
+  confirmCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 16,
+  },
+  confirmRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+  },
+  confirmLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  confirmValue: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  confirmValueBold: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  divider: {
+    height: 1,
+    marginVertical: 10,
+  },
+  securityNoticeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 20,
+    paddingHorizontal: 4,
+  },
+  securityNoticeText: {
+    fontSize: 12,
+    fontWeight: '500',
+    flex: 1,
+  },
+  confirmActionBtn: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#0EA5E9',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+  },
+  confirmActionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 52,
+    gap: 8,
+  },
+  confirmActionText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  cancelActionBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginTop: 4,
+  },
+  cancelActionText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
