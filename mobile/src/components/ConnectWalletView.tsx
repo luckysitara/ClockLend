@@ -171,7 +171,7 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
             </View>
 
             <View style={[styles.iconBox, { backgroundColor: colors.badgeBg }]}>
-              <Ionicons name={slide.icon} size={42} color={colors.primary} />
+              <Ionicons name={slide.icon} size={32} color={colors.primary} />
             </View>
 
             <Text style={[styles.cardTitle, { color: colors.text }]}>{slide.title}</Text>
@@ -289,18 +289,18 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   cardWrapper: {
-    minHeight: Math.round(SCREEN_HEIGHT * 0.48),
-    borderRadius: 28,
+    minHeight: Math.round(SCREEN_HEIGHT * 0.38),
+    borderRadius: 22,
     borderWidth: 1,
-    paddingVertical: 26,
-    paddingHorizontal: 22,
+    paddingVertical: 18,
+    paddingHorizontal: 18,
     alignItems: 'center',
     justifyContent: 'space-between',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 18,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 3,
   },
   cardInner: {
     flex: 1,
@@ -309,53 +309,53 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   badgePill: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
     borderWidth: 1,
-    marginBottom: 16,
+    marginBottom: 10,
   },
   badgeText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
   },
   iconBox: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 10,
   },
   cardTitle: {
-    fontSize: 23,
+    fontSize: 19,
     fontWeight: '900',
-    marginBottom: 12,
+    marginBottom: 6,
     textAlign: 'center',
     letterSpacing: -0.2,
   },
   cardDesc: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '500',
-    lineHeight: 23,
+    lineHeight: 19,
     textAlign: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
   },
   dotsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 16,
+    gap: 6,
+    marginTop: 10,
   },
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   activeDot: {
-    width: 24,
-    borderRadius: 4,
+    width: 18,
+    borderRadius: 3,
   },
   bottomSection: {
     gap: 12,

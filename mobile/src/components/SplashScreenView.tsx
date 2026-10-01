@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import {
   Pressable,
   StyleSheet,
+  View,
   Text,
   Image,
   Animated,
@@ -21,15 +22,16 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
   const { colors } = useTheme();
 
   // Animations
-  const logoTranslateX = useRef(new Animated.Value(-width * 0.7)).current;
+  const logoTranslateX = useRef(new Animated.Value(-width * 0.75)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
   const logoScale = useRef(new Animated.Value(1)).current;
 
-  const textTranslateX = useRef(new Animated.Value(width * 0.7)).current;
+  const textTranslateX = useRef(new Animated.Value(width * 0.75)).current;
   const textOpacity = useRef(new Animated.Value(0)).current;
 
   const exitOpacity = useRef(new Animated.Value(1)).current;
 
+  const textWidthRef = useRef(162);
   const hasFinishedRef = useRef(false);
 
   const finishEarly = () => {
@@ -39,43 +41,39 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
   };
 
   useEffect(() => {
-    // Sequence:
-    // 1. Logo & logo text come from left and right respectively
-    // 2. Pause so user sees both together
-    // 3. Logo text disappears
-    // 4. Logo becomes big
-    // 5. Logo pulses once, very big, starting the app
+    const shiftAmount = (textWidthRef.current + 14) / 2;
+
     const anim = Animated.sequence([
-      // 1. Entrance from left and right
+      // 1. Entrance: Logo & text glide in simultaneously from left and right side-by-side
       Animated.parallel([
         Animated.timing(logoTranslateX, {
           toValue: 0,
-          duration: 550,
+          duration: 600,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
         Animated.timing(logoOpacity, {
           toValue: 1,
-          duration: 400,
+          duration: 420,
           useNativeDriver: true,
         }),
         Animated.timing(textTranslateX, {
           toValue: 0,
-          duration: 550,
+          duration: 600,
           easing: Easing.out(Easing.cubic),
           useNativeDriver: true,
         }),
         Animated.timing(textOpacity, {
           toValue: 1,
-          duration: 400,
+          duration: 420,
           useNativeDriver: true,
         }),
       ]),
 
-      // 2. Pause to display lockup
-      Animated.delay(420),
+      // 2. Pause to display side-by-side lockup
+      Animated.delay(400),
 
-      // 3. Logo text disappears
+      // 3. Text disappears after sliding, and logo centers
       Animated.parallel([
         Animated.timing(textOpacity, {
           toValue: 0,
@@ -84,42 +82,36 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
           useNativeDriver: true,
         }),
         Animated.timing(textTranslateX, {
-          toValue: 35,
+          toValue: 30,
           duration: 280,
           easing: Easing.in(Easing.cubic),
           useNativeDriver: true,
         }),
+        Animated.timing(logoTranslateX, {
+          toValue: shiftAmount,
+          duration: 320,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }),
       ]),
 
-      // 4. Leaving the logo to be big
-      Animated.timing(logoScale, {
-        toValue: 1.5,
-        duration: 300,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-
-      // 5. And pulse once, very big
-      Animated.timing(logoScale, {
-        toValue: 2.75,
-        duration: 360,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-
-      // 6. Starting the app: settle and fade out into the main screen
+      // 4. Scale up to 5x and smoothly transition to dissolve into the app
       Animated.parallel([
         Animated.timing(logoScale, {
-          toValue: 2.3,
-          duration: 250,
-          easing: Easing.inOut(Easing.quad),
+          toValue: 5,
+          duration: 520,
+          easing: Easing.in(Easing.cubic),
           useNativeDriver: true,
         }),
-        Animated.timing(exitOpacity, {
-          toValue: 0,
-          duration: 250,
-          useNativeDriver: true,
-        }),
+        Animated.sequence([
+          Animated.delay(200),
+          Animated.timing(exitOpacity, {
+            toValue: 0,
+            duration: 320,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+          }),
+        ]),
       ]),
     ]);
 
@@ -152,37 +144,43 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
           },
         ]}
       >
-        {/* Animated Brand Logo (enters from left, stays centered, scales big, pulses very big) */}
-        <Animated.View
-          style={[
-            styles.logoWrapper,
-            {
-              opacity: logoOpacity,
-              transform: [
-                { translateX: logoTranslateX },
-                { scale: logoScale },
-              ],
-            },
-          ]}
-        >
-          <Image source={LOGO_IMG} style={styles.logo} resizeMode="contain" />
-        </Animated.View>
+        {/* Side-by-side row: Logo on left, Logo text ("ClockLend") on right */}
+        <View style={styles.sideBySideRow}>
+          {/* Animated Brand Logo */}
+          <Animated.View
+            style={[
+              styles.logoWrapper,
+              {
+                opacity: logoOpacity,
+                transform: [
+                  { translateX: logoTranslateX },
+                  { scale: logoScale },
+                ],
+              },
+            ]}
+          >
+            <Image source={LOGO_IMG} style={styles.logo} resizeMode="contain" />
+          </Animated.View>
 
-        {/* Animated Brand Text Lockup (enters from right, disappears) */}
-        <Animated.View
-          style={[
-            styles.textContainer,
-            {
-              opacity: textOpacity,
-              transform: [{ translateX: textTranslateX }],
-            },
-          ]}
-        >
-          <Text style={[styles.brandTitle, { color: colors.text }]}>ClockLend</Text>
-          <Text style={[styles.brandTagline, { color: colors.primaryLabel }]}>
-            Decentralized Liquidity
-          </Text>
-        </Animated.View>
+          {/* Animated Brand Text ("ClockLend" only, no tagline) */}
+          <Animated.View
+            style={[
+              styles.textWrapper,
+              {
+                opacity: textOpacity,
+                transform: [{ translateX: textTranslateX }],
+              },
+            ]}
+            onLayout={(e) => {
+              const w = e.nativeEvent.layout.width;
+              if (w > 0) {
+                textWidthRef.current = w;
+              }
+            }}
+          >
+            <Text style={[styles.brandTitle, { color: colors.text }]}>ClockLend</Text>
+          </Animated.View>
+        </View>
       </Animated.View>
     </Pressable>
   );
@@ -199,11 +197,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
-    height: 116,
+  },
+  sideBySideRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   logoWrapper: {
-    width: 116,
-    height: 116,
+    width: 76,
+    height: 76,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -211,22 +213,13 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  textContainer: {
-    position: 'absolute',
-    top: 134,
-    width: '100%',
-    alignItems: 'center',
+  textWrapper: {
+    marginLeft: 14,
+    justifyContent: 'center',
   },
   brandTitle: {
-    fontSize: 28,
+    fontSize: 34,
     fontWeight: '900',
-    letterSpacing: 0.6,
-  },
-  brandTagline: {
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    marginTop: 6,
+    letterSpacing: 0.5,
   },
 });
