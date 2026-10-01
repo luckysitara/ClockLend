@@ -51,6 +51,9 @@ export interface LoanOrder {
    * "last known — not confirmed", never as live on-chain state.
    */
   isStale?: boolean;
+  isLender?: boolean;
+  lender?: string;
+  repaidAt?: number;
 }
 
 export interface P2POffer {
@@ -74,6 +77,7 @@ export interface P2POffer {
   durationDays: number;
   createdAt: number;
   dueTime?: number;
+  gracePeriodExpires?: number;
   status: OfferStatus;
   txSignature?: string;
   escrowAddress?: string;

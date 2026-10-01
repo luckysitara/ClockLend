@@ -59,6 +59,10 @@ import {
   buildStakeSkrTx,
   buildUnstakeSkrTx,
   buildDepositLiquidityTx,
+  buildWithdrawLiquidityTx,
+  buildClaimLoanDefaultTx,
+  buildClaimPawnDefaultTx,
+  buildTriggerPawnGraceTx,
   getCachedOrders,
   setCachedOrders,
   USDC_MAINNET_MINT,
@@ -237,10 +241,15 @@ function MainApp() {
   };
 
   const [pools, setPools] = useState<LendingPool[]>([]);
+  const poolsRef = useRef<LendingPool[]>([]);
   const [orders, setOrders] = useState<LoanOrder[]>([]);
   const ordersRef = useRef<LoanOrder[]>([]);
   const offersRef = useRef<P2POffer[]>(INITIAL_COMMUNITY_OFFERS);
   const [offers, setOffers] = useState<P2POffer[]>(INITIAL_COMMUNITY_OFFERS);
+
+  useEffect(() => {
+    poolsRef.current = pools;
+  }, [pools]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [skrYieldVault, setSkrYieldVault] = useState<SkrYieldVaultState | undefined>(undefined);
   const [userYieldPosition, setUserYieldPosition] = useState<UserYieldPositionState | undefined>(undefined);
@@ -291,14 +300,19 @@ function MainApp() {
   const loadProtocolData = async (userPubkey: PublicKey, skrHandle: string, net: SolanaNetwork = selectedNetwork) => {
     try {
       setIsLoadingPools(true);
-      const [livePools, profile, liveOrders, liveOffers, yieldVault, yieldPosition] = await Promise.allSettled([
-        fetchLivePools(net),
+      const poolsPromise = fetchLivePools(net);
+      const [livePools, profile, liveOffers, yieldVault, yieldPosition] = await Promise.allSettled([
+        poolsPromise,
         fetchLiveUserProfile(userPubkey, skrHandle, net),
-        fetchLiveUserOrders(userPubkey, net),
         fetchLiveP2POffers(net),
         fetchSkrYieldVault(net, USDC_MAINNET_MINT),
         fetchUserYieldPosition(net, userPubkey, USDC_MAINNET_MINT),
       ]);
+
+      const resolvedPools = livePools.status === 'fulfilled' ? livePools.value : poolsRef.current;
+      const liveOrders = await fetchLiveUserOrders(userPubkey, net, resolvedPools)
+        .then((val) => ({ status: 'fulfilled' as const, value: val }))
+        .catch((err) => ({ status: 'rejected' as const, reason: err }));
 
       // Derive each rendered slice's status from the settled result itself.
       // allSettled never rejects, so this is the only place a failed slice read
@@ -308,7 +322,10 @@ function MainApp() {
       setOrdersStatus(liveOrders.status === 'fulfilled' ? 'ok' : 'error');
       setOffersStatus(liveOffers.status === 'fulfilled' ? 'ok' : 'error');
 
-      if (livePools.status === 'fulfilled') setPools(livePools.value);
+      if (livePools.status === 'fulfilled') {
+        setPools(livePools.value);
+        poolsRef.current = livePools.value;
+      }
       if (profile.status === 'fulfilled') setUserProfile(profile.value);
       if (yieldVault.status === 'fulfilled') setSkrYieldVault(yieldVault.value);
       if (yieldPosition.status === 'fulfilled') setUserYieldPosition(yieldPosition.value);
@@ -417,7 +434,7 @@ function MainApp() {
       const now = Date.now();
       if (now - lastLoanPushRef.current < 4_000) return;
       lastLoanPushRef.current = now;
-      fetchLiveUserOrders(borrower, selectedNetwork)
+      fetchLiveUserOrders(borrower, selectedNetwork, poolsRef.current)
         .then((live) => {
           ordersRef.current = live;
           setOrders(live);
@@ -662,8 +679,12 @@ function MainApp() {
       const sig = await signAndSendSeekerTransaction(tx, session, selectedNetwork);
       const solscanUrl = `https://solscan.io/tx/${sig}`;
 
-      // Remove / mark order as repaid
-      ordersRef.current = ordersRef.current.filter((o) => o.id !== order.id);
+      // Mark order as repaid (moves from Active to History)
+      ordersRef.current = ordersRef.current.map((o) =>
+        o.id === order.id
+          ? { ...o, status: 'Repaid', txSignature: sig, solscanUrl, repaidAt: Date.now() }
+          : o
+      );
       setOrders(ordersRef.current);
       await setCachedOrders(session.publicKey.toBase58(), ordersRef.current, selectedNetwork);
 
@@ -1277,6 +1298,208 @@ function MainApp() {
     }
   };
 
+  // Withdraw liquidity from a desk the user owns (Pool Authority only - Instruction 9)
+  const handleWithdrawLiquidity = async (pool: LendingPool, amount: number) => {
+    if (!session) return;
+
+    try {
+      const tx = await buildWithdrawLiquidityTx(session.publicKey, pool.id, amount);
+      const sig = await signAndSendSeekerTransaction(tx, session, selectedNetwork);
+      console.log('Liquidity withdrawn on-chain:', sig);
+      const solscanUrl = `https://solscan.io/tx/${sig}`;
+
+      // Refresh pools so available capacity updates
+      fetchLivePools(selectedNetwork)
+        .then((livePools) => setPools(livePools))
+        .catch((err) => console.warn('Pool refresh after withdraw failed:', err));
+      await refreshWalletAssets(session.publicKey, selectedNetwork);
+
+      setTransactionNotice({
+        type: 'repay',
+        title: '💸 Liquidity Withdrawn!',
+        subtitle: `Withdrew $${amount.toLocaleString()} USDC from "${pool.name}" back to your wallet.`,
+        amount: `$${amount.toLocaleString()} USDC`,
+        collateral: `Pool #${pool.id}`,
+        txSignature: sig,
+        solscanUrl,
+        primaryBtnText: 'View on Solscan ↗',
+        secondaryBtnText: 'Done',
+      });
+    } catch (err: any) {
+      if (err?.message?.includes('Cancellation') || err?.name?.includes('Cancellation')) {
+        setTransactionNotice({
+          type: 'error',
+          title: 'Withdrawal Cancelled',
+          subtitle: 'Transaction was cancelled in your wallet.',
+          primaryBtnText: 'Dismiss',
+        });
+        return;
+      }
+      console.warn('WithdrawLiquidity transaction failed:', err);
+      setTransactionNotice({
+        type: 'error',
+        title: 'Withdrawal Notice',
+        subtitle: err?.message || 'Could not withdraw liquidity on-chain. Only the desk owner can withdraw.',
+        primaryBtnText: 'Dismiss',
+      });
+    }
+  };
+
+  // Claim default & liquidate collateral for an active loan (Instruction 8)
+  const handleClaimLoanDefault = async (order: LoanOrder) => {
+    if (!session) return;
+
+    try {
+      const tx = await buildClaimLoanDefaultTx(session.publicKey, order);
+      const sig = await signAndSendSeekerTransaction(tx, session, selectedNetwork);
+      console.log('Default claimed on-chain:', sig);
+      const solscanUrl = `https://solscan.io/tx/${sig}`;
+
+      // Mark order as defaulted (retained in History)
+      ordersRef.current = ordersRef.current.map((o) =>
+        o.id === order.id ? { ...o, status: 'Defaulted', txSignature: sig, solscanUrl, repaidAt: Date.now() } : o
+      );
+      setOrders(ordersRef.current);
+      await setCachedOrders(session.publicKey.toBase58(), ordersRef.current, selectedNetwork);
+      await refreshWalletAssets(session.publicKey, selectedNetwork);
+      loadProtocolData(session.publicKey, session.skrHandle, selectedNetwork).catch(() => {});
+
+      setTransactionNotice({
+        type: 'repay',
+        title: 'Collateral Liquidated!',
+        subtitle: `Successfully seized ${order.collateralAmount} ${order.collateralName} collateral from defaulted Loan #${order.id}. Borrower's reputation bond slashed.`,
+        amount: `${order.collateralAmount} ${order.collateralName}`,
+        collateral: `Order #${order.id}`,
+        txSignature: sig,
+        solscanUrl,
+        primaryBtnText: 'View on Solscan ↗',
+        secondaryBtnText: 'Done',
+      });
+    } catch (err: any) {
+      if (err?.message?.includes('Cancellation') || err?.name?.includes('Cancellation')) {
+        setTransactionNotice({
+          type: 'error',
+          title: 'Liquidation Cancelled',
+          subtitle: 'Transaction was cancelled in your wallet.',
+          primaryBtnText: 'Dismiss',
+        });
+        return;
+      }
+      console.warn('ClaimDefault transaction failed:', err);
+      setTransactionNotice({
+        type: 'error',
+        title: 'Liquidation Notice',
+        subtitle: err?.message || 'Could not liquidate collateral on-chain.',
+        primaryBtnText: 'Dismiss',
+      });
+    }
+  };
+
+  // Claim default on a P2P Pawn (Funder seizes collateral - Instruction 8)
+  const handleClaimPawnDefault = async (offer: P2POffer) => {
+    if (!session) return;
+
+    try {
+      const tx = await buildClaimPawnDefaultTx(session.publicKey, offer);
+      const sig = await signAndSendSeekerTransaction(tx, session, selectedNetwork);
+      console.log('P2P Pawn default claimed on-chain:', sig);
+      const solscanUrl = `https://solscan.io/tx/${sig}`;
+
+      // Mark offer as defaulted
+      offersRef.current = offersRef.current.map((o) =>
+        o.id === offer.id ? { ...o, status: 'Defaulted', txSignature: sig, solscanUrl } : o
+      );
+      setOffers(offersRef.current);
+      await refreshWalletAssets(session.publicKey, selectedNetwork);
+      loadProtocolData(session.publicKey, session.skrHandle, selectedNetwork).catch(() => {});
+
+      setTransactionNotice({
+        type: 'repay',
+        title: 'P2P Collateral Claimed!',
+        subtitle: `Successfully claimed ${offer.collateralAmount} ${offer.collateralName} collateral for defaulted Pawn #${offer.id}.`,
+        amount: `${offer.collateralAmount} ${offer.collateralName}`,
+        collateral: `Pawn #${offer.id}`,
+        txSignature: sig,
+        solscanUrl,
+        primaryBtnText: 'View on Solscan ↗',
+        secondaryBtnText: 'Done',
+      });
+    } catch (err: any) {
+      if (err?.message?.includes('Cancellation') || err?.name?.includes('Cancellation')) {
+        setTransactionNotice({
+          type: 'error',
+          title: 'Claim Cancelled',
+          subtitle: 'Transaction was cancelled in your wallet.',
+          primaryBtnText: 'Dismiss',
+        });
+        return;
+      }
+      console.warn('P2P ClaimDefault failed:', err);
+      setTransactionNotice({
+        type: 'error',
+        title: 'Claim Notice',
+        subtitle: err?.message || 'Could not claim P2P collateral on-chain.',
+        primaryBtnText: 'Dismiss',
+      });
+    }
+  };
+
+  // Trigger 24h Social Grace for a P2P Pawn
+  const handleTriggerPawnGrace = async (offer: P2POffer) => {
+    if (!session) return;
+
+    try {
+      const tx = await buildTriggerPawnGraceTx(session.publicKey, offer);
+      const sig = await signAndSendSeekerTransaction(tx, session, selectedNetwork);
+      console.log('P2P grace triggered on-chain:', sig);
+      const solscanUrl = `https://solscan.io/tx/${sig}`;
+
+      // Mark offer as InGracePeriod
+      offersRef.current = offersRef.current.map((o) =>
+        o.id === offer.id
+          ? {
+              ...o,
+              status: 'InGracePeriod',
+              gracePeriodExpires: Math.floor(Date.now() / 1000) + 86400,
+              txSignature: sig,
+              solscanUrl,
+            }
+          : o
+      );
+      setOffers(offersRef.current);
+      loadProtocolData(session.publicKey, session.skrHandle, selectedNetwork).catch(() => {});
+
+      setTransactionNotice({
+        type: 'grace',
+        title: '24h Grace Period Opened!',
+        subtitle: `Social Grace Period activated for Pawn #${offer.id}. The borrower has 24 hours to repay before collateral becomes claimable.`,
+        amount: `$${offer.requestedAmount} USDC`,
+        collateral: offer.collateralName,
+        txSignature: sig,
+        solscanUrl,
+        primaryBtnText: 'View on Solscan ↗',
+        secondaryBtnText: 'Done',
+      });
+    } catch (err: any) {
+      if (err?.message?.includes('Cancellation') || err?.name?.includes('Cancellation')) {
+        setTransactionNotice({
+          type: 'error',
+          title: 'Grace Trigger Cancelled',
+          subtitle: 'Transaction was cancelled in your wallet.',
+          primaryBtnText: 'Dismiss',
+        });
+        return;
+      }
+      console.warn('P2P TriggerGrace failed:', err);
+      setTransactionNotice({
+        type: 'error',
+        title: 'Grace Notice',
+        subtitle: err?.message || 'Could not trigger grace period on-chain.',
+        primaryBtnText: 'Dismiss',
+      });
+    }
+  };
+
   // NEW-3: Execute real on-chain Unstake SKR transaction (exit path for the bond)
   const handleUnstakeSkr = async (amount: number) => {
     if (!session) return;
@@ -1505,6 +1728,9 @@ function MainApp() {
             onCancelPawnOffer={handleCancelPawnOffer}
             onCreatePool={handleCreatePool}
             onDepositLiquidity={handleDepositLiquidity}
+            onWithdrawLiquidity={handleWithdrawLiquidity}
+            onClaimPawnDefault={handleClaimPawnDefault}
+            onTriggerPawnGrace={handleTriggerPawnGrace}
             isLoading={isProtocolLoading}
             loadFailed={poolsStatus === 'error' || offersStatus === 'error'}
             poolsLoadFailed={poolsStatus === 'error'}
@@ -1518,6 +1744,7 @@ function MainApp() {
             orders={orders}
             onRepay={handleRepay}
             onTriggerGrace={handleTriggerGrace}
+            onClaimDefault={handleClaimLoanDefault}
             onNavigateBorrow={() => setActiveTab('BORROW')}
             isLoading={isProtocolLoading}
             loadFailed={ordersStatus === 'error'}

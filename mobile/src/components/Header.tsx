@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'react-native';
 import * as Haptics from 'expo-haptics';
@@ -108,6 +108,31 @@ export const Header: React.FC<HeaderProps> = ({
             {solBalance > 0 ? `${solBalance.toFixed(2)} SOL` : 'Assets'}
           </Text>
         </TouchableOpacity>
+
+        {onDisconnectWallet && (
+          <TouchableOpacity
+            style={[
+              styles.themeChip,
+              { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.28)' },
+            ]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              Alert.alert(
+                'Disconnect Wallet',
+                `Log out of ${skrHandle}?`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Disconnect', style: 'destructive', onPress: onDisconnectWallet },
+                ]
+              );
+            }}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Disconnect wallet"
+          >
+            <Ionicons name="log-out-outline" size={16} color={colors.danger} />
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );

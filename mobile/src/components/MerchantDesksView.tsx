@@ -154,6 +154,9 @@ interface MerchantDesksViewProps {
     initialLiquidity: number
   ) => void;
   onDepositLiquidity?: (pool: LendingPool, amount: number) => void;
+  onWithdrawLiquidity?: (pool: LendingPool, amount: number) => void;
+  onClaimPawnDefault?: (offer: P2POffer) => void;
+  onTriggerPawnGrace?: (offer: P2POffer) => void;
   isLoading?: boolean;
   loadFailed?: boolean;
   poolsLoadFailed?: boolean;
@@ -173,6 +176,9 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
   onCancelPawnOffer,
   onCreatePool,
   onDepositLiquidity,
+  onWithdrawLiquidity,
+  onClaimPawnDefault,
+  onTriggerPawnGrace,
   isLoading = false,
   loadFailed = false,
   poolsLoadFailed,
@@ -205,6 +211,10 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
   // Deposit Liquidity state
   const [fundModal, setFundModal] = useState<LendingPool | null>(null);
   const [fundAmount, setFundAmount] = useState<string>('');
+
+  // Withdraw Liquidity state
+  const [withdrawModal, setWithdrawModal] = useState<LendingPool | null>(null);
+  const [withdrawAmount, setWithdrawAmount] = useState<string>('');
 
   const sanitizeText = (val: string, maxLen = 32) => val.replace(/[<>'"\\/]/g, '').slice(0, maxLen);
   const sanitizeDecimal = (val: string) => val.replace(/[^0-9.]/g, '').replace(/(\..*?)\..*/g, '$1');
@@ -531,6 +541,18 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                             <Text style={[styles.fundSmallBtnText, { color: colors.primaryLabel }]}>+ Deposit</Text>
                           </TouchableOpacity>
                         )}
+                        {isMyDesk && onWithdrawLiquidity && pool.totalLiquidity > 0 && (
+                          <TouchableOpacity
+                            style={[styles.fundSmallBtn, { backgroundColor: colors.cardAlt, borderColor: 'rgba(239, 68, 68, 0.4)' }]}
+                            onPress={() => {
+                              setWithdrawAmount('');
+                              setWithdrawModal(pool);
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[styles.fundSmallBtnText, { color: colors.danger }]}>Withdraw</Text>
+                          </TouchableOpacity>
+                        )}
                         <TouchableOpacity
                           style={[styles.borrowActionBtn, { backgroundColor: colors.primary }]}
                           onPress={() => onSelectPool(pool)}
@@ -612,15 +634,52 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
               </View>
             ) : (
               filteredOffers.map((offer) => {
-                const isCreator = Boolean(userPubkey && offer.creator === userPubkey);
-                const isFunder = Boolean(userPubkey && offer.funder === userPubkey);
+                const isCreator = Boolean(userPubkey && offer.creator.toLowerCase() === userPubkey.toLowerCase());
+                const isFunder = Boolean(userPubkey && offer.funder && offer.funder.toLowerCase() === userPubkey.toLowerCase());
                 const isOpen = offer.status === 'Open';
                 const isFunded = offer.status === 'Funded';
+                const isInGrace = offer.status === 'InGracePeriod';
+                const isRepaid = offer.status === 'Repaid';
+                const isDefaulted = offer.status === 'Defaulted';
+                const nowSec = Math.floor(Date.now() / 1000);
+                const isPastDue = Boolean(offer.dueTime && nowSec >= offer.dueTime);
+                const isGraceExpired = Boolean(
+                  (offer.gracePeriodExpires && nowSec >= offer.gracePeriodExpires) ||
+                  (offer.dueTime && nowSec >= offer.dueTime + 86400)
+                );
+
+                const statusColor = isOpen
+                  ? '#34D399'
+                  : isInGrace
+                  ? colors.danger
+                  : isFunded
+                  ? isPastDue
+                    ? colors.warning
+                    : '#38BDF8'
+                  : isRepaid
+                  ? '#10B981'
+                  : colors.danger;
+
+                const statusLabel = isOpen
+                  ? 'OPEN'
+                  : isInGrace
+                  ? '24H GRACE'
+                  : isFunded
+                  ? isPastDue
+                    ? 'PAST DUE'
+                    : 'FUNDED'
+                  : offer.status.toUpperCase();
 
                 return (
                   <View
                     key={offer.id}
-                    style={[styles.deskCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+                    style={[
+                      styles.deskCard,
+                      {
+                        backgroundColor: colors.card,
+                        borderColor: isInGrace ? colors.danger : colors.cardBorder,
+                      },
+                    ]}
                   >
                     <View style={styles.deskHeader}>
                       <View style={styles.deskLeft}>
@@ -643,16 +702,33 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                       </View>
                     </View>
 
+                    {/* Timeline status note if funded or in grace */}
+                    {(isFunded || isInGrace) && (
+                      <View style={{ marginHorizontal: 16, marginTop: 4, marginBottom: 8, padding: 8, borderRadius: 8, backgroundColor: isInGrace ? 'rgba(239, 68, 68, 0.1)' : colors.cardAlt }}>
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: isInGrace ? colors.danger : isPastDue ? colors.warning : colors.textSecondary }}>
+                          {isInGrace
+                            ? isGraceExpired
+                              ? '⚠️ 24h grace expired • Collateral liquidatable by funder'
+                              : `🚨 24h Social Grace active • Expires in ${Math.max(1, Math.ceil(((offer.gracePeriodExpires || (offer.dueTime || 0) + 86400) - nowSec) / 3600))}h`
+                            : isPastDue
+                            ? '⚠️ Repayment past due • 24h grace period can be triggered'
+                            : offer.dueTime
+                            ? `⏳ Active Loan • Due in ${Math.max(1, Math.ceil((offer.dueTime - nowSec) / 86400))}d`
+                            : 'Active Loan'}
+                        </Text>
+                      </View>
+                    )}
+
                     <View style={[styles.deskFooter, { borderTopColor: colors.cardBorder }]}>
                       <View style={styles.liquidityInfo}>
                         <View style={styles.statusRow}>
                           <View
                             style={[
                               styles.statusDot,
-                              { backgroundColor: isOpen ? '#34D399' : isFunded ? '#F59E0B' : colors.textMuted },
+                              { backgroundColor: statusColor },
                             ]}
                           />
-                          <Text style={[styles.liqVal, { color: colors.text }]}>{offer.status.toUpperCase()}</Text>
+                          <Text style={[styles.liqVal, { color: colors.text }]}>{statusLabel}</Text>
                         </View>
                       </View>
 
@@ -675,7 +751,8 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                             <Text style={[styles.fundSmallBtnText, { color: colors.danger }]}>Cancel Pawn</Text>
                           </TouchableOpacity>
                         )}
-                        {isFunded && isCreator && onRepayPawnOffer && (
+                        {/* Repay is possible during Funded OR while inside Grace Period */}
+                        {(isFunded || isInGrace) && isCreator && onRepayPawnOffer && (
                           <TouchableOpacity
                             style={[styles.borrowActionBtn, { backgroundColor: colors.primary }]}
                             onPress={() => onRepayPawnOffer(offer)}
@@ -684,6 +761,26 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                             <Text style={[styles.borrowActionBtnText, { color: colors.primaryText }]}>
                               Repay & Unlock
                             </Text>
+                          </TouchableOpacity>
+                        )}
+                        {/* Trigger Grace Period when funded and past due */}
+                        {isFunded && isPastDue && onTriggerPawnGrace && (isCreator || isFunder) && (
+                          <TouchableOpacity
+                            style={[styles.fundSmallBtn, { borderColor: colors.warning }]}
+                            onPress={() => onTriggerPawnGrace(offer)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[styles.fundSmallBtnText, { color: colors.warning }]}>24h Grace</Text>
+                          </TouchableOpacity>
+                        )}
+                        {/* Claim Default when grace period expired and caller is funder */}
+                        {isInGrace && isGraceExpired && onClaimPawnDefault && isFunder && (
+                          <TouchableOpacity
+                            style={[styles.fundSmallBtn, { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: colors.danger }]}
+                            onPress={() => onClaimPawnDefault(offer)}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={[styles.fundSmallBtnText, { color: colors.danger, fontWeight: '800' }]}>Claim Default</Text>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -1001,6 +1098,83 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                 activeOpacity={0.8}
               >
                 <Text style={[styles.modalSubmitText, { color: colors.primaryText }]}>Deposit Liquidity</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+      )}
+
+      {/* ── Withdraw Liquidity Modal ── */}
+      {withdrawModal && (
+        <Modal
+          visible={!!withdrawModal}
+          animationType="fade"
+          transparent
+          statusBarTranslucent
+          onRequestClose={() => setWithdrawModal(null)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.modalOverlay}
+          >
+            <TouchableWithoutFeedback onPress={() => setWithdrawModal(null)}>
+              <View style={styles.modalDismissArea} />
+            </TouchableWithoutFeedback>
+
+            <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Withdraw from {withdrawModal.name}</Text>
+                <TouchableOpacity
+                  onPress={() => setWithdrawModal(null)}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                >
+                  <Ionicons name="close" size={22} color={colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 6 }}>
+                <Text style={[styles.inputLabel, { color: colors.textMuted, marginTop: 0, marginBottom: 0 }]}>WITHDRAW AMOUNT (USDC)</Text>
+                <TouchableOpacity
+                  onPress={() => setWithdrawAmount(withdrawModal.totalLiquidity.toString())}
+                  activeOpacity={0.7}
+                >
+                  <Text style={{ fontSize: 11, color: colors.primaryLabel, fontWeight: '700' }}>
+                    Available: ${withdrawModal.totalLiquidity.toFixed(2)} (Max)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
+                value={withdrawAmount}
+                onChangeText={(val) => setWithdrawAmount(sanitizeDecimal(val))}
+                keyboardType="decimal-pad"
+                placeholder={`Max ${withdrawModal.totalLiquidity.toFixed(2)}`}
+                placeholderTextColor={colors.textMuted}
+              />
+
+              <TouchableOpacity
+                style={[styles.modalSubmitBtn, { backgroundColor: colors.danger }]}
+                onPress={() => {
+                  const amt = parseFloat(withdrawAmount);
+                  if (isNaN(amt) || amt <= 0) {
+                    Alert.alert('Invalid Amount', 'Please enter a valid amount to withdraw.');
+                    return;
+                  }
+                  if (amt > withdrawModal.totalLiquidity) {
+                    Alert.alert(
+                      'Exceeds Available Liquidity',
+                      `The desk has ${withdrawModal.totalLiquidity.toFixed(2)} USDC available, which is less than the requested ${amt.toFixed(2)} USDC withdrawal.`
+                    );
+                    return;
+                  }
+                  if (onWithdrawLiquidity) {
+                    onWithdrawLiquidity(withdrawModal, amt);
+                    setWithdrawModal(null);
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.modalSubmitText, { color: '#FFFFFF' }]}>Withdraw to Wallet</Text>
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>

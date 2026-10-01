@@ -496,23 +496,38 @@ async function fetchLivePoolsUncached(network: SolanaNetwork): Promise<LendingPo
 }
 
 // Fetch live user loan orders directly from the contract & on-chain state
-export async function fetchLiveUserOrders(borrower: PublicKey, network: SolanaNetwork = 'mainnet-beta'): Promise<LoanOrder[]> {
+export async function fetchLiveUserOrders(
+  borrower: PublicKey,
+  network: SolanaNetwork = 'mainnet-beta',
+  userPools?: LendingPool[]
+): Promise<LoanOrder[]> {
   const rpcConn = getConnection(network);
   const borrowerPubkey = borrower.toBase58();
   const cachedOrders = await getCachedOrders(borrowerPubkey, network);
   const cachedBySig = new Map<string, LoanOrder>();
   const cachedById = new Map<number, LoanOrder>();
+  const ordersMap = new Map<number, LoanOrder>();
+
   for (const co of cachedOrders) {
     if (co.txSignature) cachedBySig.set(co.txSignature, co);
     cachedById.set(co.id, co);
+    // Keep past history loaded
+    if (co.status === 'Repaid' || co.status === 'Defaulted') {
+      ordersMap.set(co.id, co);
+    }
   }
 
-  const ordersMap = new Map<number, LoanOrder>();
+  // Known pool map for resolving pool names and checking desk-ownership
+  const poolByPubkey = new Map<string, LendingPool>();
+  if (userPools) {
+    for (const p of userPools) {
+      const [pda] = getPoolPDA(new PublicKey(p.authority), p.id);
+      poolByPubkey.set(pda.toBase58(), p);
+    }
+  }
 
   // 1. Scan on-chain PDA accounts first (for liquid pool PDA loans).
-  // L-3: the legacy 154-byte dataSize fallback was dead (the program's
-  // LoanOrder is 170 bytes, state.rs:224) and it skipped the discriminator
-  // check, so the whole path is gone — only CLK_LOAN accounts are parsed now.
+  // L-3: only CLK_LOAN accounts are parsed now.
   let chainReadSucceeded = false;
   try {
     const accounts = await queryRpcWithFallback(network, (c) =>
@@ -525,21 +540,26 @@ export async function fetchLiveUserOrders(borrower: PublicKey, network: SolanaNe
         // NEW-4: discriminator-gated parsing — never parse a non-loan account as a loan
         if (data.subarray(0, 8).toString() !== 'CLK_LOAN') continue;
         const isActive = data.readUInt8(8) === 1;
-        if (!isActive) continue;
 
         const borrowerOnChain = new PublicKey(data.subarray(17, 49));
-        if (!borrowerOnChain.equals(borrower)) continue;
+        const poolPubkey = new PublicKey(data.subarray(49, 81));
+        const poolPubkeyStr = poolPubkey.toBase58();
+        const matchedPool = poolByPubkey.get(poolPubkeyStr);
+
+        const isBorrower = borrowerOnChain.equals(borrower);
+        const isLender = Boolean(
+          matchedPool && matchedPool.authority.toLowerCase() === borrowerPubkey.toLowerCase()
+        );
+
+        // Include loans where user is either the borrower or the pool authority (lender)
+        if (!isBorrower && !isLender) continue;
 
         const loanId = Number(data.readBigUInt64LE(9));
-        const poolPubkey = new PublicKey(data.subarray(49, 81));
         const principalAmount = Number(data.readBigUInt64LE(81)) / 1_000_000;
         const collateralMint = new PublicKey(data.subarray(89, 121)).toBase58();
         const rawCollateral = Number(data.readBigUInt64LE(121));
 
-        // M-4: decimals come from the actual mint, never a blanket 1e9. The
-        // program only allows native SOL and canonical SKR as collateral
-        // (processor.rs F-03 allowlist); anything else is not shown rather
-        // than displayed with invented units.
+        // M-4: decimals come from the actual mint, never a blanket 1e9.
         const isSolMint =
           collateralMint === NATIVE_SOL_MINT.toBase58() ||
           collateralMint === SystemProgram.programId.toBase58();
@@ -560,29 +580,37 @@ export async function fetchLiveUserOrders(borrower: PublicKey, network: SolanaNe
 
         let status: LoanStatus = 'Active';
         if (statusByte === 1) status = 'InGracePeriod';
-        else if (statusByte === 2) status = 'Repaid';
+        else if (statusByte === 2 || !isActive) status = 'Repaid';
         else if (statusByte === 3) status = 'Defaulted';
 
-        if (status === 'Repaid') continue;
+        const [loanPDA] = getLoanPDA(poolPubkey, borrowerOnChain, loanId);
+        const [escrowPDA] = getEscrowPDA(loanPDA);
+
+        const cachedRec = cachedById.get(loanId);
+        const txSig = cachedRec?.txSignature;
+        const solscan = txSig ? `https://solscan.io/tx/${txSig}` : cachedRec?.solscanUrl;
 
         const id = loanId;
         ordersMap.set(id, {
           id,
-          poolId: 1,
-          poolName: 'Seeker Genesis Circle',
-          poolPubkey: poolPubkey.toBase58(),
-          borrower: borrowerPubkey,
+          poolId: matchedPool ? matchedPool.id : 1,
+          poolName: matchedPool ? matchedPool.name : 'Seeker Genesis Circle',
+          poolPubkey: poolPubkeyStr,
+          borrower: borrowerOnChain.toBase58(),
           principalAmount,
           collateralName,
           collateralMint,
           collateralAmount,
           interestDue,
           originationTime,
-          // M-3: an unset due_time is rendered as "unknown" — never replaced
-          // with an invented date.
           dueTime,
           gracePeriodExpires,
           status,
+          txSignature: txSig,
+          escrowAddress: escrowPDA.toBase58(),
+          solscanUrl: solscan,
+          isLender,
+          lender: matchedPool?.authority,
         });
       }
     }
@@ -592,11 +620,7 @@ export async function fetchLiveUserOrders(borrower: PublicKey, network: SolanaNe
 
   const finalizeOrders = async (): Promise<LoanOrder[]> => {
     let usedCache = false;
-    // 3. Fallback ONLY when the chain read itself failed. A successful read
-    // that returns no active loan means the loan really is gone (repaid or
-    // defaulted) — resurrecting a cached copy then would show a closed loan
-    // as live. Cached rows are flagged so the UI can label them
-    // "last known — not confirmed".
+    // Fallback if chain read failed
     if (!chainReadSucceeded && ordersMap.size === 0 && cachedOrders.length > 0) {
       for (const co of cachedOrders) {
         if (co.status === 'Active' || co.status === 'InGracePeriod') {
@@ -605,8 +629,13 @@ export async function fetchLiveUserOrders(borrower: PublicKey, network: SolanaNe
         }
       }
     }
+    // Always preserve settled history records from cache
+    for (const co of cachedOrders) {
+      if ((co.status === 'Repaid' || co.status === 'Defaulted') && !ordersMap.has(co.id)) {
+        ordersMap.set(co.id, co);
+      }
+    }
     const finalOrders = Array.from(ordersMap.values());
-    // M-2: never write unconfirmed cache rows back over the stored state.
     if (!usedCache) {
       await setCachedOrders(borrowerPubkey, finalOrders, network);
     }
@@ -835,6 +864,7 @@ async function fetchLiveP2POffersUncached(network: SolanaNetwork): Promise<P2POf
         let durationSeconds = 0;
         let createdAt = 0;
         let dueTime = 0;
+        let gracePeriodExpires = 0;
         let statusByte = 0;
 
         // NEW-4/L-3: discriminator-gated parsing — only CLK_PAWN accounts are
@@ -855,6 +885,7 @@ async function fetchLiveP2POffersUncached(network: SolanaNetwork): Promise<P2POf
           durationSeconds = Number(data.readBigInt64LE(169));
           createdAt = Number(data.readBigInt64LE(177));
           dueTime = Number(data.readBigInt64LE(185));
+          gracePeriodExpires = Number(data.readBigInt64LE(193));
           statusByte = data.readUInt8(201);
         } else if (data.length === 170) {
           isInitialized = data.readUInt8(8) === 1;
@@ -868,6 +899,7 @@ async function fetchLiveP2POffersUncached(network: SolanaNetwork): Promise<P2POf
           durationSeconds = Number(data.readBigInt64LE(137));
           createdAt = Number(data.readBigInt64LE(145));
           dueTime = Number(data.readBigInt64LE(153));
+          gracePeriodExpires = Number(data.readBigInt64LE(161));
           statusByte = data.readUInt8(169);
         } else {
           continue;
@@ -921,6 +953,7 @@ async function fetchLiveP2POffersUncached(network: SolanaNetwork): Promise<P2POf
           durationDays,
           createdAt,
           dueTime: dueTime > 0 ? dueTime : undefined,
+          gracePeriodExpires: gracePeriodExpires > 0 ? gracePeriodExpires : undefined,
           status,
           escrowAddress: escrowPDA.toBase58(),
         });
@@ -2090,10 +2123,11 @@ export async function buildWithdrawLiquidityTx(
   authority: PublicKey,
   poolId: number,
   amountUsdc: number,
-  authorityTokenAccount: PublicKey
+  authorityTokenAccount?: PublicKey
 ): Promise<Transaction> {
   const [poolPDA] = getPoolPDA(authority, poolId);
   const [vaultPDA] = getVaultPDA(poolPDA);
+  const userTokenAcc = authorityTokenAccount || getAssociatedTokenAddress(USDC_MAINNET_MINT, authority);
 
   const tx = new Transaction();
   tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 60_000 }));
@@ -2110,7 +2144,7 @@ export async function buildWithdrawLiquidityTx(
       { pubkey: authority, isSigner: true, isWritable: true },
       { pubkey: poolPDA, isSigner: false, isWritable: true },
       { pubkey: vaultPDA, isSigner: false, isWritable: true },
-      { pubkey: authorityTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: userTokenAcc, isSigner: false, isWritable: true },
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ],
     data,
@@ -2814,6 +2848,64 @@ export async function buildClaimDefaultTx(
   );
 
   return tx;
+}
+
+// Build Claim Default for an Active Desk LoanOrder (Pool Authority seizes collateral & slashes bond)
+export async function buildClaimLoanDefaultTx(
+  authority: PublicKey,
+  order: LoanOrder,
+  pool?: LendingPool
+): Promise<Transaction> {
+  const poolPDA = order.poolPubkey ? new PublicKey(order.poolPubkey) : getPoolPDA(authority, order.poolId)[0];
+  const borrower = new PublicKey(order.borrower);
+  const [loanPDA] = getLoanPDA(poolPDA, borrower, order.id);
+  const [escrowPDA] = getEscrowPDA(loanPDA);
+  const isNativeSol = isNativeSolCollateralName(order.collateralName);
+  const authoritySkrAta = getAssociatedTokenAddress(SKR_MINT, authority);
+  const destinationCollateral = isNativeSol ? authority : authoritySkrAta;
+
+  return buildClaimDefaultTx(
+    authority,
+    loanPDA,
+    escrowPDA,
+    destinationCollateral,
+    {
+      poolPDA,
+      borrower,
+      isNativeSol,
+      slashSkrDestination: authoritySkrAta,
+    }
+  );
+}
+
+// Build Claim Default for a P2P Pawn (Funder seizes locked collateral)
+export async function buildClaimPawnDefaultTx(
+  funder: PublicKey,
+  offer: P2POffer
+): Promise<Transaction> {
+  const creator = new PublicKey(offer.creator);
+  const [offerPDA] = getP2POfferPDA(creator, offer.id);
+  const [escrowPDA] = getEscrowPDA(offerPDA);
+  const isNativeSol = isNativeSolCollateralName(offer.collateralName);
+  const destinationCollateral = isNativeSol ? funder : getAssociatedTokenAddress(SKR_MINT, funder);
+
+  return buildClaimDefaultTx(
+    funder,
+    offerPDA,
+    escrowPDA,
+    destinationCollateral,
+    { isNativeSol }
+  );
+}
+
+// Build Trigger 24h Social Grace Period for a P2P Pawn (Creator or Funder)
+export async function buildTriggerPawnGraceTx(
+  caller: PublicKey,
+  offer: P2POffer
+): Promise<Transaction> {
+  const creator = new PublicKey(offer.creator);
+  const [offerPDA] = getP2POfferPDA(creator, offer.id);
+  return buildTriggerGracePeriodTx(caller, offerPDA);
 }
 
 // Build Claim SKR Protocol Fee Dividends Transaction (Zero Cooldown, Instant USDC Payout)

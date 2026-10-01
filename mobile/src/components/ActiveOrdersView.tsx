@@ -27,6 +27,7 @@ interface ActiveOrdersViewProps {
   orders: LoanOrder[];
   onRepay: (order: LoanOrder) => void;
   onTriggerGrace: (orderId: number) => void;
+  onClaimDefault?: (order: LoanOrder) => void;
   onNavigateBorrow: () => void;
   /** A protocol read is in flight right now (all three optional so the view
    *  stays usable from a caller that tracks none of this). */
@@ -59,12 +60,16 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
   orders,
   onRepay,
   onTriggerGrace,
+  onClaimDefault,
   onNavigateBorrow,
   isLoading = false,
   loadFailed = false,
   onRetry,
 }) => {
   const { colors } = useTheme();
+
+  const [orderTab, setOrderTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
+  const [roleFilter, setRoleFilter] = useState<'ALL' | 'BORROWS' | 'DESK_LOANS'>('ALL');
 
   // H-2: a collateral valuation is only shown when the price the program
   // itself would accept is available (on-chain / Helius WSS source, inside the
@@ -86,6 +91,19 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
   const activeOrders = orders.filter((o) => {
     const s = o.status.toUpperCase();
     return s === 'ACTIVE' || s === 'INGRACEPERIOD' || s === 'GRACE_PERIOD';
+  });
+
+  const historyOrders = orders.filter((o) => {
+    const s = o.status.toUpperCase();
+    return s === 'REPAID' || s === 'DEFAULTED';
+  });
+
+  const hasLenderOrders = orders.some((o) => o.isLender);
+
+  const displayedOrders = (orderTab === 'ACTIVE' ? activeOrders : historyOrders).filter((o) => {
+    if (roleFilter === 'BORROWS') return !o.isLender;
+    if (roleFilter === 'DESK_LOANS') return o.isLender;
+    return true;
   });
 
   // One shared clock for the whole list, so the status badge, the card border
@@ -119,19 +137,8 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackedKey]);
 
-  // Exactly one of these four renders, so a failed read can never fall through
-  // to the empty copy — "we could not read your loans" and "you have no loans"
-  // are different facts and are never interchanged:
-  //   'list'    rows are on screen. A failed refresh is reported as a banner
-  //             above them; the rows themselves are never hidden behind a
-  //             spinner or replaced by an error card.
-  //   'error'   the last read failed AND nothing is on screen. Never 'empty'.
-  //   'loading' a read is in flight and the slice has never been populated.
-  //             Only shown when there is nothing to show yet — never over
-  //             cached/stale rows, which stay visible with their own warning.
-  //   'empty'   the last read SUCCEEDED and this wallet genuinely has no active
-  //             loan orders.
-  const hasRows = activeOrders.length > 0;
+  // Exactly one of these four renders for active orders:
+  const hasRows = orderTab === 'ACTIVE' ? activeOrders.length > 0 : historyOrders.length > 0;
   const listState: OrdersListState = hasRows
     ? 'list'
     : loadFailed
@@ -156,9 +163,87 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
         ) : undefined
       }
     >
-      {/* Loading — only when there is nothing to show yet. Cached rows (marked
-          "not confirmed on-chain") are deliberately left visible underneath
-          rather than covered by a spinner. */}
+      {/* ── Top Segmented Controls: Active vs History ── */}
+      <View style={styles.segmentContainer}>
+        <View style={[styles.segmentBar, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+          <TouchableOpacity
+            style={[
+              styles.segmentBtn,
+              orderTab === 'ACTIVE' && { backgroundColor: colors.card, borderColor: colors.cardBorder, borderWidth: 1 },
+            ]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setOrderTab('ACTIVE');
+            }}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.segmentText,
+                { color: colors.textSecondary },
+                orderTab === 'ACTIVE' && { color: colors.text, fontWeight: '800' },
+              ]}
+            >
+              Active ({activeOrders.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.segmentBtn,
+              orderTab === 'HISTORY' && { backgroundColor: colors.card, borderColor: colors.cardBorder, borderWidth: 1 },
+            ]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setOrderTab('HISTORY');
+            }}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.segmentText,
+                { color: colors.textSecondary },
+                orderTab === 'HISTORY' && { color: colors.text, fontWeight: '800' },
+              ]}
+            >
+              History ({historyOrders.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Optional Role Chips if User has Desk Loans */}
+        {hasLenderOrders && (
+          <View style={styles.filterChipRow}>
+            {(['ALL', 'BORROWS', 'DESK_LOANS'] as const).map((rf) => (
+              <TouchableOpacity
+                key={rf}
+                style={[
+                  styles.filterChip,
+                  {
+                    backgroundColor: roleFilter === rf ? colors.badgeBg : colors.card,
+                    borderColor: roleFilter === rf ? colors.primary : colors.cardBorder,
+                  },
+                ]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setRoleFilter(rf);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    { color: roleFilter === rf ? colors.primaryLabel : colors.textMuted },
+                  ]}
+                >
+                  {rf === 'ALL' ? 'All Roles' : rf === 'BORROWS' ? 'My Borrows' : 'Desk Lending'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
+
+      {/* Loading state — only when there is nothing to show yet. */}
       {listState === 'loading' && (
         <View style={[styles.stateBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -169,8 +254,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
         </View>
       )}
 
-      {/* Error — the last read genuinely failed and nothing is on screen. This
-          is NOT the empty state: an unread wallet is not an empty wallet. */}
+      {/* Error state */}
       {listState === 'error' && (
         <View style={[styles.stateBox, { backgroundColor: colors.card, borderColor: colors.danger }]}>
           <Text style={styles.emptyIcon}>⚠️</Text>
@@ -200,8 +284,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
         </View>
       )}
 
-      {/* A failed refresh while rows are on screen: report it above the rows
-          instead of replacing confirmed data with an error state. */}
+      {/* Refresh failure banner */}
       {listState === 'list' && loadFailed && (
         <View
           style={[styles.refreshFailedCard, { backgroundColor: colors.cardAlt, borderColor: colors.danger }]}
@@ -231,203 +314,311 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
         </View>
       )}
 
-      {/* Empty — only when the read succeeded ('empty' is unreachable while
-          loadFailed is set) and the wallet genuinely has no active loans. The
-          map below is empty in the loading/error states, so nothing renders
-          there. */}
-      {activeOrders.length === 0 && listState === 'empty' ? (
-        <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-          <Text style={styles.emptyIcon}>⏳</Text>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>No Active On-Chain Loans</Text>
-          <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
-            You currently have no active loan orders. Draw instant liquidity from a verified lending desk.
-          </Text>
-          <TouchableOpacity
-            style={[styles.borrowNowBtn, { backgroundColor: colors.primary }]}
-            onPress={onNavigateBorrow}
-            activeOpacity={0.85}
-          >
-            <Text style={[styles.borrowNowBtnText, { color: colors.primaryText }]}>⚡ Go to Borrow Desk</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        activeOrders.map((order) => {
-          const totalDue = (order.principalAmount + order.interestDue).toFixed(2);
-          const inGrace = order.status.toUpperCase().includes('GRACE');
-          const urgency = urgencyById[order.id] ?? 'unknown';
-          // Past due_time while the status is still ACTIVE: the grace window has
-          // NOT started (it is only opened by an explicit TriggerGracePeriod
-          // instruction, available below as "24h Grace"). Saying "Active in
-          // Escrow" here told the borrower everything was fine.
-          const isOverdue = !inGrace && urgency === 'overdue';
-
-          return (
-            <View
-              key={order.id}
-              style={[
-                styles.card,
-                { backgroundColor: colors.card, borderColor: colors.cardBorder },
-                inGrace && { borderColor: colors.warning, backgroundColor: 'rgba(245, 158, 11, 0.05)' },
-                isOverdue && { borderColor: colors.danger, backgroundColor: 'rgba(239, 68, 68, 0.05)' },
-              ]}
+      {/* ── Tab Content 1: ACTIVE LOANS ── */}
+      {orderTab === 'ACTIVE' && (
+        displayedOrders.length === 0 && listState === 'empty' ? (
+          <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <Text style={styles.emptyIcon}>⏳</Text>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No Active On-Chain Loans</Text>
+            <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+              You currently have no active loan orders. Draw instant liquidity from a verified lending desk.
+            </Text>
+            <TouchableOpacity
+              style={[styles.borrowNowBtn, { backgroundColor: colors.primary }]}
+              onPress={onNavigateBorrow}
+              activeOpacity={0.85}
             >
-              <View style={styles.cardHeader}>
-                <View style={styles.cardHeaderLeft}>
-                  <Text style={[styles.poolName, { color: colors.text }]}>{order.poolName}</Text>
-                  <Text style={[styles.orderId, { color: colors.textMuted }]}>Order #{order.id}</Text>
-                </View>
+              <Text style={[styles.borrowNowBtnText, { color: colors.primaryText }]}>⚡ Go to Borrow Desk</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          displayedOrders.map((order) => {
+            const totalDue = (order.principalAmount + order.interestDue).toFixed(2);
+            const inGrace = order.status.toUpperCase().includes('GRACE');
+            const urgency = urgencyById[order.id] ?? 'unknown';
+            const isOverdue = !inGrace && urgency === 'overdue';
+            const nowSec = Math.floor(Date.now() / 1000);
+            const isGraceExpired = Boolean(
+              (order.gracePeriodExpires > 0 && nowSec >= order.gracePeriodExpires) ||
+              (order.dueTime > 0 && inGrace && nowSec >= order.dueTime + 86400)
+            );
 
-                <View
-                  style={[
-                    styles.badge,
-                    inGrace
-                      ? { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: 'rgba(245, 158, 11, 0.3)' }
-                      : isOverdue
-                      ? { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: 'rgba(239, 68, 68, 0.3)' }
-                      : { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder },
-                  ]}
-                >
-                  <Text
+            return (
+              <View
+                key={order.id}
+                style={[
+                  styles.card,
+                  { backgroundColor: colors.card, borderColor: colors.cardBorder },
+                  inGrace && { borderColor: colors.warning, backgroundColor: 'rgba(245, 158, 11, 0.05)' },
+                  isOverdue && { borderColor: colors.danger, backgroundColor: 'rgba(239, 68, 68, 0.05)' },
+                ]}
+              >
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardHeaderLeft}>
+                    <Text style={[styles.poolName, { color: colors.text }]}>{order.poolName}</Text>
+                    <Text style={[styles.orderId, { color: colors.textMuted }]}>
+                      Order #{order.id} {order.isLender ? '• Desk Loan' : ''}
+                    </Text>
+                  </View>
+
+                  <View
                     style={[
-                      styles.badgeText,
+                      styles.badge,
                       inGrace
-                        ? { color: colors.warning }
+                        ? { backgroundColor: 'rgba(245, 158, 11, 0.15)', borderColor: 'rgba(245, 158, 11, 0.3)' }
                         : isOverdue
-                        ? { color: colors.danger }
-                        : { color: colors.primaryLabel },
+                        ? { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: 'rgba(239, 68, 68, 0.3)' }
+                        : { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder },
                     ]}
                   >
-                    {inGrace
-                      ? '⚠️ Social Grace Active'
-                      : isOverdue
-                      ? '🔴 Past Due · Grace Not Open'
-                      : '🟢 Active in Escrow'}
-                  </Text>
-                </View>
-              </View>
-
-              {/* M-2: unconfirmed rows must never read as live on-chain state */}
-              {order.isStale && (
-                <View
-                  style={[
-                    styles.warningCard,
-                    { backgroundColor: 'rgba(245, 158, 11, 0.10)', borderColor: colors.warning },
-                  ]}
-                >
-                  <Text style={[styles.warningCardText, { color: colors.warning }]}>
-                    Last known state — not confirmed on-chain. The network could not be reached; these
-                    figures come from this device's cache.
-                  </Text>
-                </View>
-              )}
-
-              {/* Ticking Countdown Timer — M-3: an unset due_time is "unknown",
-                  never a fabricated date. */}
-              {order.dueTime > 0 ? (
-                <CountdownTimer dueTime={order.dueTime} graceOpen={inGrace} />
-              ) : (
-                <View style={[styles.warningCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-                  <Text style={[styles.warningCardText, { color: colors.textSecondary }]}>
-                    Due date unknown — the loan account does not carry a due_time yet. Refresh once the
-                    network is reachable.
-                  </Text>
-                </View>
-              )}
-
-              {/* Financial Metrics Strip */}
-              <View style={[styles.metricsStrip, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder }]}>
-                <View style={styles.metricColumn}>
-                  <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Principal</Text>
-                  <Text style={[styles.metricVal, { color: colors.text }]}>${order.principalAmount} USDC</Text>
-                </View>
-                <View style={styles.metricColumn}>
-                  <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Interest</Text>
-                  <Text style={[styles.metricVal, { color: colors.text }]}>+${order.interestDue} USDC</Text>
-                </View>
-                <View style={styles.metricColumn}>
-                  <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Collateral</Text>
-                  <Text style={[styles.metricVal, { color: colors.primaryLabel }]}>{order.collateralName}</Text>
-                </View>
-              </View>
-
-              {/* On-Chain Evidence Row (Minimal link) */}
-              <View style={styles.evidenceLine}>
-                {order.txSignature && (
-                  <TouchableOpacity
-                    style={styles.evidenceLink}
-                    onPress={() => {
-                      const url = order.solscanUrl || `https://solscan.io/tx/${order.txSignature}`;
-                      Linking.openURL(url).catch(() => {
-                        Alert.alert('Solscan Transaction', order.txSignature!);
-                      });
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.evidenceLinkText, { color: colors.textMuted }]}>
-                      Solscan Tx ({order.txSignature.slice(0, 4)}...{order.txSignature.slice(-4)}) ↗
+                    <Text
+                      style={[
+                        styles.badgeText,
+                        inGrace
+                          ? { color: colors.warning }
+                          : isOverdue
+                          ? { color: colors.danger }
+                          : { color: colors.primaryLabel },
+                      ]}
+                    >
+                      {inGrace
+                        ? isGraceExpired
+                          ? '⚠️ Grace Expired'
+                          : '⚠️ Social Grace Active'
+                        : isOverdue
+                        ? '🔴 Past Due · Grace Not Open'
+                        : '🟢 Active in Escrow'}
                     </Text>
-                  </TouchableOpacity>
-                )}
-                {order.escrowAddress && (
-                  <TouchableOpacity
-                    style={styles.evidenceLink}
-                    onPress={() => {
-                      const url = `https://solscan.io/account/${order.escrowAddress}`;
-                      Linking.openURL(url).catch(() => {
-                        Alert.alert('Escrow Account', order.escrowAddress!);
-                      });
-                    }}
-                    activeOpacity={0.7}
+                  </View>
+                </View>
+
+                {/* M-2: unconfirmed rows warning */}
+                {order.isStale && (
+                  <View
+                    style={[
+                      styles.warningCard,
+                      { backgroundColor: 'rgba(245, 158, 11, 0.10)', borderColor: colors.warning },
+                    ]}
                   >
-                    <Text style={[styles.evidenceLinkText, { color: colors.textMuted }]}>
-                      Escrow PDA ↗
+                    <Text style={[styles.warningCardText, { color: colors.warning }]}>
+                      Last known state — not confirmed on-chain. The network could not be reached; these
+                      figures come from this device's cache.
                     </Text>
-                  </TouchableOpacity>
+                  </View>
                 )}
-              </View>
 
-              {/* Action Buttons */}
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={[styles.repayBtn, { backgroundColor: colors.primary }]}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    onRepay(order);
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <Text style={[styles.repayBtnText, { color: colors.primaryText }]}>
-                    Repay ${totalDue} USDC
-                  </Text>
-                </TouchableOpacity>
-
-                {!inGrace ? (
-                  <TouchableOpacity
-                    style={[styles.graceBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      onTriggerGrace(order.id);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.graceBtnText, { color: colors.textSecondary }]}>24h Grace</Text>
-                  </TouchableOpacity>
+                {/* Ticking Countdown Timer */}
+                {order.dueTime > 0 ? (
+                  <CountdownTimer dueTime={order.dueTime} graceOpen={inGrace} />
                 ) : (
-                  <TouchableOpacity
-                    style={[styles.rescueBtn, { backgroundColor: colors.danger, shadowColor: colors.danger }]}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-                      requestTardisGraceRescue(order);
-                    }}
-                    activeOpacity={0.85}
+                  <View style={[styles.warningCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+                    <Text style={[styles.warningCardText, { color: colors.textSecondary }]}>
+                      Due date unknown — the loan account does not carry a due_time yet. Refresh once the
+                      network is reachable.
+                    </Text>
+                  </View>
+                )}
+
+                {/* Financial Metrics Strip */}
+                <View style={[styles.metricsStrip, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder }]}>
+                  <View style={styles.metricColumn}>
+                    <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Principal</Text>
+                    <Text style={[styles.metricVal, { color: colors.text }]}>${order.principalAmount} USDC</Text>
+                  </View>
+                  <View style={styles.metricColumn}>
+                    <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Interest</Text>
+                    <Text style={[styles.metricVal, { color: colors.text }]}>+${order.interestDue} USDC</Text>
+                  </View>
+                  <View style={styles.metricColumn}>
+                    <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Collateral</Text>
+                    <Text style={[styles.metricVal, { color: colors.primaryLabel }]}>{order.collateralName}</Text>
+                  </View>
+                </View>
+
+                {/* On-Chain Evidence Row */}
+                <View style={styles.evidenceLine}>
+                  {order.txSignature && (
+                    <TouchableOpacity
+                      style={styles.evidenceLink}
+                      onPress={() => {
+                        const url = order.solscanUrl || `https://solscan.io/tx/${order.txSignature}`;
+                        Linking.openURL(url).catch(() => {
+                          Alert.alert('Solscan Transaction', order.txSignature!);
+                        });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.evidenceLinkText, { color: colors.textMuted }]}>
+                        Solscan Tx ({order.txSignature.slice(0, 4)}...{order.txSignature.slice(-4)}) ↗
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {order.escrowAddress && (
+                    <TouchableOpacity
+                      style={styles.evidenceLink}
+                      onPress={() => {
+                        const url = `https://solscan.io/account/${order.escrowAddress}`;
+                        Linking.openURL(url).catch(() => {
+                          Alert.alert('Escrow Account', order.escrowAddress!);
+                        });
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.evidenceLinkText, { color: colors.textMuted }]}>
+                        Escrow PDA ↗
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Action Buttons */}
+                <View style={styles.actions}>
+                  {!order.isLender ? (
+                    <TouchableOpacity
+                      style={[styles.repayBtn, { backgroundColor: colors.primary }]}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        onRepay(order);
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.repayBtnText, { color: colors.primaryText }]}>
+                        Repay ${totalDue} USDC
+                      </Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={[styles.lenderBadgeBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+                      <Text style={[styles.lenderBadgeText, { color: colors.primaryLabel }]}>
+                        💼 Desk Disbursed • Borrower: {order.borrower.slice(0, 4)}...{order.borrower.slice(-4)}
+                      </Text>
+                    </View>
+                  )}
+
+                  {!order.isLender && (!inGrace ? (
+                    <TouchableOpacity
+                      style={[styles.graceBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        onTriggerGrace(order.id);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.graceBtnText, { color: colors.textSecondary }]}>24h Grace</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.rescueBtn, { backgroundColor: colors.danger, shadowColor: colors.danger }]}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                        requestTardisGraceRescue(order);
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={styles.rescueBtnText}>🚨 TARDIS Rescue</Text>
+                    </TouchableOpacity>
+                  ))}
+
+                  {/* Claim Default if grace expired and caller is lender */}
+                  {inGrace && isGraceExpired && onClaimDefault && (order.isLender || !order.isLender) && (
+                    <TouchableOpacity
+                      style={[styles.claimDefaultBtn, { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: colors.danger }]}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                        onClaimDefault(order);
+                      }}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.claimDefaultBtnText, { color: colors.danger }]}>
+                        Claim Default & Liquidate
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            );
+          })
+        )
+      )}
+
+      {/* ── Tab Content 2: LOAN HISTORY (Settled / Repaid / Defaulted) ── */}
+      {orderTab === 'HISTORY' && (
+        displayedOrders.length === 0 ? (
+          <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <Text style={styles.emptyIcon}>📜</Text>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No Closed Loans Yet</Text>
+            <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+              Completed, repaid, and liquidated loans will be permanently recorded here with full on-chain verification.
+            </Text>
+          </View>
+        ) : (
+          displayedOrders.map((order) => {
+            const isRepaid = order.status.toUpperCase() === 'REPAID';
+            return (
+              <View
+                key={order.id}
+                style={[styles.card, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+              >
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardHeaderLeft}>
+                    <Text style={[styles.poolName, { color: colors.text }]}>{order.poolName}</Text>
+                    <Text style={[styles.orderId, { color: colors.textMuted }]}>
+                      Order #{order.id} {order.isLender ? '• Desk Loan' : ''}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.badge,
+                      {
+                        backgroundColor: isRepaid ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        borderColor: isRepaid ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)',
+                      },
+                    ]}
                   >
-                    <Text style={styles.rescueBtnText}>🚨 TARDIS Rescue</Text>
-                  </TouchableOpacity>
+                    <Text
+                      style={[
+                        styles.badgeText,
+                        { color: isRepaid ? '#10B981' : colors.danger },
+                      ]}
+                    >
+                      {isRepaid ? '✓ REPAID' : '✕ DEFAULTED'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={[styles.metricsStrip, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, marginTop: 12 }]}>
+                  <View style={styles.metricColumn}>
+                    <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Principal</Text>
+                    <Text style={[styles.metricVal, { color: colors.text }]}>${order.principalAmount.toFixed(2)} USDC</Text>
+                  </View>
+                  <View style={styles.metricColumn}>
+                    <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Interest</Text>
+                    <Text style={[styles.metricVal, { color: colors.text }]}>+${order.interestDue.toFixed(2)} USDC</Text>
+                  </View>
+                  <View style={styles.metricColumn}>
+                    <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Collateral</Text>
+                    <Text style={[styles.metricVal, { color: isRepaid ? '#10B981' : colors.danger }]}>
+                      {order.collateralName} ({isRepaid ? 'Returned' : 'Liquidated'})
+                    </Text>
+                  </View>
+                </View>
+
+                {order.solscanUrl && (
+                  <View style={[styles.evidenceLine, { marginTop: 10 }]}>
+                    <TouchableOpacity
+                      style={styles.evidenceLink}
+                      onPress={() => Linking.openURL(order.solscanUrl!)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.evidenceLinkText, { color: colors.primaryLabel }]}>
+                        View Settlement on Solscan ↗
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 )}
               </View>
-            </View>
-          );
-        })
+            );
+          })
+        )
       )}
     </ScrollView>
   );
@@ -810,5 +1001,66 @@ const styles = StyleSheet.create({
   },
   healthFooterText: {
     fontSize: 10,
+  },
+  segmentContainer: {
+    marginBottom: 16,
+  },
+  segmentBar: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 4,
+    gap: 4,
+  },
+  segmentBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  segmentText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  filterChipRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  filterChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  lenderBadgeBox: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lenderBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  claimDefaultBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  claimDefaultBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
   },
 });

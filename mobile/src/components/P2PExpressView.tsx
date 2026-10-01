@@ -44,7 +44,6 @@ interface P2PExpressViewProps {
     durationDays: number
   ) => void;
   onOpenAssetsModal?: () => void;
-  onRequestAirdrop?: () => void;
   isLoadingPools?: boolean;
   initialAmount?: string;
 }
