@@ -45,7 +45,7 @@ export const QuickHubView: React.FC<QuickHubViewProps> = ({
     {
       id: 'desks',
       title: 'Desks',
-      icon: 'business-outline' as const,
+      icon: 'storefront-outline' as const,
       onPress: onNavigateDesks,
     },
     {
