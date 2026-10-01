@@ -1988,16 +1988,19 @@ pub fn process_borrow_from_pool(
             if let Some(mut profile) = maybe_profile {
                 if profile.user == *borrower.key {
                     let available_skr = profile.staked_skr.saturating_sub(profile.locked_skr);
-                    if available_skr >= 1_000_000_000 {
-                        // Tier 2: >= 1,000 SKR gives 50% discount and locks 1,000 SKR bond
-                        let discount = effective_interest_rate_bps / 2;
+                    // Continuous linear APR discount: 1% (100 bps) at 100 SKR up to 25% (2,500 bps) at 10,000 SKR
+                    const MIN_SKR: u64 = 100_000_000;    // 100 SKR (6 decimals)
+                    const MAX_SKR: u64 = 10_000_000_000; // 10,000 SKR (6 decimals)
+                    if available_skr >= MIN_SKR {
+                        let discount_bps = if available_skr >= MAX_SKR {
+                            2500u32 // 25.00% max discount
+                        } else {
+                            // 100 bps + (available - 100 SKR) * 2400 / (10,000 SKR - 100 SKR)
+                            100u32 + ((available_skr - MIN_SKR) as u128 * 2400u128 / (MAX_SKR - MIN_SKR) as u128) as u32
+                        };
+                        let discount = ((effective_interest_rate_bps as u32 * discount_bps) / 10000) as u16;
                         effective_interest_rate_bps = effective_interest_rate_bps.saturating_sub(discount);
-                        bond_to_lock = 1_000_000_000;
-                    } else if available_skr >= 100_000_000 {
-                        // Tier 1: >= 100 SKR gives 25% discount and locks 100 SKR bond
-                        let discount = (effective_interest_rate_bps as u32 * 2500 / 10000) as u16;
-                        effective_interest_rate_bps = effective_interest_rate_bps.saturating_sub(discount);
-                        bond_to_lock = 100_000_000;
+                        bond_to_lock = available_skr.min(MAX_SKR);
                     }
                     if bond_to_lock > 0 {
                         profile.locked_skr = profile.locked_skr.saturating_add(bond_to_lock);

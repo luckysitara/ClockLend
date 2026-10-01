@@ -120,18 +120,30 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
   const cleanHandle = skrHandle.replace(/^@/, '').replace(/\.skr$/i, '');
   const skrUsername = `${cleanHandle}.skr`;
 
-  // Tier progress bar calculations
+  const calculateContinuousDiscount = (staked: number, locked: number = 0): number => {
+    const available = Math.max(0, staked - locked);
+    if (available < 100) return 0;
+    if (available >= 10000) return 25;
+    const bps = 100 + ((available - 100) * 2400) / 9900;
+    return parseFloat((bps / 100).toFixed(1));
+  };
+
+  const currentDiscount = userProfile.aprDiscount > 0
+    ? userProfile.aprDiscount
+    : calculateContinuousDiscount(stakedSkr, lockedSkr);
+
+  // Tier progress bar calculations (continuous 1% to 25% from 100 to 10,000 SKR)
   let progressRatio = 0;
   let progressLabel = '';
   if (stakedSkr < 100) {
     progressRatio = Math.min(1, Math.max(0.04, stakedSkr / 100));
-    progressLabel = `${(100 - stakedSkr).toLocaleString()} SKR to Tier 1 (25% OFF)`;
-  } else if (stakedSkr < 1000) {
-    progressRatio = Math.min(1, Math.max(0.08, (stakedSkr - 100) / 900));
-    progressLabel = `${(1000 - stakedSkr).toLocaleString()} SKR to Tier 2 (50% OFF)`;
+    progressLabel = `${(100 - stakedSkr).toLocaleString()} SKR to start earning discounts (1% @ 100 SKR)`;
+  } else if (stakedSkr < 10000) {
+    progressRatio = Math.min(1, Math.max(0.06, (stakedSkr - 100) / 9900));
+    progressLabel = `${(10000 - stakedSkr).toLocaleString()} SKR to Max 25% discount · Currently ${currentDiscount.toFixed(1)}% OFF`;
   } else {
     progressRatio = 1;
-    progressLabel = 'Max Tier 2 Active (50% APR Discount)';
+    progressLabel = 'Max 25% APR Discount Active';
   }
 
   // Stake Modal Live Computations
@@ -139,17 +151,16 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
   const isStakeExceeding = parsedStakeAmount > walletSkr;
   const canConfirmStake = parsedStakeAmount > 0 && !isStakeExceeding;
   const projectedStakedTotal = stakedSkr + parsedStakeAmount;
-  const projectedAvailable = Math.max(0, projectedStakedTotal - lockedSkr);
-  const projectedAprDiscount = projectedAvailable >= 1000 ? 50 : projectedAvailable >= 100 ? 25 : 0;
-  const projectedTier = projectedAprDiscount >= 50 ? 'Tier 2' : projectedAprDiscount >= 25 ? 'Tier 1' : 'Standard';
+  const projectedDiscount = calculateContinuousDiscount(projectedStakedTotal, lockedSkr);
+  const projectedTier = projectedDiscount >= 25 ? 'VIP Tier' : projectedDiscount >= 1 ? 'Active Tier' : 'Standard';
 
   // Unstake Modal Live Computations
   const parsedUnstakeAmount = parseFloat(unstakeInput) || 0;
   const isUnstakeExceeding = parsedUnstakeAmount > availableToUnstake;
   const canConfirmUnstake = parsedUnstakeAmount > 0 && !isUnstakeExceeding;
-  const remainingAvailable = Math.max(0, (stakedSkr - parsedUnstakeAmount) - lockedSkr);
-  const remainingAprDiscount = remainingAvailable >= 1000 ? 50 : remainingAvailable >= 100 ? 25 : 0;
-  const willDowngradeTier = parsedUnstakeAmount > 0 && remainingAprDiscount < userProfile.aprDiscount;
+  const remainingStaked = Math.max(0, stakedSkr - parsedUnstakeAmount);
+  const remainingDiscount = calculateContinuousDiscount(remainingStaked, lockedSkr);
+  const willDowngradeTier = parsedUnstakeAmount > 0 && remainingDiscount < currentDiscount;
 
   const handleOpenStake = (initialAmt?: number) => {
     try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
@@ -245,7 +256,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
           <View style={styles.heroQuickItem}>
             <Text style={[styles.heroQuickLabel, { color: colors.textMuted }]}>Tier Status</Text>
             <Text style={[styles.heroQuickValue, { color: colors.text }]}>
-              {userProfile.tier === 'Tier 2' ? 'Tier 2 (50% OFF)' : userProfile.tier === 'Tier 1' ? 'Tier 1 (25% OFF)' : 'Standard'}
+              {currentDiscount >= 25 ? 'VIP (25% MAX OFF)' : currentDiscount >= 1 ? `Active (${currentDiscount.toFixed(1)}% OFF)` : 'Standard (0% OFF)'}
             </Text>
           </View>
         </View>
@@ -260,13 +271,13 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
           </View>
           <View style={[styles.tierTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
             <Text style={[styles.tierTagText, { color: colors.primaryLabel }]}>
-              {userProfile.tier === 'Tier 2' ? 'Tier 2 Active (50% OFF)' : userProfile.tier === 'Tier 1' ? 'Tier 1 Active (25% OFF)' : 'Standard Tier'}
+              {currentDiscount >= 25 ? '25% MAX OFF' : currentDiscount >= 1 ? `${currentDiscount.toFixed(1)}% APR OFF` : 'Standard Tier'}
             </Text>
           </View>
         </View>
 
         <Text style={[styles.bondExplainer, { color: colors.textSecondary }]}>
-          Stake SKR to unlock interest discounts across all lending desks and earn real USDC dividends from 50% of protocol origination fees.
+          Stake SKR to unlock continuous interest rate discounts from 1% up to 25% (at 10,000+ SKR) across all lending desks, and earn real USDC dividends from 50% of protocol origination fees.
         </Text>
 
         {/* Primary Staking Balances Grid */}
@@ -304,9 +315,9 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         {/* Tier Progress Bar */}
         <View style={styles.progressContainer}>
           <View style={styles.progressHeaderRow}>
-            <Text style={[styles.progressTitle, { color: colors.textMuted }]}>TIER LEVEL PROGRESS</Text>
+            <Text style={[styles.progressTitle, { color: colors.textMuted }]}>DISCOUNT PROGRESS (10K SKR MAX)</Text>
             <Text style={[styles.progressBadgeText, { color: colors.primaryLabel }]}>
-              {userProfile.aprDiscount > 0 ? `${userProfile.aprDiscount}% APR OFF` : '0% DISCOUNT'}
+              {currentDiscount > 0 ? `${currentDiscount.toFixed(1)}% APR OFF` : '0% DISCOUNT'}
             </Text>
           </View>
           <View style={[styles.progressBarTrack, { backgroundColor: colors.cardAlt }]}>
@@ -319,11 +330,11 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         <View style={styles.benefitsRow}>
           <View style={[styles.benefitPill, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
             <Ionicons name="flash-outline" size={13} color={colors.primary} />
-            <Text style={[styles.benefitPillText, { color: colors.text }]}>25% OFF @ 100 SKR</Text>
+            <Text style={[styles.benefitPillText, { color: colors.text }]}>1% OFF @ 100 SKR</Text>
           </View>
           <View style={[styles.benefitPill, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
             <Ionicons name="diamond-outline" size={13} color={colors.primary} />
-            <Text style={[styles.benefitPillText, { color: colors.text }]}>50% OFF @ 1k SKR</Text>
+            <Text style={[styles.benefitPillText, { color: colors.text }]}>25% MAX OFF @ 10k SKR</Text>
           </View>
           <View style={[styles.benefitPill, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
             <Ionicons name="cash-outline" size={13} color={colors.success} />
@@ -360,20 +371,29 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
           <View style={styles.presetRow}>
             <TouchableOpacity
               style={[styles.presetBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
-              onPress={() => handleOpenStake(100)}
+              onPress={() => handleOpenStake(500)}
               activeOpacity={0.7}
             >
-              <Text style={[styles.presetBtnText, { color: colors.primaryLabel }]}>+100 SKR</Text>
-              <Text style={[styles.presetBtnSub, { color: colors.textMuted }]}>Tier 1 (25% off)</Text>
+              <Text style={[styles.presetBtnText, { color: colors.primaryLabel }]}>+500 SKR</Text>
+              <Text style={[styles.presetBtnSub, { color: colors.textMuted }]}>~2.0% off</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.presetBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
-              onPress={() => handleOpenStake(1000)}
+              onPress={() => handleOpenStake(5000)}
               activeOpacity={0.7}
             >
-              <Text style={[styles.presetBtnText, { color: colors.primaryLabel }]}>+1,000 SKR</Text>
-              <Text style={[styles.presetBtnSub, { color: colors.textMuted }]}>Tier 2 (50% off)</Text>
+              <Text style={[styles.presetBtnText, { color: colors.primaryLabel }]}>+5,000 SKR</Text>
+              <Text style={[styles.presetBtnSub, { color: colors.textMuted }]}>~13.0% off</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.presetBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
+              onPress={() => handleOpenStake(10000)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.presetBtnText, { color: colors.primaryLabel }]}>+10,000 SKR</Text>
+              <Text style={[styles.presetBtnSub, { color: colors.textMuted }]}>25% MAX off</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -580,7 +600,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
 
             {/* Preset increment chips */}
             <View style={styles.chipRow}>
-              {[100, 500, 1000].map((amt) => (
+              {[500, 1000, 5000].map((amt) => (
                 <TouchableOpacity
                   key={amt}
                   style={[styles.presetChip, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
@@ -591,7 +611,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
                   }}
                   activeOpacity={0.7}
                 >
-                  <Text style={[styles.presetChipText, { color: colors.text }]}>+{amt}</Text>
+                  <Text style={[styles.presetChipText, { color: colors.text }]}>+{amt.toLocaleString()}</Text>
                 </TouchableOpacity>
               ))}
               <TouchableOpacity
@@ -609,9 +629,9 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
             {/* Projected Tier Preview */}
             <View style={[styles.projectedCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
               <View style={styles.projectedRow}>
-                <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>Projected Tier</Text>
+                <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>Projected APR Discount</Text>
                 <Text style={[styles.projectedVal, { color: colors.primaryLabel }]}>
-                  {projectedTier} ({projectedAprDiscount}% APR OFF)
+                  {projectedDiscount.toFixed(1)}% APR OFF ({projectedTier})
                 </Text>
               </View>
               <View style={styles.projectedRow}>
@@ -774,12 +794,36 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
               </TouchableOpacity>
             </View>
 
+            {/* Input Selection Details */}
+            {parsedUnstakeAmount > 0 && !isUnstakeExceeding && (
+              <View style={[styles.projectedCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+                <View style={styles.projectedRow}>
+                  <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>Unstaking Amount</Text>
+                  <Text style={[styles.projectedVal, { color: colors.primaryLabel }]}>
+                    {parsedUnstakeAmount.toLocaleString()} SKR ({availableToUnstake > 0 ? Math.min(100, Math.round((parsedUnstakeAmount / availableToUnstake) * 100)) : 0}%)
+                  </Text>
+                </View>
+                <View style={styles.projectedRow}>
+                  <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>Remaining Stake</Text>
+                  <Text style={[styles.projectedVal, { color: colors.text }]}>
+                    {remainingStaked.toLocaleString()} SKR
+                  </Text>
+                </View>
+                <View style={styles.projectedRow}>
+                  <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>New APR Discount</Text>
+                  <Text style={[styles.projectedVal, { color: remainingDiscount > 0 ? colors.primaryLabel : colors.textSecondary }]}>
+                    {remainingDiscount.toFixed(1)}% OFF {willDowngradeTier ? `(was ${currentDiscount.toFixed(1)}%)` : ''}
+                  </Text>
+                </View>
+              </View>
+            )}
+
             {/* Downgrade Alert */}
             {willDowngradeTier && (
               <View style={[styles.errorBox, { backgroundColor: 'rgba(245, 158, 11, 0.12)' }]}>
                 <Ionicons name="warning" size={16} color={colors.warning} />
                 <Text style={[styles.errorText, { color: colors.warning }]}>
-                  Unstaking will lower your APR discount from {userProfile.aprDiscount}% to {remainingAprDiscount}%.
+                  Unstaking will lower your APR discount from {currentDiscount.toFixed(1)}% to {remainingDiscount.toFixed(1)}%.
                 </Text>
               </View>
             )}

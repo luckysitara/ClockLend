@@ -166,8 +166,10 @@ export const USER_YIELD_SEED = Buffer.from('skr_yield_user');
 // and no SKR bond pays the pool's full rate. Every client label must show the
 // discount these constants produce (or 0%).
 // ---------------------------------------------------------------------------
-export const SKR_TIER_2_THRESHOLD_MICRO = 1_000_000_000n; // 1,000 SKR
-export const SKR_TIER_1_THRESHOLD_MICRO = 100_000_000n; //   100 SKR
+export const SKR_TIER_MIN_THRESHOLD_MICRO = 100_000_000n; // 100 SKR
+export const SKR_TIER_MAX_THRESHOLD_MICRO = 10_000_000_000n; // 10,000 SKR
+export const SKR_TIER_1_THRESHOLD_MICRO = 100_000_000n; // 100 SKR (1%)
+export const SKR_TIER_2_THRESHOLD_MICRO = 10_000_000_000n; // 10,000 SKR (25% MAX)
 
 // The bundled `buffer` typings type readBigUInt64LE as the boxed BigInt
 // interface rather than the primitive, so every value that crosses a helper
@@ -179,50 +181,50 @@ export function toBigInt(value: number | bigint | { toString(): string }): bigin
 export function deriveAprDiscountPercent(
   stakedSkrMicro: number | bigint | { toString(): string },
   lockedSkrMicro: number | bigint | { toString(): string }
-): 0 | 25 | 50 {
+): number {
   const staked = toBigInt(stakedSkrMicro);
   const locked = toBigInt(lockedSkrMicro);
   const available = staked > locked ? staked - locked : 0n;
-  if (available >= SKR_TIER_2_THRESHOLD_MICRO) return 50;
-  if (available >= SKR_TIER_1_THRESHOLD_MICRO) return 25;
-  return 0;
+  if (available < SKR_TIER_MIN_THRESHOLD_MICRO) return 0;
+  if (available >= SKR_TIER_MAX_THRESHOLD_MICRO) return 25;
+  const diff = available - SKR_TIER_MIN_THRESHOLD_MICRO;
+  const range = SKR_TIER_MAX_THRESHOLD_MICRO - SKR_TIER_MIN_THRESHOLD_MICRO;
+  const discountBps = 100n + (diff * 2400n) / range;
+  return Number(discountBps) / 100;
 }
 
 /** Tier label for the tier the program will actually honour (see CreditTier). */
 export function tierFromAprDiscount(aprDiscount: number): CreditTier {
-  if (aprDiscount >= 50) return 'Tier 2';
-  if (aprDiscount >= 25) return 'Tier 1';
+  if (aprDiscount >= 25) return 'Tier 2';
+  if (aprDiscount >= 1) return 'Tier 1';
   return 'Standard';
 }
 
 /** Human label pairing a tier with the discount it earns (never a bare claim). */
-export function tierDiscountLabel(tier: CreditTier): string {
-  if (tier === 'Tier 2') return 'Tier 2 · 50% APR discount';
-  if (tier === 'Tier 1') return 'Tier 1 · 25% APR discount';
+export function tierDiscountLabel(tier: CreditTier, aprDiscount?: number): string {
+  if (aprDiscount !== undefined && aprDiscount > 0) {
+    return `${aprDiscount.toFixed(1)}% APR discount`;
+  }
+  if (tier === 'Tier 2') return 'VIP Tier · 25% APR discount';
+  if (tier === 'Tier 1') return 'Active Tier · 1% to 25% APR discount';
   return 'No SKR bond · 0% APR discount';
 }
 
-/** The bond the program locks while the loan is active (processor.rs:1909/1914). */
+/** The bond the program locks while the loan is active (processor.rs:1990-2005). */
 export function bondLockedForSkrMicro(
   availableSkrMicro: number | bigint | { toString(): string }
 ): bigint {
   const available = toBigInt(availableSkrMicro);
-  if (available >= SKR_TIER_2_THRESHOLD_MICRO) return SKR_TIER_2_THRESHOLD_MICRO;
-  if (available >= SKR_TIER_1_THRESHOLD_MICRO) return SKR_TIER_1_THRESHOLD_MICRO;
-  return 0n;
+  if (available < SKR_TIER_MIN_THRESHOLD_MICRO) return 0n;
+  return available < SKR_TIER_MAX_THRESHOLD_MICRO ? available : SKR_TIER_MAX_THRESHOLD_MICRO;
 }
 
 /** Mirrors the program's integer discount math bit-for-bit. */
 export function applyAprDiscountBps(baseRateBps: number, aprDiscountPercent: number): number {
-  if (aprDiscountPercent >= 50) {
-    const discount = Math.floor(baseRateBps / 2);
-    return Math.max(0, baseRateBps - discount);
-  }
-  if (aprDiscountPercent >= 25) {
-    const discount = Math.floor((baseRateBps * 2500) / 10000);
-    return Math.max(0, baseRateBps - discount);
-  }
-  return baseRateBps;
+  if (aprDiscountPercent <= 0) return baseRateBps;
+  const discountBps = Math.min(2500, Math.round(aprDiscountPercent * 100));
+  const discount = Math.floor((baseRateBps * discountBps) / 10000);
+  return Math.max(0, baseRateBps - discount);
 }
 
 // M-03: Integer Interest Calculation Helper matching Smart Contract exactly
@@ -2535,7 +2537,7 @@ export async function buildStakeSkrTx(
   // The memo states what the program actually grants: the discount tiers are
   // driven by available SKR only (processor.rs:1905-1916). LTV is a per-desk
   // setting (pool.max_ltv_bps), not an SKR perk.
-  const memoText = `ClockLend: Stake ${amountSkr.toLocaleString()} SKR Reputation Bond | User: ${user.toBase58().slice(0, 8)}... | Program APR discount tiers: 100+ SKR available = 25%, 1,000+ SKR available = 50%`;
+  const memoText = `ClockLend: Stake ${amountSkr.toLocaleString()} SKR Reputation Bond | User: ${user.toBase58().slice(0, 8)}... | Program APR discount: 1% to 25% continuous scale (100 to 10,000 SKR)`;
   tx.add(
     new TransactionInstruction({
       programId: MEMO_PROGRAM_ID,
