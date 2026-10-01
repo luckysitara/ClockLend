@@ -9,6 +9,7 @@ import {
   Image,
   Animated,
   Dimensions,
+  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -229,6 +230,32 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
             Protected by Solana Mobile Seed Vault
           </Text>
         </View>
+
+        <View style={styles.legalNoticeContainer}>
+          <Text style={[styles.legalNoticeText, { color: colors.textMuted }]}>
+            By connecting, you agree to our{' '}
+            <Text
+              style={[styles.legalNoticeLink, { color: colors.primary }]}
+              onPress={() => Linking.openURL('https://clocklend.kikhaus.com/terms.html').catch(() => {})}
+            >
+              Terms
+            </Text>
+            {', '}
+            <Text
+              style={[styles.legalNoticeLink, { color: colors.primary }]}
+              onPress={() => Linking.openURL('https://clocklend.kikhaus.com/legal.html').catch(() => {})}
+            >
+              Legal
+            </Text>
+            {' & '}
+            <Text
+              style={[styles.legalNoticeLink, { color: colors.primary }]}
+              onPress={() => Linking.openURL('https://clocklend.kikhaus.com/privacy.html').catch(() => {})}
+            >
+              Privacy Policy
+            </Text>
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -397,5 +424,20 @@ const styles = StyleSheet.create({
   secureFooterText: {
     fontSize: 12,
     fontWeight: '500',
+  },
+  legalNoticeContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 6,
+  },
+  legalNoticeText: {
+    fontSize: 11,
+    fontWeight: '500',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  legalNoticeLink: {
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
 });

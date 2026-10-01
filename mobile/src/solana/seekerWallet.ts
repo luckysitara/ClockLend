@@ -24,7 +24,7 @@ export interface SeekerSession {
 
 const APP_IDENTITY = {
   name: 'ClockLend',
-  uri: 'https://clocklend.xyz',
+  uri: 'https://clocklend.kikhaus.com',
   icon: 'favicon.png',
 };
 
