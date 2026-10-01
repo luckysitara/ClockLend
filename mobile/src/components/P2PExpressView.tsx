@@ -279,7 +279,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
         </View>
 
         {/* Section 2: Collateral in Escrow */}
-        <View style={[styles.inputBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder, marginTop: 10 }]}>
+        <View style={[styles.inputBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder, marginTop: 15 }]}>
           <View style={styles.inputHeaderRow}>
             <Text style={[styles.inputHeaderLabel, { color: colors.textSecondary }]}>COLLATERAL IN ESCROW</Text>
             <TouchableOpacity
@@ -728,7 +728,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   durationSection: {
-    marginTop: 12,
+    marginTop: 17,
   },
   durationLabel: {
     fontSize: 11,
@@ -754,7 +754,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   summaryPanel: {
-    marginTop: 12,
+    marginTop: 17,
     borderRadius: 16,
     borderWidth: 1,
     paddingVertical: 12,
@@ -775,7 +775,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   borrowBtn: {
-    marginTop: 16,
+    marginTop: 21,
     borderRadius: 20,
     height: 52,
     alignItems: 'center',

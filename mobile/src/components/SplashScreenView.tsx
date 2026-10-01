@@ -95,19 +95,19 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
         }),
       ]),
 
-      // 4. Scale up to 5x and smoothly transition to dissolve into the app
+      // 4. Scale up to 15x and smoothly transition to dissolve into the app
       Animated.parallel([
         Animated.timing(logoScale, {
-          toValue: 5,
-          duration: 520,
+          toValue: 15,
+          duration: 550,
           easing: Easing.in(Easing.cubic),
           useNativeDriver: true,
         }),
         Animated.sequence([
-          Animated.delay(200),
+          Animated.delay(220),
           Animated.timing(exitOpacity, {
             toValue: 0,
-            duration: 320,
+            duration: 330,
             easing: Easing.out(Easing.quad),
             useNativeDriver: true,
           }),
