@@ -9,6 +9,7 @@ import {
   Image,
   Animated,
   Modal,
+  Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +32,9 @@ interface HomeDashboardViewProps {
   isLoading?: boolean;
 }
 
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const BANNER_WIDTH = SCREEN_WIDTH - 32;
+
 export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
   skrHandle,
   userProfile,
@@ -50,8 +54,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
   const [activeBanner, setActiveBanner] = useState<number>(0);
   const [showNotificationsModal, setShowNotificationsModal] = useState<boolean>(false);
 
-  const bannerFadeAnim = useRef(new Animated.Value(1)).current;
-  const bannerSlideAnim = useRef(new Animated.Value(0)).current;
+  const carouselRef = useRef<ScrollView>(null);
 
   const availableUsdc = walletAssets?.usdcBalance || 0;
 
@@ -88,23 +91,18 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
 
   useEffect(() => {
     const timer = setInterval(() => {
-      Animated.parallel([
-        Animated.timing(bannerFadeAnim, { toValue: 0, duration: 320, useNativeDriver: true }),
-        Animated.timing(bannerSlideAnim, { toValue: -6, duration: 320, useNativeDriver: true }),
-      ]).start(() => {
-        setActiveBanner((prev) => (prev + 1) % BANNER_CARDS.length);
-        bannerSlideAnim.setValue(6);
-        Animated.parallel([
-          Animated.timing(bannerFadeAnim, { toValue: 1, duration: 360, useNativeDriver: true }),
-          Animated.timing(bannerSlideAnim, { toValue: 0, duration: 360, useNativeDriver: true }),
-        ]).start();
+      setActiveBanner((prev) => {
+        const next = (prev + 1) % BANNER_CARDS.length;
+        carouselRef.current?.scrollTo({
+          x: next * BANNER_WIDTH,
+          animated: true,
+        });
+        return next;
       });
     }, 7500);
 
     return () => clearInterval(timer);
   }, []);
-
-  const banner = BANNER_CARDS[activeBanner];
 
   return (
     <ScrollView
@@ -253,44 +251,58 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* ── Auto-Rotating Showcase Banner Card (Matches 8febc333 Dangote banner) ── */}
-      <TouchableOpacity
-        style={styles.bannerWrapper}
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          banner.onPress();
-        }}
-        activeOpacity={0.88}
-        accessibilityRole="button"
-        accessibilityLabel={banner.title}
-      >
-        <LinearGradient
-          colors={banner.gradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.bannerGradient}
-        >
-          <Animated.View
-            style={[
-              styles.bannerContent,
-              {
-                opacity: bannerFadeAnim,
-                transform: [{ translateY: bannerSlideAnim }],
-              },
-            ]}
+      {/* ── Auto-Rotating Horizontal Showcase Banner Carousel ── */}
+      <View style={styles.carouselOuter}>
+        <View style={styles.carouselContainer}>
+          <ScrollView
+            ref={carouselRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled={true}
+            onMomentumScrollEnd={(e) => {
+              const offsetX = e.nativeEvent.contentOffset.x;
+              const index = Math.round(offsetX / BANNER_WIDTH);
+              if (index >= 0 && index < BANNER_CARDS.length) {
+                setActiveBanner(index);
+              }
+            }}
           >
-            <View style={styles.bannerBadge}>
-              <Text style={styles.bannerBadgeText}>{banner.badge}</Text>
-            </View>
-            <Text style={styles.bannerTitle}>{banner.title}</Text>
-            <Text style={styles.bannerSub}>{banner.sub}</Text>
+            {BANNER_CARDS.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.bannerWrapper, { width: BANNER_WIDTH }]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  item.onPress();
+                }}
+                activeOpacity={0.88}
+                accessibilityRole="button"
+                accessibilityLabel={item.title}
+              >
+                <LinearGradient
+                  colors={item.gradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.bannerGradient}
+                >
+                  <View style={styles.bannerContent}>
+                    <View style={styles.bannerBadge}>
+                      <Text style={styles.bannerBadgeText}>{item.badge}</Text>
+                    </View>
+                    <Text style={styles.bannerTitle}>{item.title}</Text>
+                    <Text style={styles.bannerSub}>{item.sub}</Text>
 
-            <View style={styles.bannerCtaBtn}>
-              <Text style={styles.bannerCtaText}>{banner.cta}</Text>
-            </View>
-          </Animated.View>
-        </LinearGradient>
-      </TouchableOpacity>
+                    <View style={styles.bannerCtaBtn}>
+                      <Text style={styles.bannerCtaText}>{item.cta}</Text>
+                    </View>
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
 
       {/* Banner Carousel Indicator Dots */}
       <View style={styles.bannerDotsRow}>
@@ -300,6 +312,10 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
             onPress={() => {
               try { Haptics.selectionAsync(); } catch {}
               setActiveBanner(idx);
+              carouselRef.current?.scrollTo({
+                x: idx * BANNER_WIDTH,
+                animated: true,
+              });
             }}
             style={[
               styles.bannerDot,
@@ -593,14 +609,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.2,
   },
-  bannerWrapper: {
+  carouselOuter: {
     borderRadius: 20,
-    overflow: 'hidden',
     shadowColor: '#1D4ED8',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.22,
     shadowRadius: 12,
     elevation: 4,
+  },
+  carouselContainer: {
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  bannerWrapper: {
+    borderRadius: 20,
+    overflow: 'hidden',
   },
   bannerGradient: {
     padding: 18,
