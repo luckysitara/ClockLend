@@ -203,7 +203,7 @@ export async function getLockoutRemaining(): Promise<number> {
   }
 }
 
-export async function recordFailedAttempt(): Promise<{ locked: boolean; remainingSeconds: number }> {
+export async function recordFailedAttempt(): Promise<{ locked: boolean; remainingSeconds: number; attempts: number }> {
   try {
     let attempts = 1;
     const storedAttempts = await SecureStore.getItemAsync(KEY_FAILED_ATTEMPTS);
@@ -213,21 +213,22 @@ export async function recordFailedAttempt(): Promise<{ locked: boolean; remainin
     await SecureStore.setItemAsync(KEY_FAILED_ATTEMPTS, attempts.toString());
 
     let lockDuration = 0;
-    if (attempts >= 10) {
-      lockDuration = 300; // 5 minute lockout
-    } else if (attempts >= 5) {
-      lockDuration = 30; // 30 second lockout
+    // Limit retries to 3
+    if (attempts >= 6) {
+      lockDuration = 300; // 5 minute lockout for repeated lockouts
+    } else if (attempts >= 3) {
+      lockDuration = 60; // 60 second lockout upon 3 failed attempts
     }
 
     if (lockDuration > 0) {
       const lockoutUntil = Math.floor(Date.now() / 1000) + lockDuration;
       await SecureStore.setItemAsync(KEY_LOCKOUT_UNTIL, lockoutUntil.toString());
-      return { locked: true, remainingSeconds: lockDuration };
+      return { locked: true, remainingSeconds: lockDuration, attempts };
     }
 
-    return { locked: false, remainingSeconds: 0 };
+    return { locked: false, remainingSeconds: 0, attempts };
   } catch {
-    return { locked: false, remainingSeconds: 0 };
+    return { locked: false, remainingSeconds: 0, attempts: 1 };
   }
 }
 

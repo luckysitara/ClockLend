@@ -171,7 +171,7 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
             </View>
 
             <View style={[styles.iconBox, { backgroundColor: colors.badgeBg }]}>
-              <Ionicons name={slide.icon} size={32} color={colors.primary} />
+              <Ionicons name={slide.icon} size={35} color={colors.primary} />
             </View>
 
             <Text style={[styles.cardTitle, { color: colors.text }]}>{slide.title}</Text>
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
   },
   heroSection: {
     alignItems: 'center',
-    paddingTop: 10,
+    paddingTop: 24,
     paddingBottom: 6,
   },
   logoImage: {
@@ -289,11 +289,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   cardWrapper: {
-    minHeight: Math.round(SCREEN_HEIGHT * 0.38),
-    borderRadius: 22,
+    minHeight: Math.round(SCREEN_HEIGHT * 0.40),
+    borderRadius: 24,
     borderWidth: 1,
-    paddingVertical: 18,
-    paddingHorizontal: 18,
+    paddingVertical: 20,
+    paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'space-between',
     shadowColor: '#000',
@@ -310,35 +310,35 @@ const styles = StyleSheet.create({
   },
   badgePill: {
     paddingHorizontal: 12,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 12,
     borderWidth: 1,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   badgeText: {
-    fontSize: 10,
+    fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.6,
   },
   iconBox: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 66,
+    height: 66,
+    borderRadius: 33,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   cardTitle: {
-    fontSize: 19,
+    fontSize: 22,
     fontWeight: '900',
-    marginBottom: 6,
+    marginBottom: 8,
     textAlign: 'center',
     letterSpacing: -0.2,
   },
   cardDesc: {
-    fontSize: 13,
+    fontSize: 16,
     fontWeight: '500',
-    lineHeight: 19,
+    lineHeight: 22,
     textAlign: 'center',
     paddingHorizontal: 6,
   },
@@ -346,7 +346,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginTop: 10,
+    marginTop: 12,
   },
   dot: {
     width: 6,

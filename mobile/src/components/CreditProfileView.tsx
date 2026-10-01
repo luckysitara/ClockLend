@@ -160,12 +160,6 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
               {userProfile.tier === 'Tier 2' ? 'Tier 2 (50% OFF)' : userProfile.tier === 'Tier 1' ? 'Tier 1 (25% OFF)' : 'Standard'}
             </Text>
           </View>
-          <View style={styles.heroQuickItem}>
-            <Text style={[styles.heroQuickLabel, { color: colors.textMuted }]}>Score</Text>
-            <Text style={[styles.heroQuickValue, { color: colors.primaryLabel }]}>
-              {(userProfile.reputationScore / 100).toFixed(0)} pts
-            </Text>
-          </View>
         </View>
       </View>
 

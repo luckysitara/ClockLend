@@ -388,6 +388,15 @@ function MainApp() {
     }
   }, [session?.publicKey, selectedNetwork]);
 
+  // Real-time market & protocol data poller every 12s so desk & pawn counts are live on-chain
+  useEffect(() => {
+    if (!session?.publicKey) return;
+    const interval = setInterval(() => {
+      loadProtocolData(session.publicKey, session.skrHandle, selectedNetwork).catch(() => {});
+    }, 12_000);
+    return () => clearInterval(interval);
+  }, [session?.publicKey, selectedNetwork]);
+
   // M-8: watch the borrower's own loan PDAs. A program-side change (grace
   // period triggered, repayment, default claim) pushes an account update, so
   // the loans view re-reads the chain instead of showing a stale local row.

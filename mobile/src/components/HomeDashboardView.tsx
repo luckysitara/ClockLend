@@ -200,55 +200,55 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
         </Text>
       </LinearGradient>
 
-      {/* ── 3 Action Buttons: Icon Centered, Small Gray Text Underneath ── */}
+      {/* ── 3 Action Buttons: Icon Card fills card, text underneath the card ── */}
       <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={[styles.actionBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            onNavigateBorrow();
-          }}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Borrow funds"
-        >
-          <View style={[styles.actionIconBox, { backgroundColor: colors.badgeBg }]}>
-            <Ionicons name="arrow-down-outline" size={24} color={colors.primary} />
-          </View>
-          <Text style={[styles.actionBtnText, { color: colors.textSecondary }]}>Borrow</Text>
-        </TouchableOpacity>
+        <View style={styles.actionItem}>
+          <TouchableOpacity
+            style={[styles.actionCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onNavigateBorrow();
+            }}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Borrow funds"
+          >
+            <Ionicons name="arrow-down-outline" size={30} color={colors.primary} />
+          </TouchableOpacity>
+          <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Borrow</Text>
+        </View>
 
-        <TouchableOpacity
-          style={[styles.actionBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            onNavigateRepay();
-          }}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Repay loan"
-        >
-          <View style={[styles.actionIconBox, { backgroundColor: colors.badgeBg }]}>
-            <Ionicons name="arrow-up-outline" size={24} color={colors.primary} />
-          </View>
-          <Text style={[styles.actionBtnText, { color: colors.textSecondary }]}>Repay</Text>
-        </TouchableOpacity>
+        <View style={styles.actionItem}>
+          <TouchableOpacity
+            style={[styles.actionCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onNavigateRepay();
+            }}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Repay loan"
+          >
+            <Ionicons name="arrow-up-outline" size={30} color={colors.primary} />
+          </TouchableOpacity>
+          <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Repay</Text>
+        </View>
 
-        <TouchableOpacity
-          style={[styles.actionBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            onNavigateDesks();
-          }}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel="Explore desks"
-        >
-          <View style={[styles.actionIconBox, { backgroundColor: colors.badgeBg }]}>
-            <Ionicons name="storefront-outline" size={24} color={colors.primary} />
-          </View>
-          <Text style={[styles.actionBtnText, { color: colors.textSecondary }]}>Desks</Text>
-        </TouchableOpacity>
+        <View style={styles.actionItem}>
+          <TouchableOpacity
+            style={[styles.actionCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onNavigateDesks();
+            }}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Explore desks"
+          >
+            <Ionicons name="storefront-outline" size={30} color={colors.primary} />
+          </TouchableOpacity>
+          <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Desks</Text>
+        </View>
       </View>
 
       {/* ── Auto-Rotating Horizontal Showcase Banner Carousel ── */}
@@ -578,35 +578,30 @@ const styles = StyleSheet.create({
   },
   actionRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 18,
+    gap: 14,
+    marginBottom: 20,
   },
-  actionBtn: {
+  actionItem: {
     flex: 1,
-    flexDirection: 'column',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 18,
-    paddingHorizontal: 8,
+  },
+  actionCard: {
+    width: '100%',
+    height: 64,
     borderRadius: 20,
     borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
   },
-  actionIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  actionBtnText: {
+  actionLabel: {
     fontSize: 12,
     fontWeight: '600',
+    marginTop: 8,
     letterSpacing: 0.2,
   },
   carouselOuter: {

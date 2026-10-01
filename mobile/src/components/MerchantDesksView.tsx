@@ -206,6 +206,10 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
   const [fundModal, setFundModal] = useState<LendingPool | null>(null);
   const [fundAmount, setFundAmount] = useState<string>('');
 
+  const sanitizeText = (val: string, maxLen = 32) => val.replace(/[<>'"\\/]/g, '').slice(0, maxLen);
+  const sanitizeDecimal = (val: string) => val.replace(/[^0-9.]/g, '').replace(/(\..*?)\..*/g, '$1');
+  const sanitizeInt = (val: string, maxLen = 4) => val.replace(/[^0-9]/g, '').slice(0, maxLen);
+
   const handleCreatePoolSubmit = () => {
     const apr = parseFloat(deskApr);
     const ltv = parseFloat(deskLtv);
@@ -728,7 +732,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
               <TextInput
                 style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
                 value={deskName}
-                onChangeText={setDeskName}
+                onChangeText={(val) => setDeskName(sanitizeText(val))}
                 placeholder="e.g. Seeker Alpha Vault"
                 placeholderTextColor={colors.textMuted}
               />
@@ -739,7 +743,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                   <TextInput
                     style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
                     value={deskApr}
-                    onChangeText={setDeskApr}
+                    onChangeText={(val) => setDeskApr(sanitizeDecimal(val))}
                     keyboardType="decimal-pad"
                     placeholder="12.0"
                     placeholderTextColor={colors.textMuted}
@@ -755,7 +759,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                   <TextInput
                     style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
                     value={deskLtv}
-                    onChangeText={setDeskLtv}
+                    onChangeText={(val) => setDeskLtv(sanitizeDecimal(val))}
                     keyboardType="decimal-pad"
                     placeholder="70"
                     placeholderTextColor={colors.textMuted}
@@ -769,7 +773,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                   <TextInput
                     style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
                     value={deskMinDays}
-                    onChangeText={setDeskMinDays}
+                    onChangeText={(val) => setDeskMinDays(sanitizeInt(val))}
                     keyboardType="number-pad"
                     placeholder="7"
                     placeholderTextColor={colors.textMuted}
@@ -780,7 +784,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                   <TextInput
                     style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
                     value={deskMaxDays}
-                    onChangeText={setDeskMaxDays}
+                    onChangeText={(val) => setDeskMaxDays(sanitizeInt(val))}
                     keyboardType="number-pad"
                     placeholder="30"
                     placeholderTextColor={colors.textMuted}
@@ -809,7 +813,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                   },
                 ]}
                 value={deskLiquidity}
-                onChangeText={setDeskLiquidity}
+                onChangeText={(val) => setDeskLiquidity(sanitizeDecimal(val))}
                 keyboardType="decimal-pad"
                 placeholder={userUsdcBalance > 0 ? `Max ${userUsdcBalance.toFixed(2)}` : '0.00'}
                 placeholderTextColor={colors.textMuted}
@@ -874,7 +878,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
               <TextInput
                 style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
                 value={assetName}
-                onChangeText={setAssetName}
+                onChangeText={(val) => setAssetName(sanitizeText(val))}
                 placeholder="e.g. 1,000 SKR or 1 SOL"
                 placeholderTextColor={colors.textMuted}
               />
@@ -885,7 +889,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                   <TextInput
                     style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
                     value={reqAmount}
-                    onChangeText={setReqAmount}
+                    onChangeText={(val) => setReqAmount(sanitizeDecimal(val))}
                     keyboardType="decimal-pad"
                     placeholder="25"
                     placeholderTextColor={colors.textMuted}
@@ -896,7 +900,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                   <TextInput
                     style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
                     value={profitAmount}
-                    onChangeText={setProfitAmount}
+                    onChangeText={(val) => setProfitAmount(sanitizeDecimal(val))}
                     keyboardType="decimal-pad"
                     placeholder="2.50"
                     placeholderTextColor={colors.textMuted}
@@ -908,7 +912,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
               <TextInput
                 style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
                 value={duration}
-                onChangeText={setDuration}
+                onChangeText={(val) => setDuration(sanitizeInt(val))}
                 keyboardType="number-pad"
                 placeholder="7"
                 placeholderTextColor={colors.textMuted}
@@ -968,7 +972,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
               <TextInput
                 style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
                 value={fundAmount}
-                onChangeText={setFundAmount}
+                onChangeText={(val) => setFundAmount(sanitizeDecimal(val))}
                 keyboardType="decimal-pad"
                 placeholder={userUsdcBalance > 0 ? `Max ${userUsdcBalance.toFixed(2)}` : '0.00'}
                 placeholderTextColor={colors.textMuted}

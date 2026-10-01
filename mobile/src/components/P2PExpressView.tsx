@@ -65,6 +65,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
   const [showCollateralModal, setShowCollateralModal] = useState<boolean>(false);
   const [durationDays, setDurationDays] = useState<number>(7);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isDiscovering, setIsDiscovering] = useState<boolean>(false);
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [prices, setPrices] = useState(livePrices);
   const [usableAssets, setUsableAssets] = useState<{ sol: boolean; skr: boolean }>({
@@ -195,23 +196,38 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
     }
   };
 
-  const isDisabled =
+  const isActionDisabled =
     isSubmitting ||
-    numAmount <= 0 ||
-    isInsufficientCollateral ||
-    hasNoLiquidity ||
-    exceedsLiquidity ||
-    !priceAvailable;
+    (numAmount > 0 &&
+      (isInsufficientCollateral ||
+        hasNoLiquidity ||
+        exceedsLiquidity ||
+        !priceAvailable ||
+        !bestPool));
 
   const getCtaLabel = () => {
     if (isSubmitting) return 'Submitting Transaction...';
-    if (!bestPool || isLoadingPools) return 'Discovering Desks...';
+    if (isDiscovering || isLoadingPools) return 'Discovering Desks...';
+    if (numAmount <= 0) return 'Discover Desk';
+    if (!bestPool) return 'No Desks Available';
     if (hasNoLiquidity) return 'No Liquidity Available';
     if (exceedsLiquidity) return `Exceeds Desk Max ($${poolLiquidity.toLocaleString()})`;
     if (isInsufficientCollateral) return `Insufficient ${collateralType} Collateral`;
     if (!priceAvailable) return 'Awaiting Live Price...';
-    if (numAmount <= 0) return 'Enter Loan Amount';
     return `Borrow ${numAmount} USDC`;
+  };
+
+  const handlePrimaryPress = () => {
+    if (numAmount <= 0) {
+      setIsDiscovering(true);
+      try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch {}
+      setTimeout(() => {
+        setIsDiscovering(false);
+        setAmountStr('50');
+      }, 1000);
+      return;
+    }
+    handleOpenConfirm();
   };
 
   return (
@@ -266,7 +282,10 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
             <TextInput
               style={[styles.numberInput, { color: colors.text }]}
               value={amountStr}
-              onChangeText={setAmountStr}
+              onChangeText={(val) => {
+                const sanitized = val.replace(/[^0-9.]/g, '').replace(/(\..*?)\..*/g, '$1');
+                setAmountStr(sanitized);
+              }}
               keyboardType="numeric"
               placeholder="0.00"
               placeholderTextColor={colors.textMuted}
@@ -279,7 +298,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
         </View>
 
         {/* Section 2: Collateral in Escrow */}
-        <View style={[styles.inputBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder, marginTop: 15 }]}>
+        <View style={[styles.inputBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder, marginTop: 20 }]}>
           <View style={styles.inputHeaderRow}>
             <Text style={[styles.inputHeaderLabel, { color: colors.textSecondary }]}>COLLATERAL IN ESCROW</Text>
             <TouchableOpacity
@@ -398,36 +417,34 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
           </View>
         </View>
 
-        {/* Primary Action Button: Solid color when active, border with blank background when inactive */}
+        {/* Primary Action Button: No icon/emoji, solid background when active/discovering */}
         <TouchableOpacity
           style={[
             styles.borrowBtn,
-            isDisabled
-              ? [styles.borrowBtnInactive, { borderColor: colors.cardBorder }]
-              : [styles.borrowBtnActive, { backgroundColor: colors.primary }],
+            (numAmount > 0 && !isActionDisabled) || isDiscovering
+              ? [styles.borrowBtnActive, { backgroundColor: colors.primary }]
+              : [styles.borrowBtnInactive, { borderColor: colors.cardBorder }],
           ]}
-          onPress={handleOpenConfirm}
-          disabled={isDisabled}
+          onPress={handlePrimaryPress}
+          disabled={isActionDisabled || isSubmitting}
           activeOpacity={0.88}
         >
-          {isSubmitting ? (
-            <ActivityIndicator size="small" color={isDisabled ? colors.textMuted : '#FFFFFF'} />
-          ) : (
-            <View style={styles.borrowBtnInner}>
-              <Ionicons
-                name="flash"
-                size={18}
-                color={isDisabled ? colors.textMuted : '#FFFFFF'}
-              />
-              <Text
-                style={[
-                  styles.borrowBtnText,
-                  { color: isDisabled ? colors.textMuted : '#FFFFFF' },
-                ]}
-              >
+          {isSubmitting || isDiscovering ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <ActivityIndicator size="small" color="#FFFFFF" />
+              <Text style={[styles.borrowBtnText, { color: '#FFFFFF' }]}>
                 {getCtaLabel()}
               </Text>
             </View>
+          ) : (
+            <Text
+              style={[
+                styles.borrowBtnText,
+                { color: (numAmount > 0 && !isActionDisabled) ? '#FFFFFF' : colors.text },
+              ]}
+            >
+              {getCtaLabel()}
+            </Text>
           )}
         </TouchableOpacity>
       </View>
@@ -728,7 +745,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   durationSection: {
-    marginTop: 17,
+    marginTop: 22,
   },
   durationLabel: {
     fontSize: 11,
@@ -754,7 +771,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   summaryPanel: {
-    marginTop: 17,
+    marginTop: 22,
     borderRadius: 16,
     borderWidth: 1,
     paddingVertical: 12,
@@ -775,7 +792,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   borrowBtn: {
-    marginTop: 21,
+    marginTop: 26,
     borderRadius: 20,
     height: 52,
     alignItems: 'center',

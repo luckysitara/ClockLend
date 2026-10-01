@@ -590,7 +590,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder, color: colors.text },
                   ]}
                   value={feedbackMessage}
-                  onChangeText={setFeedbackMessage}
+                  onChangeText={(val) => setFeedbackMessage(val.replace(/[<>'"\\/]/g, '').slice(0, 1000))}
                   placeholder="Tell us what you love or what we can improve..."
                   placeholderTextColor={colors.textMuted}
                   multiline

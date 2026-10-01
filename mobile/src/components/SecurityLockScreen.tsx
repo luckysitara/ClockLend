@@ -195,9 +195,10 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
         const res = await recordFailedAttempt();
         if (res.locked && res.remainingSeconds > 0) {
           setLockoutSeconds(res.remainingSeconds);
-          setErrorMsg(`Device temporarily locked. Retry in ${res.remainingSeconds}s.`);
+          setErrorMsg(`3 failed attempts reached. Device locked for ${res.remainingSeconds}s.`);
         } else {
-          setErrorMsg('Incorrect PIN. Please try again.');
+          const remainingAttempts = Math.max(0, 3 - res.attempts);
+          setErrorMsg(`Incorrect PIN. ${remainingAttempts} attempt${remainingAttempts === 1 ? '' : 's'} remaining.`);
         }
         setTimeout(() => setPin(''), 400);
       }
