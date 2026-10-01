@@ -85,12 +85,14 @@ export interface P2POffer {
 }
 
 /**
- * The program's SKR-bond tiers (processor.rs:1905-1916). There is no
+ * The program's SKR discount bands (processor.rs:1990-2006). There is no
  * reputation-based tiering on-chain — only available SKR is read:
  *   available_skr = staked_skr - locked_skr
- *   >= 1,000 SKR (1_000_000_000 base units) -> 50% APR discount (Tier 2)
- *   >=   100 SKR (  100_000_000 base units) -> 25% APR discount (Tier 1)
- *   otherwise                               ->  0% APR discount
+ * The discount slides continuously, so `Tier` here is only a coarse label for
+ * the band a user currently falls in (see `tierFromAprDiscount`):
+ *   >= 10,000 SKR (10_000_000_000 base units) -> 25% discount (Tier 2)
+ *   >=    100 SKR (   100_000_000 base units) -> 1%-25% sliding (Tier 1)
+ *   otherwise                                 ->  0% discount (Standard)
  */
 export type CreditTier = 'Tier 2' | 'Tier 1' | 'Standard';
 

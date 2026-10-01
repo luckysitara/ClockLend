@@ -832,6 +832,18 @@ async fn regression_p2p_offer_defaults_to_mainnet_usdc() {
             rent_epoch: 0,
         },
     );
+    // Treasury's mainnet-USDC account, which receives the origination fee.
+    let treasury_usdc = Pubkey::new_unique();
+    pt.add_account(
+        treasury_usdc,
+        Account {
+            lamports: 100_000_000_000,
+            data: tok(USDC_MAINNET_MINT, treasury_pda, 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     // The creator's properly-wired mainnet USDC account (what a mainnet client
     // would pass as the principal destination).
     let creator_usdc = Pubkey::new_unique();
@@ -888,7 +900,8 @@ async fn regression_p2p_offer_defaults_to_mainnet_usdc() {
             // lowering the amount preserves its intent.
             requested_amount: 14 * USDC,
             collateral_amount: 1_000 * USDC, // 1000 SKR = $20 at the feed price
-            interest_offered: 1 * USDC,
+            // 0.1 USDC over 3 days: under the term cap of 14 USDC / 100.
+            interest_offered: 100_000,
             duration_seconds: 86_400 * 3,
         })
         .unwrap(),
@@ -919,6 +932,7 @@ async fn regression_p2p_offer_defaults_to_mainnet_usdc() {
             AccountMeta::new(funder_usdc, false),
             AccountMeta::new(creator_usdc, false), // correct mainnet wiring: creator's USDC account
             AccountMeta::new_readonly(spl_token::id(), false),
+            AccountMeta::new(treasury_usdc, false),
         ],
         data: borsh::to_vec(&ClockLendInstruction::FundP2POffer).unwrap(),
     };
@@ -1023,7 +1037,10 @@ async fn regression_p2p_offer_is_capped_at_shared_max_ltv() {
             offer_id,
             requested_amount: requested,
             collateral_amount: 1_000 * USDC, // 1000 SKR = $20 at the feed price
-            interest_offered: 1 * USDC,
+            // 0.1 USDC over 3 days: under the term cap (requested / 100) for
+            // both the 14 USDC (must pass) and 15 USDC (must revert on LTV)
+            // offers this closure builds.
+            interest_offered: 100_000,
             duration_seconds: 86_400 * 3,
         })
         .unwrap(),

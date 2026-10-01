@@ -47,17 +47,40 @@ fn test_security_pda_seeds_tamper_resistance() {
 }
 
 #[test]
-fn test_security_slashing_deterministic_math() {
-    let initial_staked_skr: u64 = 10_000_000_000; // 10,000 SKR
+fn test_security_default_takes_no_skr() {
+    // F-06 (processor.rs `process_claim_default`): a default takes NO SKR.
+    //
+    // The lender is made whole from the COLLATERAL, so also seizing the SKR
+    // bond would punish one default twice. It would also punish the wrong
+    // thing: the staking discount only reduces INTEREST, and a defaulter never
+    // pays interest — the bond earns its keep DURING the loan, where locking it
+    // is what stops a borrower taking the discount and immediately unstaking.
+    //
+    // History, since this has now been three different rules: it began as
+    // `max(bond, 20% of stake)`, which grew without bound with how much SKR the
+    // borrower held and let them shrink their own penalty mid-loan by
+    // unstaking; it then became the whole bounded bond; it is now nothing.
+    //
+    // This test is deliberately a pure-arithmetic assertion of the invariant
+    // rather than a program call — the on-chain coverage lives in
+    // bank_integration.rs (`test_bank_claim_default_releases_bond_without_slashing`
+    // and friends). If it ever needs to assert a NON-zero amount again, that is
+    // a design change, not a test fix.
+    let staked_skr: u64 = 10_000_000_000; // 10,000 SKR staked
+    let bond_locked_for_loan: u64 = 1_000_000_000; // 1,000 SKR
 
-    // In claim_default, 20% is slashed deterministically using pure integer math
-    let slashed = initial_staked_skr.saturating_mul(80) / 100;
-    assert_eq!(slashed, 8_000_000_000); // 8,000 SKR remains
+    // Nothing leaves the escrow on default...
+    let slashed: u64 = 0;
+    assert_eq!(slashed, 0, "a default must take no SKR");
 
-    // Ensure no overflow on large numbers
-    let huge_skr: u64 = u64::MAX / 100;
-    let safe_slash = huge_skr.saturating_mul(80) / 100;
-    assert!(safe_slash < huge_skr);
+    // ...and the bond is released, returning the stake to a usable state.
+    let locked_after_default = bond_locked_for_loan.saturating_sub(bond_locked_for_loan);
+    assert_eq!(locked_after_default, 0, "the bond lock must be released");
+    assert_eq!(
+        staked_skr - locked_after_default,
+        staked_skr,
+        "the borrower's full stake must remain usable"
+    );
 }
 
 #[test]
@@ -66,13 +89,15 @@ fn test_security_interest_calculation() {
     let interest_rate_bps: u16 = 800;     // 8.0% APR
     let duration_seconds: i64 = 86400 * 7; // 7 days
 
+    // The program prorates against its 30-day INTEREST_PERIOD_SECS
+    // (2,592,000 s) — not a calendar year — so a 7-day loan at 8% APR owes
+    // 100 * 0.08 * (7/30) = ~1.8667 USDC = 1,866,666 units.
     let interest_due = ((borrow_amount as u128)
         * (interest_rate_bps as u128)
         * (duration_seconds as u128)
-        / (10000u128 * 31536000u128)) as u64;
+        / (10000u128 * 2_592_000u128)) as u64;
 
-    // 100 * 0.08 * (7/365) = ~0.1534 USDC = 153,424 units
-    assert!(interest_due > 150_000 && interest_due < 160_000);
+    assert_eq!(interest_due, 1_866_666);
 }
 
 #[test]
@@ -133,6 +158,9 @@ fn test_security_origination_fee_skr_vs_sol() {
 
 #[test]
 fn test_security_default_liquidation_margin_capture() {
+    // FALLBACK split: used by claim_default only when the collateral cannot be
+    // priced (no feed, or one that is stale/unusable/mis-scaled). 5% of the
+    // collateral to the treasury, 95% to the lender.
     let collateral_amount: u64 = 10_000_000_000; // 10,000 SKR
 
     // 5% liquidation penalty margin to Treasury (500 bps)
@@ -142,6 +170,43 @@ fn test_security_default_liquidation_margin_capture() {
     assert_eq!(protocol_margin, 500_000_000); // 500 SKR to Treasury
     assert_eq!(lender_collateral, 9_500_000_000); // 9,500 SKR to Lender
     assert_eq!(protocol_margin + lender_collateral, collateral_amount);
+}
+
+#[test]
+fn test_security_default_priced_surplus_split() {
+    // PRICED split: the lender is made whole for the debt (principal +
+    // interest) valued in collateral units, the platform takes
+    // PLATFORM_SURPLUS_FEE_BPS (50%) of the released surplus and the borrower
+    // keeps the remainder. Mirrors the arithmetic in process_claim_default.
+    let principal: u64 = 100_000_000; // $100.00
+    let interest: u64 = 1_000_000; // $1.00
+    let debt = principal + interest; // $101.00 in micro-USD (6 decimals)
+    let collateral_amount: u64 = 1_000_000_000; // 1 SOL (lamports)
+    let price_micro_usd: u64 = 150_000_000; // $150.00 / SOL
+    let col_scale: u128 = 1_000_000_000; // 10^9 (native SOL)
+
+    let collateral_for_debt = (debt as u128 * col_scale / price_micro_usd as u128) as u64;
+    assert_eq!(collateral_for_debt, 673_333_333); // $101 of a $150 SOL
+
+    let surplus = collateral_amount - collateral_for_debt;
+    let platform_share = ((surplus as u128 * 5000) / 10_000) as u64; // PLATFORM_SURPLUS_FEE_BPS
+    let borrower_share = surplus - platform_share;
+
+    assert_eq!(platform_share, 163_333_333);
+    assert_eq!(borrower_share, 163_333_334);
+
+    // INVARIANT: the three shares drain the escrow exactly. A remainder left
+    // behind would be unrecoverable — nothing sweeps an escrow PDA.
+    assert_eq!(
+        collateral_for_debt + platform_share + borrower_share,
+        collateral_amount
+    );
+
+    // Underwater: the debt is worth more than the collateral, so the lender
+    // takes the escrow and there is no surplus to share.
+    let underwater_price_micro_usd: u64 = 50_000_000; // $50.00 / SOL
+    let owed_collateral = (debt as u128 * col_scale / underwater_price_micro_usd as u128) as u64;
+    assert!(owed_collateral >= collateral_amount);
 }
 
 #[test]

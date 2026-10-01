@@ -21,6 +21,11 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { LendingPool, P2POffer, WalletAssets } from '../types';
+import {
+  maxP2PInterestOffered,
+  calculateOriginationFee,
+  isNativeSolCollateralName,
+} from '../solana/onChainService';
 
 const SkeletonPulse: React.FC<{ style?: any }> = ({ style }) => {
   const pulseAnim = React.useRef(new Animated.Value(0.35)).current;
@@ -231,8 +236,14 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
       Alert.alert('Missing Name', 'Please enter a name for your lending desk.');
       return;
     }
-    if (isNaN(apr) || apr <= 0 || apr > 150) {
-      Alert.alert('Invalid APR', 'Please enter a valid fixed APR between 1% and 150%.');
+    // The chain caps interest_rate_bps at 1000 — the rate is charged as a
+    // percentage of principal per 30-day term, so 10 is the ceiling. Letting a
+    // desk creator enter more here only produces a failed transaction.
+    if (isNaN(apr) || apr <= 0 || apr > 10) {
+      Alert.alert(
+        'Invalid rate',
+        'Enter a rate between 0 and 10%. This is charged as a percentage of the loan amount over a 30-day term, and the program caps it at 10%.'
+      );
       return;
     }
     if (isNaN(ltv) || ltv <= 10 || ltv > 70) {
@@ -265,8 +276,21 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
     const amt = parseFloat(reqAmount);
     const prof = parseFloat(profitAmount);
     const d = parseInt(duration, 10);
-    if (!assetName || isNaN(amt) || isNaN(prof) || isNaN(d) || amt <= 0) {
+    if (!assetName || isNaN(amt) || isNaN(prof) || isNaN(d) || amt <= 0 || prof < 0 || d <= 0) {
       Alert.alert('Invalid Input', 'Please enter a valid asset name, amount, and duration.');
+      return;
+    }
+    // Mirror of the program's ceiling: interest is capped by TERM as well as by
+    // principal, so a 1-day pawn cannot offer what a 30-day one may. Comparing
+    // in micro-units as integers keeps this exact — the program divides
+    // integers, so a float comparison could pass something the chain rejects.
+    const maxProfitMicro = maxP2PInterestOffered(BigInt(Math.round(amt * 1e6)), d * 86400);
+    const maxProfit = Number(maxProfitMicro) / 1e6;
+    if (BigInt(Math.round(prof * 1e6)) > maxProfitMicro) {
+      Alert.alert(
+        'Interest Too High',
+        `A ${d}-day pawn can offer at most ${maxProfit.toFixed(4)} USDC interest on ${amt} USDC.\n\nThe program caps interest at 10% of the amount borrowed per 30-day term, so longer terms allow proportionally more.`
+      );
       return;
     }
     setPawnModal(false);
@@ -395,7 +419,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
             </View>
             <View style={[styles.statPill, { backgroundColor: colors.badgeBg }]}>
               <Text style={[styles.statPillText, { color: colors.primaryLabel }]}>
-                {subTab === 'POOLS' ? `From ${minApr.toFixed(1)}% APR` : 'Zero Liquidations'}
+                {subTab === 'POOLS' ? `From ${minApr.toFixed(1)}% per 30d` : 'Zero Liquidations'}
               </Text>
             </View>
           </View>
@@ -519,7 +543,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                         <Text style={[styles.deskApr, { color: colors.primaryLabel }]}>
                           {(pool.interestRateBps / 100).toFixed(1)}%
                         </Text>
-                        <Text style={[styles.deskAprLabel, { color: colors.textMuted }]}>Fixed APR</Text>
+                        <Text style={[styles.deskAprLabel, { color: colors.textMuted }]}>per 30 days</Text>
                       </View>
                     </View>
 
@@ -836,18 +860,18 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
 
               <View style={styles.inputSplitRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.inputLabel, { color: colors.textMuted }]}>FIXED APR (MAX 150%)</Text>
+                  <Text style={[styles.inputLabel, { color: colors.textMuted }]}>RATE PER 30 DAYS (MAX 10%)</Text>
                   <TextInput
                     style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
                     value={deskApr}
                     onChangeText={(val) => setDeskApr(sanitizeDecimal(val))}
                     keyboardType="decimal-pad"
-                    placeholder="12.0"
+                    placeholder="8.0"
                     placeholderTextColor={colors.textMuted}
                   />
                   {parseFloat(deskApr) > 0 && (
                     <Text style={{ fontSize: 10, color: colors.primaryLabel, marginTop: 4, fontWeight: '600' }}>
-                      ≈ {((parseFloat(deskApr) * 7) / 365).toFixed(2)}% / 7d ({((parseFloat(deskApr) * 30) / 365).toFixed(2)}% / 30d)
+                      ≈ {((parseFloat(deskApr) * 7) / 30).toFixed(2)}% / 7d ({parseFloat(deskApr).toFixed(2)}% / 30d)
                     </Text>
                   )}
                 </View>
@@ -1004,6 +1028,27 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                   />
                 </View>
               </View>
+
+              {(() => {
+                // Disclose the withholding up front. The program takes an
+                // origination fee (25 bps for SOL collateral, 50 bps for SKR)
+                // out of the disbursement, so the creator receives less than
+                // they ask for. Silently shorting them would be the wrong
+                // surprise to leave to the signature screen.
+                const amt = parseFloat(reqAmount);
+                if (!(amt > 0)) return null;
+                const isSol = isNativeSolCollateralName(assetName);
+                const { feeMicro, netMicro } = calculateOriginationFee(
+                  BigInt(Math.round(amt * 1e6)),
+                  isSol
+                );
+                return (
+                  <Text style={{ fontSize: 10, color: colors.textMuted, marginTop: -6, marginBottom: 10, fontWeight: '600' }}>
+                    You receive {Number(netMicro) / 1e6} USDC — {Number(feeMicro) / 1e6} USDC
+                    origination fee ({isSol ? '0.25' : '0.50'}%)
+                  </Text>
+                );
+              })()}
 
               <Text style={[styles.inputLabel, { color: colors.textMuted }]}>DURATION (DAYS)</Text>
               <TextInput

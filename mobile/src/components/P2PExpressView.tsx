@@ -392,7 +392,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
             <Text style={[styles.summaryValue, { color: colors.text }]}>
               {numAmount > 0 ? ((estInterest / numAmount) * 100).toFixed(2) : '0.00'}% flat (${estInterest.toFixed(2)})
               <Text style={{ color: colors.primaryLabel, fontSize: 11, fontWeight: '700' }}>
-                {' '}• {effectiveApr.toFixed(1)}% APR
+                {' '}• {effectiveApr.toFixed(1)}% per 30d
               </Text>
             </Text>
           </View>

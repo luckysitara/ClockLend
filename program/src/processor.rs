@@ -390,10 +390,10 @@ pub fn process_initialize_pool(
     assert_system_program(system_program)?;
 
     // H-5: Enforce strict parameter bounds
-    if min_duration <= 0 || min_duration > 365 * 86400 {
+    if min_duration <= 0 || min_duration > MAX_LOAN_DURATION_SECS {
         return Err(ClockLendError::InvalidDuration.into());
     }
-    if max_duration < min_duration || max_duration > 365 * 86400 {
+    if max_duration < min_duration || max_duration > MAX_LOAN_DURATION_SECS {
         return Err(ClockLendError::InvalidDuration.into());
     }
     // Round-14 M-3 / shared cap: see MAX_LTV_BPS.
@@ -406,7 +406,7 @@ pub fn process_initialize_pool(
     if is_oracle_free && max_ltv_bps > 3000 {
         return Err(ClockLendError::InvalidCollateralRatio.into());
     }
-    if interest_rate_bps > 10000 {
+    if interest_rate_bps == 0 || interest_rate_bps > MAX_INTEREST_RATE_BPS {
         return Err(ClockLendError::InvalidInterestRate.into());
     }
 
@@ -1407,7 +1407,7 @@ pub fn process_borrow_from_pool(
         return Err(ClockLendError::InsufficientLiquidity.into());
     }
 
-    if duration_seconds < pool.min_duration || duration_seconds > pool.max_duration || duration_seconds > 365 * 86400 {
+    if duration_seconds < pool.min_duration || duration_seconds > pool.max_duration || duration_seconds > MAX_LOAN_DURATION_SECS {
         return Err(ClockLendError::InvalidInstruction.into());
     }
 
@@ -2000,7 +2000,9 @@ pub fn process_borrow_from_pool(
                         };
                         let discount = ((effective_interest_rate_bps as u32 * discount_bps) / 10000) as u16;
                         effective_interest_rate_bps = effective_interest_rate_bps.saturating_sub(discount);
-                        bond_to_lock = available_skr.min(MAX_SKR);
+                        // Fixed per band — see bond_for_discount_bps for why
+                        // this is not derived from the stake or the loan.
+                        bond_to_lock = bond_for_discount_bps(discount_bps).min(available_skr);
                     }
                     if bond_to_lock > 0 {
                         profile.locked_skr = profile.locked_skr.saturating_add(bond_to_lock);
@@ -2011,13 +2013,14 @@ pub fn process_borrow_from_pool(
         }
     }
 
-    // Calculate interest: (borrow_amount * effective_interest_rate_bps * duration) / (10000 * 31536000)
+    // Interest: (borrow_amount * effective_rate_bps * duration) / (10000 * 30 days).
+    // At the 30-day maximum term this is exactly borrow_amount * rate / 10000.
     let interest_due_u128 = (borrow_amount as u128)
         .checked_mul(effective_interest_rate_bps as u128)
         .ok_or(ClockLendError::AmountOverflow)?
         .checked_mul(duration_seconds as u128)
         .ok_or(ClockLendError::AmountOverflow)?
-        / (10000u128 * 31536000u128);
+        / (10000u128 * INTEREST_PERIOD_SECS as u128);
     let interest_due: u64 = interest_due_u128
         .try_into()
         .map_err(|_| ClockLendError::AmountOverflow)?;
@@ -2076,13 +2079,28 @@ pub fn process_create_p2p_offer(
     assert_signer(creator)?;
     assert_system_program(system_program)?;
 
-    if requested_amount == 0 || collateral_amount == 0 || duration_seconds <= 0 || duration_seconds > 365 * 86400 {
+    if requested_amount == 0 || collateral_amount == 0 || duration_seconds <= 0 || duration_seconds > MAX_LOAN_DURATION_SECS {
         return Err(ClockLendError::InvalidInstruction.into());
     }
 
-    // V-A1: bound the offered interest so an offer can never become
-    // permanently unrepayable (interest capped at 100% of principal)
-    if interest_offered > requested_amount {
+    // V-A1: bound the offered interest so an offer can never become permanently
+    // unrepayable — and bound it by TERM, not just by principal.
+    //
+    // Capping at 100% of principal with no time component meant a 1-day pawn
+    // could legally charge 100% interest (~36,500% APR) while the pool path was
+    // capped at MAX_INTEREST_RATE_BPS per 30 days. This applies the pool's own
+    // ceiling here, prorated the same way `process_borrow_from_pool` prorates
+    // interest, so both routes to a loan cost the same at the same term.
+    //
+    // Integer division floors, so this can only ever be slightly stricter than
+    // the rate — never looser.
+    let max_interest_offered = (requested_amount as u128)
+        .checked_mul(MAX_INTEREST_RATE_BPS as u128)
+        .ok_or(ClockLendError::AmountOverflow)?
+        .checked_mul(duration_seconds as u128)
+        .ok_or(ClockLendError::AmountOverflow)?
+        / (10000u128 * INTEREST_PERIOD_SECS as u128);
+    if (interest_offered as u128) > max_interest_offered {
         return Err(ClockLendError::InvalidInstruction.into());
     }
 
@@ -2314,6 +2332,7 @@ pub fn process_fund_p2p_offer(
     let funder_liquidity_account = next_account_info(account_info_iter)?;
     let creator_liquidity_account = next_account_info(account_info_iter)?;
     let token_program = next_account_info(account_info_iter)?;
+    let treasury_liquidity_account = next_account_info(account_info_iter)?;
 
     assert_signer(funder)?;
     assert_owned_by(p2p_offer_account, program_id)?;
@@ -2355,7 +2374,41 @@ pub fn process_fund_p2p_offer(
         return Err(ClockLendError::InvalidMint.into());
     }
 
-    // Transfer requested liquidity directly from funder to creator
+    // Origination fee — the same rule the pool borrow path applies (25 bps for
+    // native-SOL collateral, 50 bps for SKR), charged once and independent of
+    // term.
+    //
+    // WHY IT MUST NOT BE PRORATED: interest is charged as a percentage of
+    // principal over a 30-day period, so a 60-second loan earns the lender
+    // essentially nothing. With no floor, a borrower could roll arbitrarily
+    // short pawns back to back at zero cost — free credit, unbounded. A fee
+    // that depends only on principal makes the shortest pawn cost the same as
+    // the longest, which is also how a pawnshop actually prices.
+    let is_native_sol = offer.collateral_mint == Pubkey::default()
+        || offer.collateral_mint == solana_program::system_program::ID
+        || offer.collateral_mint == spl_token::native_mint::id();
+    let origination_fee_bps: u64 = if is_native_sol { 25 } else { 50 };
+    let origination_fee =
+        ((offer.requested_amount as u128 * origination_fee_bps as u128) / 10000) as u64;
+    let net_disbursement = offer.requested_amount.saturating_sub(origination_fee);
+
+    // F-04: the treasury destination is REQUIRED, not optional. An optional
+    // treasury would let a borrower simply omit it and restore free credit.
+    //
+    // Validate before moving anything, so a bad treasury cannot leave the
+    // disbursement half-done.
+    if origination_fee > 0 {
+        let (expected_treasury_pda, _) = Pubkey::find_program_address(&[TREASURY_SEED], program_id);
+        let treasury_token_acc =
+            spl_token::state::Account::unpack(&treasury_liquidity_account.try_borrow_data()?)?;
+        if treasury_token_acc.owner != expected_treasury_pda
+            || treasury_token_acc.mint != offer.liquidity_mint
+        {
+            return Err(ClockLendError::InvalidTreasuryAccount.into());
+        }
+    }
+
+    // Funder -> creator: the principal, less the fee.
     invoke(
         &spl_token::instruction::transfer(
             token_program.key,
@@ -2363,7 +2416,7 @@ pub fn process_fund_p2p_offer(
             creator_liquidity_account.key,
             funder.key,
             &[],
-            offer.requested_amount,
+            net_disbursement,
         )?,
         &[
             funder_liquidity_account.clone(),
@@ -2372,6 +2425,29 @@ pub fn process_fund_p2p_offer(
             token_program.clone(),
         ],
     )?;
+
+    // Funder -> treasury: the fee. The funder is debited exactly
+    // `requested_amount` in total and is still repaid `requested_amount +
+    // interest`, so the BORROWER bears the fee — the same side that bears it on
+    // the pool path, where it is withheld from the disbursement.
+    if origination_fee > 0 {
+        invoke(
+            &spl_token::instruction::transfer(
+                token_program.key,
+                funder_liquidity_account.key,
+                treasury_liquidity_account.key,
+                funder.key,
+                &[],
+                origination_fee,
+            )?,
+            &[
+                funder_liquidity_account.clone(),
+                treasury_liquidity_account.clone(),
+                funder.clone(),
+                token_program.clone(),
+            ],
+        )?;
+    }
 
     let clock = Clock::get()?;
     let now = clock.unix_timestamp;
@@ -2382,9 +2458,11 @@ pub fn process_fund_p2p_offer(
     offer.pack_into_slice(&mut p2p_offer_account.try_borrow_mut_data()?)?;
 
     msg!(
-        "ClockLend: P2P Pawn Offer #{} successfully funded by peer {}!",
+        "ClockLend: P2P Pawn Offer #{} funded by peer {} — disbursed {} (fee {} to treasury)",
         offer.offer_id,
-        funder.key
+        funder.key,
+        net_disbursement,
+        origination_fee
     );
     Ok(())
 }
@@ -2946,8 +3024,6 @@ pub fn process_claim_default(
     let mut pool_account_opt: Option<&AccountInfo> = None;
     let mut user_profile_opt: Option<&AccountInfo> = None;
     let mut treasury_collateral_opt: Option<&AccountInfo> = None;
-    let mut skr_escrow_opt: Option<&AccountInfo> = None;
-    let mut skr_slash_dest_opt: Option<&AccountInfo> = None;
     let mut token_program_opt: Option<&AccountInfo> = None;
     let mut system_program_opt: Option<&AccountInfo> = None;
     let mut spl_token_accounts: Vec<&AccountInfo> = Vec::new();
@@ -3009,26 +3085,19 @@ pub fn process_claim_default(
                 ],
             )?;
 
-            let (expected_borrower_skr_escrow, skr_bump) =
-                Pubkey::find_program_address(&[b"skr_escrow", loan.borrower.as_ref()], program_id);
-
             let is_native_sol = loan.collateral_mint == Pubkey::default()
                 || loan.collateral_mint == solana_program::system_program::ID
                 || loan.collateral_mint == spl_token::native_mint::id();
 
             // F1: classify optional token accounts by ROLE, not by mint alone, so a
             // treasury-owned account of the collateral mint remains usable as the
-            // margin treasury even when the collateral is SKR. (Previously any
-            // treasury-owned SKR account was captured as the slash destination,
-            // which made SPL-collateral liquidation impossible.)
+            // margin treasury even when the collateral is SKR.
+            //
+            // There is no slash-destination role any more — nothing is slashed on
+            // default — so the margin treasury is the only role left to resolve.
             let mut treasury_token_opt: Option<&AccountInfo> = None;
-            let mut slash_fallback_opt: Option<&AccountInfo> = None;
 
             for acc in &spl_token_accounts {
-                if *acc.key == expected_borrower_skr_escrow {
-                    skr_escrow_opt = Some(*acc);
-                    continue;
-                }
                 let Ok(tok) = spl_token::state::Account::unpack(&acc.try_borrow_data()?) else {
                     continue;
                 };
@@ -3040,24 +3109,6 @@ pub fn process_claim_default(
                 {
                     treasury_token_opt = Some(*acc);
                 }
-                // Slash destination: SKR accounts owned by authority/vault/treasury.
-                // Prefer authority/vault-owned; a treasury-owned SKR account is only the fallback.
-                if tok.mint == SKR_MINT
-                    && (tok.owner == pool.authority
-                        || tok.owner == pool.vault_pda
-                        || tok.owner == expected_treasury_pda)
-                {
-                    if tok.owner == expected_treasury_pda {
-                        if slash_fallback_opt.is_none() {
-                            slash_fallback_opt = Some(*acc);
-                        }
-                    } else if skr_slash_dest_opt.is_none() {
-                        skr_slash_dest_opt = Some(*acc);
-                    }
-                }
-            }
-            if skr_slash_dest_opt.is_none() {
-                skr_slash_dest_opt = slash_fallback_opt;
             }
             // For SPL collateral the margin treasury is the role-classified token
             // account; for native SOL it remains the bare treasury PDA captured by
@@ -3065,24 +3116,6 @@ pub fn process_claim_default(
             if !is_native_sol {
                 treasury_collateral_opt = treasury_token_opt;
             }
-
-            let slash_destination_account: Option<&AccountInfo> = if let Some(dest) = skr_slash_dest_opt {
-                Some(dest)
-            } else if destination_collateral_account.owner == &spl_token::id() {
-                if let Ok(tok) = spl_token::state::Account::unpack(&destination_collateral_account.try_borrow_data()?) {
-                    if tok.mint == SKR_MINT
-                        && (tok.owner == pool.authority || tok.owner == pool.vault_pda || tok.owner == expected_treasury_pda)
-                    {
-                        Some(destination_collateral_account)
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
 
             if loan.status != LoanStatus::InGracePeriod {
                 return Err(ClockLendError::GracePeriodActive.into());
@@ -3115,12 +3148,175 @@ pub fn process_claim_default(
                 }
             }
 
-            // Feature 8: Monetization - Protocol Liquidation Margin (5% excess collateral to Treasury)
-            let protocol_margin = ((loan.collateral_amount as u128 * 500) / 10000) as u64; // 5% liquidation margin
-            let lender_collateral = loan.collateral_amount.saturating_sub(protocol_margin);
+            // Round-16: a default no longer hands the lender the whole escrow.
+            // The collateral is priced so the lender is made whole for the debt
+            // only; the platform takes a fee on the released surplus and the
+            // borrower keeps the rest. The feed is OPTIONAL on purpose: when it
+            // is missing, dead, or mis-scaled the legacy 5/95 split below runs
+            // unchanged, so a broken oracle can never block a default from
+            // settling.
+            let canonical_collateral_mint = if is_native_sol {
+                spl_token::native_mint::id()
+            } else {
+                loan.collateral_mint
+            };
+            let (expected_pool_collateral_oracle1, _) = Pubkey::find_program_address(
+                &[ORACLE_SEED, pool_account.key.as_ref(), loan.collateral_mint.as_ref()],
+                program_id,
+            );
+            let (expected_pool_collateral_oracle2, _) = Pubkey::find_program_address(
+                &[ORACLE_SEED, pool_account.key.as_ref(), canonical_collateral_mint.as_ref()],
+                program_id,
+            );
+            let (expected_global_collateral_oracle1, _) = Pubkey::find_program_address(
+                &[ORACLE_SEED, loan.collateral_mint.as_ref()],
+                program_id,
+            );
+            let (expected_global_collateral_oracle2, _) = Pubkey::find_program_address(
+                &[ORACLE_SEED, canonical_collateral_mint.as_ref()],
+                program_id,
+            );
 
-            // F-04: Mandatory protocol fee - Treasury account required when margin > 0
-            if protocol_margin > 0 {
+            // A feed cannot be identified by inspection, so the scan matches the
+            // derived PDAs only (pool-scoped wins over global, as in BorrowFromPool).
+            let mut collateral_oracle_opt: Option<&AccountInfo> = None;
+            for acc in accounts.iter() {
+                if *acc.key == expected_pool_collateral_oracle1 || *acc.key == expected_pool_collateral_oracle2 {
+                    collateral_oracle_opt = Some(acc);
+                } else if (*acc.key == expected_global_collateral_oracle1
+                    || *acc.key == expected_global_collateral_oracle2)
+                    && collateral_oracle_opt.is_none()
+                {
+                    collateral_oracle_opt = Some(acc);
+                }
+            }
+            // H-3 mirror: a pool that configured its own feed must be liquidated
+            // at that feed's price, so a global feed alone is not usable here.
+            if pool.has_custom_oracle {
+                if let Some(acc) = collateral_oracle_opt {
+                    if *acc.key != expected_pool_collateral_oracle1 && *acc.key != expected_pool_collateral_oracle2 {
+                        collateral_oracle_opt = None;
+                        msg!("ClockLend: Pool-scoped collateral feed missing on default - falling back to the 5/95 split");
+                    }
+                }
+            }
+
+            // Where the borrower's share of the surplus goes: their wallet for
+            // native SOL, a token account they own for SPL collateral.
+            let mut borrower_collateral_opt: Option<&AccountInfo> = None;
+            for acc in accounts.iter() {
+                if is_native_sol {
+                    if *acc.key == loan.borrower {
+                        borrower_collateral_opt = Some(acc);
+                    }
+                } else if acc.owner == &spl_token::id() {
+                    if let Ok(tok) = spl_token::state::Account::unpack(&acc.try_borrow_data()?) {
+                        if tok.owner == loan.borrower && tok.mint == loan.collateral_mint {
+                            borrower_collateral_opt = Some(acc);
+                        }
+                    }
+                }
+            }
+
+            let collateral_price_micro_usd = resolve_default_collateral_price(
+                collateral_oracle_opt,
+                program_id,
+                &loan.collateral_mint,
+                &canonical_collateral_mint,
+                is_native_sol,
+                now,
+            );
+
+            // The feed's declared scale must match the collateral's denomination
+            // (the C-1 guard from BorrowFromPool): a feed published with the wrong
+            // decimals would mis-price the surplus by 10^delta. The helper above
+            // has already rejected a mis-scaled feed, so this only sets the
+            // conversion factor for a price we decided to trust.
+            let expected_collateral_decimals: u8 = if is_native_sol { 9 } else { 6 };
+            let col_scale = 10u128
+                .checked_pow(expected_collateral_decimals as u32)
+                .ok_or(ClockLendError::AmountOverflow)?;
+
+            // debt is denominated in the pool's liquidity mint (micro-USD);
+            // convert it into collateral base units at the feed price. The lender
+            // is owed the debt, not the collateral.
+            let priced_split: Option<(u64, u64, u64)> =
+                if let Some(price_micro_usd) = collateral_price_micro_usd {
+                    let debt = (loan.principal_amount as u128)
+                        .checked_add(loan.interest_due as u128)
+                        .ok_or(ClockLendError::AmountOverflow)?;
+                    let collateral_for_debt = debt
+                        .checked_mul(col_scale)
+                        .ok_or(ClockLendError::AmountOverflow)?
+                        / price_micro_usd as u128;
+                    if collateral_for_debt >= loan.collateral_amount as u128 {
+                        // Underwater: the collateral no longer covers the debt,
+                        // so the lender takes the escrow and nothing is shared.
+                        Some((loan.collateral_amount, 0, 0))
+                    } else {
+                        let lender_collateral = collateral_for_debt as u64;
+                        let surplus = loan.collateral_amount
+                            .checked_sub(lender_collateral)
+                            .ok_or(ClockLendError::AmountOverflow)?;
+                        let treasury_collateral =
+                            ((surplus as u128 * PLATFORM_SURPLUS_FEE_BPS as u128) / 10000) as u64;
+                        let borrower_collateral = surplus
+                            .checked_sub(treasury_collateral)
+                            .ok_or(ClockLendError::AmountOverflow)?;
+                        // The escrow must end at zero — a stranded remainder would
+                        // be unrecoverable once the loan is terminal (no
+                        // instruction can sweep an escrow PDA) — so the shares are
+                        // checked to sum to the whole collateral, never clamped.
+                        let total = lender_collateral
+                            .checked_add(treasury_collateral)
+                            .and_then(|t| t.checked_add(borrower_collateral))
+                            .ok_or(ClockLendError::AmountOverflow)?;
+                        if total != loan.collateral_amount {
+                            return Err(ClockLendError::AmountOverflow.into());
+                        }
+                        Some((lender_collateral, treasury_collateral, borrower_collateral))
+                    }
+                } else {
+                    None
+                };
+
+            // The priced split is used only when every non-zero share has a
+            // destination that can actually receive it. A missing destination
+            // falls back to the legacy split — the authority could force that
+            // anyway by omitting the feed, and an unpairable share would else sit
+            // in the escrow forever.
+            let treasury_usable = match treasury_collateral_opt {
+                None => false,
+                Some(acc) if is_native_sol => *acc.key == expected_treasury_pda,
+                Some(acc) => spl_token::state::Account::unpack(&acc.try_borrow_data()?)
+                    .map(|tok| tok.owner == expected_treasury_pda && tok.mint == loan.collateral_mint)
+                    .unwrap_or(false),
+            };
+
+            let (lender_collateral, treasury_collateral, borrower_collateral) = match priced_split {
+                Some((lender, treasury, borrower))
+                    if (treasury == 0 || treasury_usable)
+                        && (borrower == 0 || borrower_collateral_opt.is_some()) =>
+                {
+                    (lender, treasury, borrower)
+                }
+                _ => {
+                    if priced_split.is_some() {
+                        msg!("ClockLend: Default split destinations missing - falling back to the 5/95 split");
+                    }
+                    // Feature 8 legacy fallback: 5% liquidation margin to the
+                    // Treasury, the remainder to the lender.
+                    let protocol_margin = ((loan.collateral_amount as u128 * 500) / 10000) as u64; // 5% liquidation margin
+                    (
+                        loan.collateral_amount.saturating_sub(protocol_margin),
+                        protocol_margin,
+                        0,
+                    )
+                }
+            };
+
+            // F-04: Mandatory protocol fee - Treasury account required when a share is owed.
+            if treasury_collateral > 0 {
                 let treasury_account = treasury_collateral_opt.ok_or(ClockLendError::InvalidTreasuryAccount)?;
                 if is_native_sol {
                     if *treasury_account.key != expected_treasury_pda {
@@ -3135,127 +3331,124 @@ pub fn process_claim_default(
             }
 
             if is_native_sol {
-                if let Some(treasury_account) = treasury_collateral_opt {
-                    let margin_amt = protocol_margin.min(loan.collateral_amount);
-                    let rem_amt = loan.collateral_amount.saturating_sub(margin_amt);
+                // Every lamport of the collateral leaves the escrow: the shares
+                // are checked to sum to `collateral_amount`, so the escrow ends
+                // at exactly zero rather than holding a sub-rent dust balance.
+                transfer_native_sol_from_escrow(
+                    collateral_escrow_account,
+                    destination_collateral_account,
+                    system_program_opt,
+                    lender_collateral,
+                    &[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]],
+                )?;
+                if treasury_collateral > 0 {
+                    let treasury_account = treasury_collateral_opt.ok_or(ClockLendError::InvalidTreasuryAccount)?;
                     transfer_native_sol_from_escrow(
                         collateral_escrow_account,
-                        destination_collateral_account,
+                        treasury_account,
                         system_program_opt,
-                        rem_amt,
+                        treasury_collateral,
                         &[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]],
                     )?;
-                    if margin_amt > 0 {
-                        transfer_native_sol_from_escrow(
-                            collateral_escrow_account,
-                            treasury_account,
-                            system_program_opt,
-                            margin_amt,
-                            &[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]],
-                        )?;
-                    }
-                    msg!(
-                        "ClockLend: Liquidated {} SOL to lender, {} SOL margin to Treasury",
-                        rem_amt,
-                        margin_amt
-                    );
-                } else {
-                    transfer_native_sol_from_escrow(
-                        collateral_escrow_account,
-                        destination_collateral_account,
-                        system_program_opt,
-                        loan.collateral_amount,
-                        &[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]],
-                    )?;
-                    msg!("ClockLend: Liquidated {} SOL to lender", loan.collateral_amount);
                 }
+                if borrower_collateral > 0 {
+                    let borrower_account = borrower_collateral_opt.ok_or(ClockLendError::InvalidInstruction)?;
+                    transfer_native_sol_from_escrow(
+                        collateral_escrow_account,
+                        borrower_account,
+                        system_program_opt,
+                        borrower_collateral,
+                        &[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]],
+                    )?;
+                }
+                msg!(
+                    "ClockLend: Liquidated {} SOL to lender, {} SOL to Treasury, {} SOL back to borrower",
+                    lender_collateral,
+                    treasury_collateral,
+                    borrower_collateral
+                );
             } else {
                 let token_program = token_program_opt.ok_or(ClockLendError::InvalidInstruction)?;
                 assert_token_program(token_program)?;
 
-                if protocol_margin > 0 {
+                // Transfer lender collateral
+                invoke_signed(
+                    &spl_token::instruction::transfer(
+                        token_program.key,
+                        collateral_escrow_account.key,
+                        destination_collateral_account.key,
+                        collateral_escrow_account.key,
+                        &[],
+                        lender_collateral,
+                    )?,
+                    &[
+                        collateral_escrow_account.clone(),
+                        destination_collateral_account.clone(),
+                        token_program.clone(),
+                    ],
+                    &[&[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]]],
+                )?;
+
+                if treasury_collateral > 0 {
                     let treasury_account = treasury_collateral_opt.ok_or(ClockLendError::InvalidTreasuryAccount)?;
-                    if treasury_account.key != destination_collateral_account.key {
-                        // Transfer lender collateral
-                        invoke_signed(
-                            &spl_token::instruction::transfer(
-                                token_program.key,
-                                collateral_escrow_account.key,
-                                destination_collateral_account.key,
-                                collateral_escrow_account.key,
-                                &[],
-                                lender_collateral,
-                            )?,
-                            &[
-                                collateral_escrow_account.clone(),
-                                destination_collateral_account.clone(),
-                                token_program.clone(),
-                            ],
-                            &[&[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]]],
-                        )?;
-
-                        // Transfer 5% liquidation margin to ClockLend Treasury
-                        invoke_signed(
-                            &spl_token::instruction::transfer(
-                                token_program.key,
-                                collateral_escrow_account.key,
-                                treasury_account.key,
-                                collateral_escrow_account.key,
-                                &[],
-                                protocol_margin,
-                            )?,
-                            &[
-                                collateral_escrow_account.clone(),
-                                treasury_account.clone(),
-                                token_program.clone(),
-                            ],
-                            &[&[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]]],
-                        )?;
-
-                        msg!(
-                            "ClockLend: Default liquidation! {} SKR to lender, {} SKR (5%) to Treasury",
-                            lender_collateral,
-                            protocol_margin
-                        );
-                    } else {
-                        invoke_signed(
-                            &spl_token::instruction::transfer(
-                                token_program.key,
-                                collateral_escrow_account.key,
-                                destination_collateral_account.key,
-                                collateral_escrow_account.key,
-                                &[],
-                                loan.collateral_amount,
-                            )?,
-                            &[
-                                collateral_escrow_account.clone(),
-                                destination_collateral_account.clone(),
-                                token_program.clone(),
-                            ],
-                            &[&[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]]],
-                        )?;
-                    }
-                } else {
                     invoke_signed(
                         &spl_token::instruction::transfer(
                             token_program.key,
                             collateral_escrow_account.key,
-                            destination_collateral_account.key,
+                            treasury_account.key,
                             collateral_escrow_account.key,
                             &[],
-                            loan.collateral_amount,
+                            treasury_collateral,
                         )?,
                         &[
                             collateral_escrow_account.clone(),
-                            destination_collateral_account.clone(),
+                            treasury_account.clone(),
                             token_program.clone(),
                         ],
                         &[&[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]]],
                     )?;
                 }
+
+                if borrower_collateral > 0 {
+                    let borrower_account = borrower_collateral_opt.ok_or(ClockLendError::InvalidInstruction)?;
+                    invoke_signed(
+                        &spl_token::instruction::transfer(
+                            token_program.key,
+                            collateral_escrow_account.key,
+                            borrower_account.key,
+                            collateral_escrow_account.key,
+                            &[],
+                            borrower_collateral,
+                        )?,
+                        &[
+                            collateral_escrow_account.clone(),
+                            borrower_account.clone(),
+                            token_program.clone(),
+                        ],
+                        &[&[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]]],
+                    )?;
+                }
+
+                msg!(
+                    "ClockLend: Default liquidation! {} collateral to lender, {} to Treasury, {} back to borrower",
+                    lender_collateral,
+                    treasury_collateral,
+                    borrower_collateral
+                );
             }
 
-            // F-06: Penalize borrower credit profile and transfer slashed SKR
+            // F-06: Penalize the borrower's credit profile. NOTHING IS SLASHED.
+            //
+            // The lender is already made whole from the collateral (see the
+            // priced split above), so also taking the SKR bond would punish the
+            // same default twice. It would also punish the wrong thing: the
+            // staking discount only ever reduces INTEREST, and a defaulter never
+            // pays interest — so the bond's real work is done DURING the loan,
+            // where locking it is what stops a borrower taking the discount and
+            // immediately unstaking.
+            //
+            // The bond is therefore RELEASED, not seized: the stake is usable
+            // again as soon as the default settles.
             let loan_locked_skr = loan.locked_skr;
             if loan_locked_skr > 0 || user_profile_opt.is_some() {
                 let profile_account = user_profile_opt.ok_or(ClockLendError::InvalidInstruction)?;
@@ -3268,124 +3461,6 @@ pub fn process_claim_default(
                 profile.total_loans_defaulted = profile.total_loans_defaulted.saturating_add(1);
                 profile.reputation_score = profile.reputation_score.saturating_sub(1000); // severe penalty
 
-                // F-06: Slash locked SKR bond (or 20% of staked SKR, whichever is
-                // greater) — but never consume stake that backs OTHER live
-                // loans, or locked_skr would exceed staked_skr and freeze the
-                // remainder of the borrower's stake forever (round-11 PoC).
-                let base_slash = profile.staked_skr.saturating_mul(20) / 100;
-                let max_slashable = profile
-                    .staked_skr
-                    .saturating_sub(profile.locked_skr.saturating_sub(loan_locked_skr));
-                let slash_amount = loan_locked_skr
-                    .max(base_slash.min(max_slashable))
-                    .min(profile.staked_skr);
-                if slash_amount > 0 {
-                    let skr_escrow = skr_escrow_opt.ok_or(ClockLendError::InvalidInstruction)?;
-                    let token_program = token_program_opt.ok_or(ClockLendError::InvalidInstruction)?;
-                    assert_token_program(token_program)?;
-                    if *skr_escrow.key != expected_borrower_skr_escrow {
-                        return Err(ClockLendError::InvalidEscrowAccount.into());
-                    }
-                    let slash_dest = slash_destination_account.ok_or(ClockLendError::InvalidInstruction)?;
-                    let dest_tok = spl_token::state::Account::unpack(&slash_dest.try_borrow_data()?)?;
-                    if dest_tok.mint != SKR_MINT {
-                        return Err(ClockLendError::UnsupportedCollateralMint.into());
-                    }
-                    if dest_tok.owner != pool.authority
-                        && dest_tok.owner != pool.vault_pda
-                        && dest_tok.owner != expected_treasury_pda
-                    {
-                        return Err(ClockLendError::Unauthorized.into());
-                    }
-
-                    invoke_signed(
-                        &spl_token::instruction::transfer(
-                            token_program.key,
-                            skr_escrow.key,
-                            slash_dest.key,
-                            skr_escrow.key,
-                            &[],
-                            slash_amount,
-                        )?,
-                        &[
-                            skr_escrow.clone(),
-                            slash_dest.clone(),
-                            token_program.clone(),
-                        ],
-                        &[&[b"skr_escrow", loan.borrower.as_ref(), &[skr_bump]]],
-                    )?;
-
-                    // Only debit profile.staked_skr AFTER transfer completes successfully
-                    profile.staked_skr = profile.staked_skr.saturating_sub(slash_amount);
-                    msg!("ClockLend: Slashed & transferred {} SKR to lender ({})", slash_amount, slash_dest.key);
-
-                    // High-2: Sync borrower's yield position down to reflect slashed SKR
-                    let post_slash_escrow = spl_token::state::Account::unpack(&skr_escrow.try_borrow_data()?)
-                        .map(|t| t.amount)
-                        .unwrap_or(0);
-                    let pre_slash_escrow = post_slash_escrow.saturating_add(slash_amount);
-
-                    for acc in accounts.iter() {
-                        if acc.owner == program_id
-                            && !acc.data_is_empty()
-                            && (acc.data_len() == SkrYieldVault::LEN || get_account_kind(acc) == AccountKind::SkrYieldVault)
-                        {
-                            let vault_res = SkrYieldVault::unpack_from_slice(&acc.try_borrow_data()?);
-                            if let Ok(mut vault) = vault_res {
-                                if !vault.is_initialized {
-                                    continue;
-                                }
-                                let (expected_vault_pda, _) = Pubkey::find_program_address(
-                                    &[SKR_YIELD_VAULT_SEED, vault.reward_mint.as_ref()],
-                                    program_id,
-                                );
-                                if expected_vault_pda != *acc.key {
-                                    continue;
-                                }
-
-                                let (expected_pos, _) = Pubkey::find_program_address(
-                                    &[USER_YIELD_SEED, loan.borrower.as_ref(), vault.reward_mint.as_ref()],
-                                    program_id,
-                                );
-                                if let Some(pos_acc) = accounts.iter().find(|a| *a.key == expected_pos) {
-                                    if pos_acc.owner == program_id && !pos_acc.data_is_empty() {
-                                        let pos_res = UserYieldPosition::unpack_from_slice(&pos_acc.try_borrow_data()?);
-                                        if let Ok(mut position) = pos_res {
-                                            if position.user == loan.borrower && position.reward_mint == vault.reward_mint {
-                                                let eff_staked = position.staked_skr.min(pre_slash_escrow);
-                                                let gross = ((eff_staked as u128)
-                                                    .checked_mul(vault.acc_reward_per_share)
-                                                    .ok_or(ClockLendError::AmountOverflow)?)
-                                                    / YIELD_SCALE;
-                                                let pending = gross.saturating_sub(position.reward_debt.min(gross)) as u64;
-                                                let held_ok = Clock::get()?.unix_timestamp
-                                                    .saturating_sub(position.last_interaction_time) >= MIN_STAKE_AGE_SECS;
-                                                if held_ok {
-                                                    position.accrued_rewards = position.accrued_rewards.saturating_add(pending);
-                                                }
-
-                                                let target_staked = position.staked_skr.saturating_sub(slash_amount).min(post_slash_escrow);
-                                                let shares_removed = position.staked_skr.saturating_sub(target_staked);
-                                                vault.total_staked_skr = vault.total_staked_skr.saturating_sub(shares_removed);
-                                                position.staked_skr = target_staked;
-                                                position.reward_debt = ((position.staked_skr as u128)
-                                                    .checked_mul(vault.acc_reward_per_share)
-                                                    .ok_or(ClockLendError::AmountOverflow)?)
-                                                    / YIELD_SCALE;
-                                                position.last_interaction_time = Clock::get()?.unix_timestamp;
-
-                                                position.pack_into_slice(&mut pos_acc.try_borrow_mut_data()?)?;
-                                                vault.pack_into_slice(&mut acc.try_borrow_mut_data()?)?;
-                                                msg!("ClockLend: Slashed borrower yield shares: total_staked={}, borrower_staked={}",
-                                                    vault.total_staked_skr, position.staked_skr);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
                 if loan_locked_skr > 0 {
                     profile.locked_skr = profile.locked_skr.saturating_sub(loan_locked_skr);
                 }
@@ -3447,6 +3522,115 @@ pub fn process_claim_default(
                 || offer.collateral_mint == solana_program::system_program::ID
                 || offer.collateral_mint == spl_token::native_mint::id();
 
+            // Round-16 (extended to pawns): a default no longer hands the funder
+            // the whole escrow. Same rule as the desk path — the funder is made
+            // whole for the DEBT only, the platform takes a fee on the released
+            // surplus, and the borrower (here, the offer's creator) keeps the
+            // rest. A pawn that hands over everything is the single most
+            // borrower-hostile outcome the protocol can produce, and it was the
+            // path the product leads with.
+            //
+            // The feed stays OPTIONAL: with no usable price the legacy full
+            // seizure runs unchanged, so a dead oracle can never block a pawn
+            // default from settling.
+            let canonical_collateral_mint = if is_native_sol {
+                spl_token::native_mint::id()
+            } else {
+                offer.collateral_mint
+            };
+            let (p2p_oracle_a, _) = Pubkey::find_program_address(
+                &[ORACLE_SEED, offer.collateral_mint.as_ref()],
+                program_id,
+            );
+            let (p2p_oracle_b, _) = Pubkey::find_program_address(
+                &[ORACLE_SEED, canonical_collateral_mint.as_ref()],
+                program_id,
+            );
+            let mut p2p_oracle_opt: Option<&AccountInfo> = None;
+            for acc in accounts.iter() {
+                if *acc.key == p2p_oracle_a || *acc.key == p2p_oracle_b {
+                    p2p_oracle_opt = Some(acc);
+                }
+            }
+
+            // The creator and the treasury each need a destination before their
+            // share of the surplus can be paid.
+            let mut creator_collateral_opt: Option<&AccountInfo> = None;
+            let mut p2p_treasury_token_opt: Option<&AccountInfo> = None;
+            for acc in accounts.iter() {
+                if is_native_sol {
+                    if *acc.key == offer.creator {
+                        creator_collateral_opt = Some(acc);
+                    }
+                } else if acc.owner == &spl_token::id() {
+                    if let Ok(tok) = spl_token::state::Account::unpack(&acc.try_borrow_data()?) {
+                        if tok.mint == offer.collateral_mint {
+                            if tok.owner == offer.creator {
+                                creator_collateral_opt = Some(acc);
+                            } else if tok.owner == expected_treasury_pda {
+                                p2p_treasury_token_opt = Some(acc);
+                            }
+                        }
+                    }
+                }
+            }
+            let treasury_dest_opt = if is_native_sol {
+                treasury_collateral_opt
+            } else {
+                p2p_treasury_token_opt
+            };
+
+            let expected_collateral_decimals: u8 = if is_native_sol { 9 } else { 6 };
+            let col_scale = 10u128
+                .checked_pow(expected_collateral_decimals as u32)
+                .ok_or(ClockLendError::AmountOverflow)?;
+
+            // `requested_amount + interest_offered` is exactly what the creator
+            // owes to close the pawn, so it is the debt the funder is owed.
+            let p2p_split: Option<(u64, u64, u64)> = resolve_default_collateral_price(
+                p2p_oracle_opt,
+                program_id,
+                &offer.collateral_mint,
+                &canonical_collateral_mint,
+                is_native_sol,
+                now,
+            )
+            .and_then(|price_micro_usd| {
+                let debt = (offer.requested_amount as u128)
+                    .checked_add(offer.interest_offered as u128)?;
+                let collateral_for_debt = debt
+                    .checked_mul(col_scale)?
+                    .checked_div(price_micro_usd as u128)?;
+                if collateral_for_debt >= offer.collateral_amount as u128 {
+                    // Underwater: the funder takes everything, nothing to split.
+                    return Some((offer.collateral_amount, 0, 0));
+                }
+                let funder_share = collateral_for_debt as u64;
+                let surplus = offer.collateral_amount.checked_sub(funder_share)?;
+                let platform_share =
+                    ((surplus as u128 * PLATFORM_SURPLUS_FEE_BPS as u128) / 10000) as u64;
+                let creator_share = surplus.checked_sub(platform_share)?;
+                // funder + platform + creator == surplus + funder == collateral,
+                // exactly, so the escrow drains to zero with nothing stranded.
+                Some((funder_share, platform_share, creator_share))
+            });
+
+            let (funder_collateral, treasury_collateral, creator_collateral) = match p2p_split {
+                Some((funder, treasury, creator))
+                    if (treasury == 0 || treasury_dest_opt.is_some())
+                        && (creator == 0 || creator_collateral_opt.is_some()) =>
+                {
+                    (funder, treasury, creator)
+                }
+                _ => {
+                    if p2p_split.is_some() {
+                        msg!("ClockLend: Pawn default split destinations missing - falling back to full seizure");
+                    }
+                    // Legacy behaviour: the funder takes the whole escrow.
+                    (offer.collateral_amount, 0, 0)
+                }
+            };
+
             if is_native_sol {
                 // Security check: Verify destination is funder
                 if *destination_collateral_account.key != offer.funder {
@@ -3456,9 +3640,32 @@ pub fn process_claim_default(
                     collateral_escrow_account,
                     destination_collateral_account,
                     system_program_opt,
-                    offer.collateral_amount,
+                    funder_collateral,
                     &[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]],
                 )?;
+                if treasury_collateral > 0 {
+                    let treasury_dest = treasury_dest_opt.ok_or(ClockLendError::InvalidTreasuryAccount)?;
+                    if *treasury_dest.key != expected_treasury_pda {
+                        return Err(ClockLendError::InvalidTreasuryAccount.into());
+                    }
+                    transfer_native_sol_from_escrow(
+                        collateral_escrow_account,
+                        treasury_dest,
+                        system_program_opt,
+                        treasury_collateral,
+                        &[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]],
+                    )?;
+                }
+                if creator_collateral > 0 {
+                    let creator_dest = creator_collateral_opt.ok_or(ClockLendError::InvalidInstruction)?;
+                    transfer_native_sol_from_escrow(
+                        collateral_escrow_account,
+                        creator_dest,
+                        system_program_opt,
+                        creator_collateral,
+                        &[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]],
+                    )?;
+                }
             } else {
                 let token_program = token_program_opt.ok_or(ClockLendError::InvalidInstruction)?;
                 assert_token_program(token_program)?;
@@ -3472,7 +3679,6 @@ pub fn process_claim_default(
                     return Err(ClockLendError::InvalidMint.into());
                 }
 
-                // Transfer collateral to funder
                 invoke_signed(
                     &spl_token::instruction::transfer(
                         token_program.key,
@@ -3480,7 +3686,7 @@ pub fn process_claim_default(
                         destination_collateral_account.key,
                         collateral_escrow_account.key,
                         &[],
-                        offer.collateral_amount,
+                        funder_collateral,
                     )?,
                     &[
                         collateral_escrow_account.clone(),
@@ -3489,13 +3695,65 @@ pub fn process_claim_default(
                     ],
                     &[&[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]]],
                 )?;
+
+                if treasury_collateral > 0 {
+                    let treasury_dest = treasury_dest_opt.ok_or(ClockLendError::InvalidTreasuryAccount)?;
+                    let treasury_tok = spl_token::state::Account::unpack(&treasury_dest.try_borrow_data()?)?;
+                    if treasury_tok.owner != expected_treasury_pda
+                        || treasury_tok.mint != offer.collateral_mint
+                    {
+                        return Err(ClockLendError::InvalidTreasuryAccount.into());
+                    }
+                    invoke_signed(
+                        &spl_token::instruction::transfer(
+                            token_program.key,
+                            collateral_escrow_account.key,
+                            treasury_dest.key,
+                            collateral_escrow_account.key,
+                            &[],
+                            treasury_collateral,
+                        )?,
+                        &[
+                            collateral_escrow_account.clone(),
+                            treasury_dest.clone(),
+                            token_program.clone(),
+                        ],
+                        &[&[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]]],
+                    )?;
+                }
+
+                if creator_collateral > 0 {
+                    let creator_dest = creator_collateral_opt.ok_or(ClockLendError::InvalidInstruction)?;
+                    invoke_signed(
+                        &spl_token::instruction::transfer(
+                            token_program.key,
+                            collateral_escrow_account.key,
+                            creator_dest.key,
+                            collateral_escrow_account.key,
+                            &[],
+                            creator_collateral,
+                        )?,
+                        &[
+                            collateral_escrow_account.clone(),
+                            creator_dest.clone(),
+                            token_program.clone(),
+                        ],
+                        &[&[ESCROW_SEED, loan_account.key.as_ref(), &[escrow_bump]]],
+                    )?;
+                }
             }
 
             // Checks-Effects-Interactions: Write terminal status AFTER transfers succeed
             offer.status = OfferStatus::Defaulted;
             offer.pack_into_slice(&mut loan_account.try_borrow_mut_data()?)?;
 
-            msg!("ClockLend: P2P Offer #{} defaulted! Collateral claimed by funder.", offer.offer_id);
+            msg!(
+                "ClockLend: P2P Offer #{} defaulted - {} to funder, {} to Treasury, {} back to creator",
+                offer.offer_id,
+                funder_collateral,
+                treasury_collateral,
+                creator_collateral
+            );
             Ok(())
         }
         _ => Err(ClockLendError::InvalidAccountData.into()),
@@ -3829,6 +4087,50 @@ pub fn process_withdraw_treasury(
 /// so they cannot drift apart again.
 const MAX_LTV_BPS: u16 = 7000;
 
+/// Interest is charged as a percentage of the PRINCIPAL over a 30-day period,
+/// not as an annual rate. A loan held for the full term therefore costs exactly
+/// the pool's `interest_rate_bps`; shorter terms prorate linearly (3 days = 10%
+/// of the charge). This replaced a 365-day annualisation, under which a desk
+/// setting "10%" actually charged 0.82% over a month — a number no lender can
+/// reason about, and one that made the staking discount economically invisible.
+///
+/// LOAD-BEARING: this constant and `MAX_LOAN_DURATION_SECS` must agree. If the
+/// term were allowed to exceed the period, a borrower would be charged more
+/// than the rate the desk set (a 90-day loan at "10%" would cost 30%).
+const INTEREST_PERIOD_SECS: u64 = 30 * 86400;
+
+/// Maximum interest a desk may charge, in bps of the principal per 30 days.
+/// 1000 bps = 10% per 30 days. That is 121.7% APR, which the UI discloses
+/// alongside the flat figure — consumer-credit rules in most jurisdictions
+/// expect the annualised cost to be shown, and the flat number alone is the
+/// smaller-looking one.
+const MAX_INTEREST_RATE_BPS: u16 = 1000;
+
+/// Longest loan term, for pool loans and P2P offers alike. Deliberately equal
+/// to `INTEREST_PERIOD_SECS` — see the note there.
+const MAX_LOAN_DURATION_SECS: i64 = 30 * 86400;
+
+/// Fixed bond, in SKR base units, for the discount being claimed. Bands are
+/// INCLUSIVE of their upper bound (500 bps -> 100 SKR, 501 bps -> 250 SKR).
+///
+/// The bond is a fixed deposit per band, deliberately NOT a function of the
+/// loan or of how much the borrower holds. Round-16 briefly tied it to
+/// `min(available, 10_000 SKR)`, which let a $1 loan lock — and on default
+/// forfeit — an entire 10,000 SKR position. A bond should be sized against the
+/// discount it buys.
+fn bond_for_discount_bps(discount_bps: u32) -> u64 {
+    const SKR: u64 = 1_000_000;
+    if discount_bps <= 500 {
+        100 * SKR
+    } else if discount_bps <= 1000 {
+        250 * SKR
+    } else if discount_bps <= 1800 {
+        500 * SKR
+    } else {
+        1_000 * SKR
+    }
+}
+
 /// Scale for acc_reward_per_share (dividend accounting).
 const YIELD_SCALE: u128 = 1_000_000_000_000;
 /// Minimum time a stake must be held before its dividends are claimable.
@@ -3841,6 +4143,75 @@ const ADMIN_FEED_MAX_PRICE_AGE_SECS: i64 = 600;
 /// (25%). Bounds the blast radius of a compromised oracle authority so a
 /// single write cannot reprice the entire protocol.
 const MAX_PRICE_MOVE_BPS: u64 = 2500;
+
+/// Platform's cut of the equity a defaulted loan releases back to the borrower.
+/// Charged ONLY on the collateral value left after the debt is covered, so it
+/// cannot push a position underwater or erode what the lender is owed — the
+/// fee is paid out of the borrower's own surplus, split with them.
+const PLATFORM_SURPLUS_FEE_BPS: u64 = 5000;
+
+/// Resolve a usable collateral price from an optional feed account, applying the
+/// same checks `process_borrow_from_pool` applies when pricing a borrow.
+///
+/// Returns `None` — NEVER an error — when the feed is absent, dead, mis-scaled or
+/// denominated in the wrong mint. Both default paths read that as "this position
+/// cannot be priced" and fall back to seizing the whole escrow, so a stale oracle
+/// degrades the outcome rather than blocking a default from ever settling.
+///
+/// Shared deliberately: the desk path and the pawn path must agree on what
+/// counts as a usable price, or the same feed would be trusted in one place and
+/// not the other. `canonical_collateral_mint` is the feed's spelling of native
+/// SOL, which is what a SOL feed is keyed on.
+fn resolve_default_collateral_price(
+    oracle_acc: Option<&AccountInfo>,
+    program_id: &Pubkey,
+    collateral_mint: &Pubkey,
+    canonical_collateral_mint: &Pubkey,
+    is_native_sol: bool,
+    now: i64,
+) -> Option<u64> {
+    let oracle_acc = oracle_acc?;
+    if oracle_acc.owner != program_id || oracle_acc.data_is_empty() {
+        msg!("ClockLend: Unprovisioned collateral feed on default - falling back to full seizure");
+        return None;
+    }
+
+    let data = match oracle_acc.try_borrow_data() {
+        Ok(d) => d,
+        Err(_) => {
+            msg!("ClockLend: Unreadable collateral feed on default - falling back to full seizure");
+            return None;
+        }
+    };
+    let feed = match PriceFeed::unpack_from_slice(&data) {
+        Ok(f) => f,
+        Err(_) => {
+            msg!("ClockLend: Unreadable collateral feed on default - falling back to full seizure");
+            return None;
+        }
+    };
+
+    // The feed's declared scale must match the collateral's denomination (the
+    // C-1 guard from BorrowFromPool): a feed published with the wrong decimals
+    // would mis-price the surplus by 10^delta.
+    let expected_decimals: u8 = if is_native_sol { 9 } else { 6 };
+    let fresh = feed.last_updated_at > 0
+        && now.saturating_sub(feed.last_updated_at)
+            <= feed.max_staleness_seconds.min(ADMIN_FEED_MAX_PRICE_AGE_SECS);
+    let mint_ok = feed.mint == *collateral_mint || feed.mint == *canonical_collateral_mint;
+
+    if feed.is_initialized
+        && feed.price_micro_usd > 0
+        && mint_ok
+        && feed.decimals == expected_decimals
+        && fresh
+    {
+        Some(feed.price_micro_usd)
+    } else {
+        msg!("ClockLend: Unusable collateral feed on default - falling back to full seizure");
+        None
+    }
+}
 
 /// Credit `amount` to the vault WITHOUT moving `acc_reward_per_share`.
 ///

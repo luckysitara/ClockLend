@@ -58,13 +58,19 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
 
   const availableUsdc = walletAssets?.usdcBalance || 0;
 
-  // Dynamic Rotating Showcase Banners (Verified on-chain data & features only)
+  // Rotating showcase banners.
+  //
+  // These are static copy, so every line here is a claim the reader will take as
+  // fact. Keep them to things the program actually does — no named desks, no
+  // capacity figures, no invented rates. (A previous version advertised a
+  // "Solana Foundation Desk" at "$250,000 USDC Capacity": a fabricated desk,
+  // attributed to a real organisation, over a hardcoded number.)
   const BANNER_CARDS = [
     {
-      id: 'lowest_apr',
-      badge: 'LOWEST APR DESK',
-      title: 'Solana Foundation Desk',
-      sub: '8.5% Fixed APR • $250,000 USDC Capacity',
+      id: 'flat_rate',
+      badge: 'ONE FLAT RATE',
+      title: 'No Compound Interest',
+      sub: 'Interest is a fixed percentage of the amount borrowed, capped at 10% per 30 days',
       cta: 'Borrow Now →',
       onPress: onNavigateBorrow,
       gradient: ['#1E3A8A', '#1D4ED8', '#2563EB'] as const,
@@ -80,9 +86,9 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
     },
     {
       id: 'social_grace',
-      badge: 'ZERO LIQUIDATION CLIFF',
-      title: '24-Hour Social Grace',
-      sub: 'Escrow protection against sudden market flash crashes',
+      badge: '24-HOUR GRACE',
+      title: 'A Day Past Due, Not a Bot',
+      sub: 'No automatic liquidation — a desk must wait out the grace window before it can act',
       cta: 'Explore Desks →',
       onPress: onNavigateDesks,
       gradient: ['#042F2E', '#0D9488', '#14B8A6'] as const,

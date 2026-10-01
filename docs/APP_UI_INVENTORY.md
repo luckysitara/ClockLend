@@ -1,6 +1,13 @@
 > Companion document to [`docs/APP_SPEC.md`](APP_SPEC.md). This is the exhaustive UI
 > inventory — every screen, control and user-visible string — extracted from the source.
 > Read this together with the system-design half in APP_SPEC.md.
+>
+> **STALE — read the source, not this file, for exact strings.** This was captured at one
+> point in time and the UI has since moved (the onboarding caveat list and the SKR tier
+> copy are gone or rewritten). Line numbers and quoted strings below will not all match.
+> What is still worth reading is the *structure* — which screens exist and what each one
+> shows. Quoted SKR-tier economics in this file have been corrected to the continuous
+> 1%→25% model; if you find another that disagrees with `onChainService.ts`, the code wins.
 
 # ClockLend Mobile — Complete UI Inventory (source material for user-flow design)
 
@@ -324,7 +331,7 @@ No other text; four icon-only chips. Unused style remnants (`avatarText`, `subte
 | 463 | `+24h Social` | Grace metric |
 | 473 | `$${poolLiquidity.toLocaleString()}` / `—` | Liquidity metric |
 | 480 | `SKR Bond Tier (on-chain)` | Bond-tier metric label |
-| 482 | `Tier 2 · 50% APR discount` / `Tier 1 · 25% APR discount` / `No SKR bond · 0% APR discount` | via `tierDiscountLabel()` |
+| 482 | `VIP Tier · 25% APR discount` / `Active Tier · 1% to 25% APR discount` / `No SKR bond · 0% APR discount` | via `tierDiscountLabel()` |
 | 486–487 | `{lockedSkr.toLocaleString()} SKR bonded to active loans: {availableSkr.toLocaleString()} SKR counts toward the tier.` | Bond caption (when `lockedSkr > 0`) |
 | 488 | ` Rate ${baseApr.toFixed(2)}% → ${effectiveApr.toFixed(2)}% APR.` (leading space) | Rate-change suffix; `''` when discount is 0 |
 | 497 | `Origination fee {(origination.feeBps / 100).toFixed(2)}% ({collateralType} collateral)` | Fee disclosure |
@@ -408,7 +415,7 @@ Order, top to bottom:
 | # | Section | Contents |
 |---|---|---|
 | 1 | *(unboxed header)* | Avatar, `{skrHandle}`, `SEED VAULT`, `{shorten(pubkey)} • Solana Mainnet`; then `On-Chain Reputation` and the score at 32px/900. Unboxed and largest by type scale so it reads as a screen title, not another panel. |
-| 2 | `CREDIT` | Tier pill (`Tier 2 · 50% APR discount` / `Tier 1 · 25% APR discount` / `No SKR bond · 0% APR discount`) in the section header; `SKR Bond Tier Progression` + bar + `Next: Tier …` perk caption; `{n} loans completed on time • {m} defaults`. |
+| 2 | `CREDIT` | Tier pill (`VIP Tier · 25% APR discount` / `Active Tier · 1% to 25% APR discount` / `No SKR bond · 0% APR discount`) in the section header; `SKR Bond Tier Progression` + bar + `Next: Tier …` perk caption; `{n} loans completed on time • {m} defaults`. |
 | 3 | `STAKING & EARNINGS` | `$10,000 SKR Track` pill; the tier description; staked figure (26px/800); presets `+500 / +1000 / +2500 / +5000 SKR`; `↩ Unstake {n} SKR`; then a sub-label `SKR PROTOCOL YIELD` with the accrued/claim row. |
 | 4 | `WALLET` | `Wallet Holdings (Solana Mainnet)`, `${total}`, then `SOL Balance` / `USDC` / `SKR Tokens` as three ruled rows (was a boxed 3-up grid), then `View & Manage Wallet Assets` with a chevron. |
 | 5 | `SECURITY` | Methods badge (`PIN + Biometrics (2/2 Active)` / `PIN Only (1/2 Active)` / `Protection Disabled`); `Require PIN on App Launch` toggle; `Fingerprint / Face ID` toggle; `Change PIN` / `Set Custom PIN`; `Lock Now`. Below a rule: `Seed Vault Enclave` and `Audited Protocol Logic`. |
@@ -489,7 +496,7 @@ A source comment at 131–136 records that no reputation-delta row exists — qu
 
 ### 3.14 Shared string helpers — `src/solana/onChainService.ts`
 
-`tierDiscountLabel` (199–203): `Tier 2 · 50% APR discount` / `Tier 1 · 25% APR discount` / `No SKR bond · 0% APR discount`.
+`tierDiscountLabel` (199–203): `VIP Tier · 25% APR discount` / `Active Tier · 1% to 25% APR discount` / `No SKR bond · 0% APR discount`.
 
 `describeTransactionError` (1966–1991) — the subtitle for every generic borrow failure:
 - `Transaction was cancelled in your wallet.`
@@ -531,7 +538,7 @@ note `While the window is open, the program rejects any claim against your escro
 
 **Slide 3** (`variant: 'statement'`, kicker `BEFORE YOU CONNECT`): statement `Your key stays in the Seeker Seed Vault.` (set against a primary-coloured left rule); body `Signing happens on the device. This app holds no key material and cannot move your funds on its own.`; then caveat title `WHAT THIS DOES NOT CLAIM` with three plain-text rows:
 
-- `Staking SKR discounts the interest rate only — 25% off at 100 SKR, 50% at 1,000 SKR. It never raises your LTV.`
+- `Staking SKR discounts the interest rate only — the discount slides from 1% at 100 SKR to 25% at 10,000 SKR. It never raises your LTV.` *(string since removed from the app — see the staleness note at the top)*
 - `No insurance, no principal protection, no guaranteed return.`
 - `The program is upgradeable by its authority key; prices are admin-fed and rejected past 600 seconds.`
 

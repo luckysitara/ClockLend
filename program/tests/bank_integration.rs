@@ -690,7 +690,7 @@ async fn test_bank_borrow_rejects_overwriting_defaulted_loan() {
 }
 
 #[tokio::test]
-async fn test_bank_claim_default_sol_loan_requires_skr_slash_destination() {
+async fn test_bank_claim_default_needs_no_skr_slash_destination() {
     let program_id = Pubkey::new_unique();
     let mut program_test = ProgramTest::new(
         "clock_lend",
@@ -780,7 +780,10 @@ async fn test_bank_claim_default_sol_loan_requires_skr_slash_destination() {
         due_time: 2000,
         grace_period_expires: 0, // already expired
         status: LoanStatus::InGracePeriod,
-        locked_skr: 0,
+        // 100 SKR — the flat bond for a 100-SKR stake (1% discount band). The
+        // slash is the whole bond, so this must be non-zero for the slash path
+        // to be reached at all.
+        locked_skr: 100_000_000,
     };
     program_test.add_account(
         loan_pda,
@@ -814,7 +817,7 @@ async fn test_bank_claim_default_sol_loan_requires_skr_slash_destination() {
         total_loans_completed: 0,
         total_loans_defaulted: 0,
         reputation_score: 5000,
-        locked_skr: 0,
+        locked_skr: 100_000_000, // the loan's 100 SKR bond
     };
     program_test.add_account(
         profile_pda,
@@ -868,26 +871,34 @@ async fn test_bank_claim_default_sol_loan_requires_skr_slash_destination() {
     let mut transaction = Transaction::new_with_payer(&[instruction], Some(&payer.pubkey()));
     transaction.sign(&[&payer, &authority], recent_blockhash);
 
-    // F-06: Because destination_collateral_account is a wallet and cannot receive SPL tokens,
-    // and no independent SKR token account was provided, the transaction MUST fail specifically
-    // with InvalidInstruction (Custom(0)) at the slash check, rather than on the treasury check or swallowing the error!
+    // Nothing is slashed on default any more, so a default no longer requires a
+    // SKR slash destination at all. This loan has staked SKR and a live bond and
+    // NO SKR token account is supplied — it must still settle.
     let result = banks_client.process_transaction(transaction).await;
-    let err = result.expect_err("ClaimDefault on SOL loan with staked SKR MUST fail when no valid SKR destination is provided!");
-    match err {
-        BanksClientError::TransactionError(TransactionError::InstructionError(0, InstructionError::Custom(code))) => {
-            assert_eq!(
-                code,
-                ClockLendError::InvalidInstruction as u32,
-                "Expected InvalidInstruction (Custom(0)) due to missing SKR slash destination, got Custom({})",
-                code
-            );
-        }
-        other => panic!("Expected TransactionError::InstructionError::Custom(InvalidInstruction), got {:?}", other),
-    }
+    assert!(
+        result.is_ok(),
+        "ClaimDefault must settle without any SKR slash destination — nothing is slashed. Result: {:?}",
+        result
+    );
+
+    // The stake is untouched: the bond was RELEASED, not seized.
+    let skr_escrow_acc = banks_client.get_account(skr_escrow_pda).await.unwrap().unwrap();
+    let skr_escrow_tok = spl_token::state::Account::unpack(&skr_escrow_acc.data).unwrap();
+    assert_eq!(
+        skr_escrow_tok.amount, 100_000_000,
+        "no SKR may leave the borrower's escrow on default"
+    );
+
+    let profile_acc = banks_client.get_account(profile_pda).await.unwrap().unwrap();
+    let profile = UserProfile::unpack_from_slice(&profile_acc.data).unwrap();
+    assert_eq!(profile.staked_skr, 100_000_000, "stake must be untouched by the default");
+    assert_eq!(profile.locked_skr, 0, "the bond must be RELEASED, not seized");
+    assert_eq!(profile.total_loans_defaulted, 1, "the default must still be recorded");
+    assert_eq!(profile.reputation_score, 4000, "reputation must still take the 1,000-point hit");
 }
 
 #[tokio::test]
-async fn test_bank_claim_default_sol_loan_with_skr_slash_success() {
+async fn test_bank_claim_default_takes_no_skr() {
     let program_id = Pubkey::new_unique();
     let mut program_test = ProgramTest::new(
         "clock_lend",
@@ -975,7 +986,10 @@ async fn test_bank_claim_default_sol_loan_with_skr_slash_success() {
         due_time: 2000,
         grace_period_expires: 0, // expired
         status: LoanStatus::InGracePeriod,
-        locked_skr: 0,
+        // The bond locked for this loan: 100 SKR (the flat band for a 1,000 SKR
+        // stake, which earns a 3.18% discount). On default the WHOLE bond is
+        // slashed, so the stake falls to 900 SKR — the rest is untouched.
+        locked_skr: 100_000_000,
     };
     program_test.add_account(
         loan_pda,
@@ -1003,11 +1017,11 @@ async fn test_bank_claim_default_sol_loan_with_skr_slash_success() {
         discriminator: UserProfile::DISCRIMINATOR,
         is_initialized: true,
         user: borrower.pubkey(),
-        staked_skr: 100_000_000, // 100 SKR
+        staked_skr: 1_000_000_000, // 1,000 SKR
         total_loans_completed: 0,
         total_loans_defaulted: 0,
         reputation_score: 5000,
-        locked_skr: 0,
+        locked_skr: 100_000_000, // the loan's 100 SKR bond
     };
     program_test.add_account(
         profile_pda,
@@ -1020,12 +1034,12 @@ async fn test_bank_claim_default_sol_loan_with_skr_slash_success() {
         },
     );
 
-    // Borrower's skr_escrow with 100 SKR
+    // Borrower's skr_escrow holding the full 1,000 SKR stake
     program_test.add_account(
         skr_escrow_pda,
         Account {
             lamports: 10_000_000,
-            data: token_acct_data(SKR_MINT, skr_escrow_pda, 100_000_000),
+            data: token_acct_data(SKR_MINT, skr_escrow_pda, 1_000_000_000),
             owner: spl_token::id(),
             executable: false,
             rent_epoch: 0,
@@ -1073,23 +1087,25 @@ async fn test_bank_claim_default_sol_loan_with_skr_slash_success() {
     transaction.sign(&[&payer, &authority], recent_blockhash);
 
     let result = banks_client.process_transaction(transaction).await;
-    assert!(result.is_ok(), "ClaimDefault MUST succeed when dedicated SKR slash destination is provided! Result: {:?}", result);
+    assert!(result.is_ok(), "ClaimDefault MUST succeed. Result: {:?}", result);
 
-    // Verify by execution:
-    // 1. Escrow balance slashed from 100_000_000 to 80_000_000 (20% slash)
+    // Nothing is slashed on default. The borrower keeps the whole 1,000 SKR
+    // stake and only the bond LOCK is released; the lender is made whole from
+    // the collateral instead.
     let updated_skr_escrow = banks_client.get_account(skr_escrow_pda).await.unwrap().unwrap();
     let skr_escrow_tok = spl_token::state::Account::unpack(&updated_skr_escrow.data).unwrap();
-    assert_eq!(skr_escrow_tok.amount, 80_000_000, "SKR escrow balance must be 80,000,000");
+    assert_eq!(skr_escrow_tok.amount, 1_000_000_000, "no SKR may leave the escrow on default");
 
-    // 2. Authority SKR slash destination credited with 20_000_000
+    // The lender's SKR account receives nothing, even though it is supplied.
     let updated_slash_dest = banks_client.get_account(authority_skr_token.pubkey()).await.unwrap().unwrap();
     let slash_dest_tok = spl_token::state::Account::unpack(&updated_slash_dest.data).unwrap();
-    assert_eq!(slash_dest_tok.amount, 20_000_000, "Slash destination must receive 20,000,000 SKR");
+    assert_eq!(slash_dest_tok.amount, 0, "the lender's SKR account must receive nothing");
 
-    // 3. UserProfile staked_skr debited to 80_000_000 matching escrow exactly (no desync)
+    // The profile's stake is untouched; only the bond lock is released.
     let updated_profile_acc = banks_client.get_account(profile_pda).await.unwrap().unwrap();
     let updated_profile = UserProfile::unpack_from_slice(&updated_profile_acc.data).unwrap();
-    assert_eq!(updated_profile.staked_skr, 80_000_000, "UserProfile staked_skr must match escrow balance");
+    assert_eq!(updated_profile.staked_skr, 1_000_000_000, "stake must be untouched by the default");
+    assert_eq!(updated_profile.locked_skr, 0, "the bond must be RELEASED, not seized");
     assert_eq!(updated_profile.total_loans_defaulted, 1, "Default count must increment");
 
     // 4. Loan marked Defaulted
@@ -1100,7 +1116,188 @@ async fn test_bank_claim_default_sol_loan_with_skr_slash_success() {
 }
 
 #[tokio::test]
-async fn test_bank_claim_default_syncs_borrower_yield_position() {
+async fn test_bank_claim_default_sol_priced_split_returns_borrower_surplus() {
+    // Round-16: with a usable collateral feed the lender is paid only the debt,
+    // the platform takes half of the released surplus and the borrower keeps the
+    // rest — while the escrow still drains to exactly zero.
+    let program_id = Pubkey::new_unique();
+    let mut program_test = ProgramTest::new(
+        "clock_lend",
+        program_id,
+        processor!(process_instruction),
+    );
+
+    let authority = Keypair::new();
+    let borrower = Keypair::new();
+    let pool_id: u64 = 1;
+    let pool_id_bytes = pool_id.to_le_bytes();
+
+    let (pool_pda, _) = Pubkey::find_program_address(
+        &[POOL_SEED, authority.pubkey().as_ref(), &pool_id_bytes],
+        &program_id,
+    );
+    let (vault_pda, _) = Pubkey::find_program_address(&[VAULT_SEED, pool_pda.as_ref()], &program_id);
+
+    let loan_id: u64 = 100;
+    let loan_id_bytes = loan_id.to_le_bytes();
+    let (loan_pda, _) = Pubkey::find_program_address(
+        &[LOAN_SEED, pool_pda.as_ref(), borrower.pubkey().as_ref(), &loan_id_bytes],
+        &program_id,
+    );
+    let (escrow_pda, _) = Pubkey::find_program_address(&[ESCROW_SEED, loan_pda.as_ref()], &program_id);
+    let (treasury_pda, _) = Pubkey::find_program_address(&[TREASURY_SEED], &program_id);
+
+    // Global native-SOL feed: $150.00 / SOL, fresh.
+    let (sol_oracle_pda, _) = Pubkey::find_program_address(
+        &[ORACLE_SEED, spl_token::native_mint::id().as_ref()],
+        &program_id,
+    );
+    let sol_feed = PriceFeed {
+        discriminator: PriceFeed::DISCRIMINATOR,
+        is_initialized: true,
+        mint: spl_token::native_mint::id(),
+        price_micro_usd: 150_000_000,
+        decimals: 9,
+        last_updated_at: now_secs(),
+        max_staleness_seconds: 86400,
+        authority: Pubkey::default(),
+    };
+    program_test.add_account(
+        sol_oracle_pda,
+        Account {
+            lamports: 10_000_000,
+            data: borsh::to_vec(&sol_feed).unwrap(),
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    program_test.add_account(
+        treasury_pda,
+        Account {
+            lamports: 10_000_000,
+            data: vec![],
+            owner: solana_program::system_program::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    let pool = LendingPool {
+        discriminator: LendingPool::DISCRIMINATOR,
+        is_initialized: true,
+        pool_type: PoolType::Individual,
+        authority: authority.pubkey(),
+        name: [0u8; 32],
+        liquidity_mint: USDC_DEVNET_MINT,
+        vault_pda,
+        total_liquidity: 10_000_000_000,
+        total_borrowed: 100_000_000,
+        staked_skr_amount: 0,
+        interest_rate_bps: 600,
+        max_ltv_bps: 8500,
+        min_duration: 86400,
+        max_duration: 86400 * 30,
+        loans_originated: 1,
+        loans_repaid: 0,
+        is_oracle_free: true,
+        pool_id,
+        has_custom_oracle: false,
+    };
+    program_test.add_account(
+        pool_pda,
+        Account {
+            lamports: 10_000_000,
+            data: borsh::to_vec(&pool).unwrap(),
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    let loan = LoanOrder {
+        discriminator: LoanOrder::DISCRIMINATOR,
+        is_active: true,
+        loan_id,
+        borrower: borrower.pubkey(),
+        pool: pool_pda,
+        principal_amount: 100_000_000,   // $100.00
+        collateral_mint: Pubkey::default(), // Native SOL
+        collateral_amount: 1_000_000_000,   // 1 SOL = $150.00
+        interest_due: 1_000_000,         // $1.00
+        origination_time: 1000,
+        due_time: 2000,
+        grace_period_expires: 0, // expired
+        status: LoanStatus::InGracePeriod,
+        locked_skr: 0,
+    };
+    program_test.add_account(
+        loan_pda,
+        Account {
+            lamports: 10_000_000,
+            data: borsh::to_vec(&loan).unwrap(),
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    program_test.add_account(
+        escrow_pda,
+        Account {
+            lamports: 1_000_000_000,
+            data: vec![],
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    let (banks_client, payer, recent_blockhash) = program_test.start().await;
+
+    let accounts = vec![
+        AccountMeta::new(authority.pubkey(), true),
+        AccountMeta::new(loan_pda, false),
+        AccountMeta::new(escrow_pda, false),
+        AccountMeta::new(authority.pubkey(), false), // Native SOL lender destination
+        AccountMeta::new(pool_pda, false),
+        AccountMeta::new(treasury_pda, false),
+        AccountMeta::new_readonly(solana_program::system_program::id(), false),
+        AccountMeta::new_readonly(sol_oracle_pda, false), // collateral price feed
+        AccountMeta::new(borrower.pubkey(), false),       // borrower's surplus destination
+    ];
+
+    let instruction = Instruction {
+        program_id,
+        accounts,
+        data: borsh::to_vec(&ClockLendInstruction::ClaimDefault).unwrap(),
+    };
+
+    let mut transaction = Transaction::new_with_payer(&[instruction], Some(&payer.pubkey()));
+    transaction.sign(&[&payer, &authority], recent_blockhash);
+
+    let result = banks_client.process_transaction(transaction).await;
+    assert!(result.is_ok(), "Priced ClaimDefault MUST succeed! Result: {:?}", result);
+
+    // debt = $101.00 -> 101_000_000 * 1e9 / 150_000_000 = 673_333_333 lamports
+    // surplus = 326_666_667 -> platform 163_333_333, borrower 163_333_334
+    // The drained escrow is purged by the runtime, so a missing account is 0.
+    let escrow_lamports = banks_client.get_account(escrow_pda).await.unwrap()
+        .map(|acc| acc.lamports).unwrap_or(0);
+    assert_eq!(escrow_lamports, 0, "Escrow must drain to exactly zero");
+
+    let lender = banks_client.get_account(authority.pubkey()).await.unwrap().unwrap();
+    assert_eq!(lender.lamports, 673_333_333, "Lender must receive only the debt");
+
+    let treasury = banks_client.get_account(treasury_pda).await.unwrap().unwrap();
+    assert_eq!(treasury.lamports, 10_000_000 + 163_333_333, "Treasury must receive half the surplus");
+
+    let borrower_wallet = banks_client.get_account(borrower.pubkey()).await.unwrap().unwrap();
+    assert_eq!(borrower_wallet.lamports, 163_333_334, "Borrower must keep the rest of the surplus");
+}
+
+#[tokio::test]
+async fn test_bank_claim_default_leaves_yield_position_untouched() {
     let program_id = Pubkey::new_unique();
     let authority = Keypair::new();
     let borrower = Keypair::new();
@@ -1194,7 +1391,7 @@ async fn test_bank_claim_default_syncs_borrower_yield_position() {
         due_time: 2000,
         grace_period_expires: 0, // expired
         status: LoanStatus::InGracePeriod,
-        locked_skr: 0,
+        locked_skr: 100_000_000, // the whole bond is forfeited on default
     };
     program_test.add_account(
         loan_pda,
@@ -1244,11 +1441,11 @@ async fn test_bank_claim_default_syncs_borrower_yield_position() {
         discriminator: clock_lend::state::DISCRIMINATOR_PROFILE,
         is_initialized: true,
         user: borrower.pubkey(),
-        staked_skr: 100_000_000,
+        staked_skr: 1_000_000_000, // 1,000 SKR
         total_loans_completed: 0,
         total_loans_defaulted: 0,
         reputation_score: 10000,
-        locked_skr: 0,
+        locked_skr: 100_000_000, // the loan's 100 SKR bond
     };
     program_test.add_account(
         profile_pda,
@@ -1265,7 +1462,7 @@ async fn test_bank_claim_default_syncs_borrower_yield_position() {
         skr_escrow_pda,
         Account {
             lamports: 10_000_000,
-            data: token_acct_data(SKR_MINT, skr_escrow_pda, 100_000_000),
+            data: token_acct_data(SKR_MINT, skr_escrow_pda, 1_000_000_000),
             owner: spl_token::id(),
             executable: false,
             rent_epoch: 0,
@@ -1284,7 +1481,7 @@ async fn test_bank_claim_default_syncs_borrower_yield_position() {
         },
     );
 
-    // Yield vault with 100_000_000 total staked SKR
+    // Yield vault with 1,000_000_000 total staked SKR
     let (yield_vault_pda, _) = Pubkey::find_program_address(
         &[SKR_YIELD_VAULT_SEED, reward_mint.as_ref()],
         &program_id,
@@ -1294,7 +1491,7 @@ async fn test_bank_claim_default_syncs_borrower_yield_position() {
         is_initialized: true,
         authority: authority.pubkey(),
         reward_mint,
-        total_staked_skr: 100_000_000,
+        total_staked_skr: 1_000_000_000,
         acc_reward_per_share: 0,
         total_rewards_distributed: 0,
         pending_rewards: 0,
@@ -1313,7 +1510,7 @@ async fn test_bank_claim_default_syncs_borrower_yield_position() {
         },
     );
 
-    // Borrower's UserYieldPosition with 100_000_000 staked SKR
+    // Borrower's UserYieldPosition with 1,000_000_000 staked SKR
     let (borrower_yield_pda, _) = Pubkey::find_program_address(
         &[USER_YIELD_SEED, borrower.pubkey().as_ref(), reward_mint.as_ref()],
         &program_id,
@@ -1323,7 +1520,7 @@ async fn test_bank_claim_default_syncs_borrower_yield_position() {
         is_initialized: true,
         user: borrower.pubkey(),
         reward_mint,
-        staked_skr: 100_000_000,
+        staked_skr: 1_000_000_000,
         reward_debt: 0,
         accrued_rewards: 0,
         total_claimed: 0,
@@ -1375,26 +1572,30 @@ async fn test_bank_claim_default_syncs_borrower_yield_position() {
     let result = banks_client.process_transaction(transaction).await;
     assert!(result.is_ok(), "ClaimDefault with yield sync MUST succeed! Result: {:?}", result);
 
-    // Verify 20% slash (20_000_000 SKR) synced across all accounts:
-    // 1. Escrow debited
+    // A default takes no SKR, so every stake-bearing account must be left
+    // EXACTLY as it was. (This test used to check that the slash was synced
+    // down across the profile, the yield position and the vault; with no slash
+    // the property worth pinning is that nothing drifts.)
+    // 1. Escrow untouched
     let updated_skr_escrow = banks_client.get_account(skr_escrow_pda).await.unwrap().unwrap();
     let skr_escrow_tok = spl_token::state::Account::unpack(&updated_skr_escrow.data).unwrap();
-    assert_eq!(skr_escrow_tok.amount, 80_000_000);
+    assert_eq!(skr_escrow_tok.amount, 1_000_000_000, "escrow must be untouched on default");
 
-    // 2. Profile debited
+    // 2. Profile untouched (stake intact, bond lock released)
     let updated_profile_acc = banks_client.get_account(profile_pda).await.unwrap().unwrap();
     let updated_profile = UserProfile::unpack_from_slice(&updated_profile_acc.data).unwrap();
-    assert_eq!(updated_profile.staked_skr, 80_000_000);
+    assert_eq!(updated_profile.staked_skr, 1_000_000_000, "stake must be untouched");
+    assert_eq!(updated_profile.locked_skr, 0, "the bond lock must be released");
 
-    // 3. High-2 fix: UserYieldPosition staked_skr debited to 80_000_000
+    // 3. UserYieldPosition untouched
     let updated_pos_acc = banks_client.get_account(borrower_yield_pda).await.unwrap().unwrap();
     let updated_pos = UserYieldPosition::unpack_from_slice(&updated_pos_acc.data).unwrap();
-    assert_eq!(updated_pos.staked_skr, 80_000_000, "Borrower yield position must be synced down to 80,000,000");
+    assert_eq!(updated_pos.staked_skr, 1_000_000_000, "Borrower yield position must be untouched by the default");
 
-    // 4. High-2 fix: SkrYieldVault total_staked_skr debited to 80_000_000 (no denominator inflation)
+    // 4. SkrYieldVault untouched — no shares removed, no denominator drift
     let updated_vault_acc = banks_client.get_account(yield_vault_pda).await.unwrap().unwrap();
     let updated_vault = SkrYieldVault::unpack_from_slice(&updated_vault_acc.data).unwrap();
-    assert_eq!(updated_vault.total_staked_skr, 80_000_000, "Vault total_staked_skr must be synced down to 80,000,000");
+    assert_eq!(updated_vault.total_staked_skr, 1_000_000_000, "Vault total_staked_skr must be untouched by the default");
 }
 
 #[tokio::test]
@@ -1578,6 +1779,216 @@ async fn test_bank_claim_default_skr_collateral_success() {
     let updated_pool_acc = banks_client.get_account(pool_pda).await.unwrap().unwrap();
     let updated_pool = LendingPool::unpack_from_slice(&updated_pool_acc.data).unwrap();
     assert_eq!(updated_pool.total_borrowed, 0, "total_borrowed must be decremented on default");
+}
+
+#[tokio::test]
+async fn test_bank_claim_default_skr_priced_split_returns_borrower_surplus() {
+    // Round-16 SPL branch: the same debt-only split as the native test, but the
+    // shares leave the escrow as SPL token transfers — and the borrower's share
+    // must land in a token account the borrower actually owns.
+    let program_id = Pubkey::new_unique();
+    let mut program_test = ProgramTest::new(
+        "clock_lend",
+        program_id,
+        processor!(process_instruction),
+    );
+
+    let authority = Keypair::new();
+    let borrower = Keypair::new();
+    let pool_id: u64 = 1;
+    let pool_id_bytes = pool_id.to_le_bytes();
+
+    let (pool_pda, _) = Pubkey::find_program_address(
+        &[POOL_SEED, authority.pubkey().as_ref(), &pool_id_bytes],
+        &program_id,
+    );
+    let (vault_pda, _) = Pubkey::find_program_address(&[VAULT_SEED, pool_pda.as_ref()], &program_id);
+
+    let loan_id: u64 = 200;
+    let loan_id_bytes = loan_id.to_le_bytes();
+    let (loan_pda, _) = Pubkey::find_program_address(
+        &[LOAN_SEED, pool_pda.as_ref(), borrower.pubkey().as_ref(), &loan_id_bytes],
+        &program_id,
+    );
+    let (escrow_pda, _) = Pubkey::find_program_address(&[ESCROW_SEED, loan_pda.as_ref()], &program_id);
+    let (treasury_pda, _) = Pubkey::find_program_address(&[TREASURY_SEED], &program_id);
+
+    // Global SKR feed: $0.02 (6-decimal collateral).
+    let (skr_oracle_pda, _) = Pubkey::find_program_address(&[ORACLE_SEED, SKR_MINT.as_ref()], &program_id);
+    let skr_feed = PriceFeed {
+        discriminator: PriceFeed::DISCRIMINATOR,
+        is_initialized: true,
+        mint: SKR_MINT,
+        price_micro_usd: 20_000,
+        decimals: 6,
+        last_updated_at: now_secs(),
+        max_staleness_seconds: 86400,
+        authority: Pubkey::default(),
+    };
+    program_test.add_account(
+        skr_oracle_pda,
+        Account {
+            lamports: 10_000_000,
+            data: borsh::to_vec(&skr_feed).unwrap(),
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    let pool = LendingPool {
+        discriminator: LendingPool::DISCRIMINATOR,
+        is_initialized: true,
+        pool_type: PoolType::Individual,
+        authority: authority.pubkey(),
+        name: [0u8; 32],
+        liquidity_mint: USDC_DEVNET_MINT,
+        vault_pda,
+        total_liquidity: 10_000_000_000,
+        total_borrowed: 100_000_000,
+        staked_skr_amount: 0,
+        interest_rate_bps: 600,
+        max_ltv_bps: 8500,
+        min_duration: 86400,
+        max_duration: 86400 * 30,
+        loans_originated: 1,
+        loans_repaid: 0,
+        is_oracle_free: true,
+        pool_id,
+        has_custom_oracle: false,
+    };
+    program_test.add_account(
+        pool_pda,
+        Account {
+            lamports: 10_000_000,
+            data: borsh::to_vec(&pool).unwrap(),
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    let loan = LoanOrder {
+        discriminator: LoanOrder::DISCRIMINATOR,
+        is_active: true,
+        loan_id,
+        borrower: borrower.pubkey(),
+        pool: pool_pda,
+        principal_amount: 100_000_000, // $100.00
+        collateral_mint: SKR_MINT,     // SPL (SKR) collateral
+        collateral_amount: 10_000_000_000, // 10,000 SKR = $200.00
+        interest_due: 1_000_000,       // $1.00
+        origination_time: 1000,
+        due_time: 2000,
+        grace_period_expires: 0, // expired
+        status: LoanStatus::InGracePeriod,
+        locked_skr: 0,
+    };
+    program_test.add_account(
+        loan_pda,
+        Account {
+            lamports: 10_000_000,
+            data: borsh::to_vec(&loan).unwrap(),
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    // Collateral escrow: token account holding 10,000 SKR.
+    program_test.add_account(
+        escrow_pda,
+        Account {
+            lamports: 10_000_000,
+            data: token_acct_data(SKR_MINT, escrow_pda, 10_000_000_000),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    // Lender destination: authority-owned SKR token account.
+    let authority_skr_token = Keypair::new();
+    program_test.add_account(
+        authority_skr_token.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_acct_data(SKR_MINT, authority.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    // Platform treasury: treasury-PDA-owned SKR token account.
+    let treasury_skr_token = Keypair::new();
+    program_test.add_account(
+        treasury_skr_token.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_acct_data(SKR_MINT, treasury_pda, 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    // Borrower's own SKR token account (receives their surplus share).
+    let borrower_skr_token = Keypair::new();
+    program_test.add_account(
+        borrower_skr_token.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_acct_data(SKR_MINT, borrower.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    let (banks_client, payer, recent_blockhash) = program_test.start().await;
+
+    let accounts = vec![
+        AccountMeta::new(authority.pubkey(), true),
+        AccountMeta::new(loan_pda, false),
+        AccountMeta::new(escrow_pda, false),
+        AccountMeta::new(authority_skr_token.pubkey(), false), // SPL lender destination
+        AccountMeta::new(pool_pda, false),
+        AccountMeta::new(treasury_skr_token.pubkey(), false), // SPL treasury destination
+        AccountMeta::new_readonly(spl_token::id(), false),
+        AccountMeta::new_readonly(skr_oracle_pda, false),          // collateral price feed
+        AccountMeta::new(borrower_skr_token.pubkey(), false),      // borrower's surplus destination
+    ];
+
+    let instruction = Instruction {
+        program_id,
+        accounts,
+        data: borsh::to_vec(&ClockLendInstruction::ClaimDefault).unwrap(),
+    };
+
+    let mut transaction = Transaction::new_with_payer(&[instruction], Some(&payer.pubkey()));
+    transaction.sign(&[&payer, &authority], recent_blockhash);
+
+    let result = banks_client.process_transaction(transaction).await;
+    assert!(result.is_ok(), "Priced SKR ClaimDefault MUST succeed! Result: {:?}", result);
+
+    // debt = $101.00 -> 101_000_000 * 1e6 / 20_000 = 5,050,000,000 SKR units.
+    // surplus = 4,950,000,000 -> platform 2,475,000,000, borrower 2,475,000,000.
+    let updated_escrow = banks_client.get_account(escrow_pda).await.unwrap().unwrap();
+    let escrow_tok = spl_token::state::Account::unpack(&updated_escrow.data).unwrap();
+    assert_eq!(escrow_tok.amount, 0, "Escrow must drain to exactly zero");
+
+    let lender = banks_client.get_account(authority_skr_token.pubkey()).await.unwrap().unwrap();
+    let lender_tok = spl_token::state::Account::unpack(&lender.data).unwrap();
+    assert_eq!(lender_tok.amount, 5_050_000_000, "Lender must receive only the debt");
+
+    let treasury = banks_client.get_account(treasury_skr_token.pubkey()).await.unwrap().unwrap();
+    let treasury_tok = spl_token::state::Account::unpack(&treasury.data).unwrap();
+    assert_eq!(treasury_tok.amount, 2_475_000_000, "Treasury must receive half the surplus");
+
+    let borrower_dest = banks_client.get_account(borrower_skr_token.pubkey()).await.unwrap().unwrap();
+    let borrower_tok = spl_token::state::Account::unpack(&borrower_dest.data).unwrap();
+    assert_eq!(borrower_tok.amount, 2_475_000_000, "Borrower must keep the rest of the surplus");
 }
 
 #[tokio::test]
@@ -2164,7 +2575,7 @@ async fn test_bank_skr_bond_cannot_be_withdrawn_while_loan_is_active() {
         skr_escrow_pda,
         Account {
             lamports: 10_000_000,
-            data: token_acct_data(SKR_MINT, skr_escrow_pda, 1_000_000_000), // 1000 SKR staked
+            data: token_acct_data(SKR_MINT, skr_escrow_pda, 100_000_000), // 100 SKR staked
             owner: spl_token::id(),
             executable: false,
             rent_epoch: 0,
@@ -2175,7 +2586,7 @@ async fn test_bank_skr_bond_cannot_be_withdrawn_while_loan_is_active() {
         discriminator: UserProfile::DISCRIMINATOR,
         is_initialized: true,
         user: borrower.pubkey(),
-        staked_skr: 1_000_000_000, // 1000 SKR
+        staked_skr: 100_000_000, // 100 SKR — the flat bond for this discount band
         total_loans_completed: 0,
         total_loans_defaulted: 0,
         reputation_score: 10000,
@@ -2206,7 +2617,7 @@ async fn test_bank_skr_bond_cannot_be_withdrawn_while_loan_is_active() {
     let mut ctx = program_test.start_with_context().await;
     let payer = ctx.payer.insecure_clone();
 
-    // 1. Borrower borrows from pool using SOL collateral and provides user profile for 50% discount
+    // 1. Borrower borrows from pool using SOL collateral and provides a user profile for the SKR discount
     let borrow_ix = Instruction {
         program_id,
         accounts: vec![
@@ -2236,16 +2647,17 @@ async fn test_bank_skr_bond_cannot_be_withdrawn_while_loan_is_active() {
     tx.sign(&[&payer, &borrower], blockhash);
     ctx.banks_client.process_transaction(tx).await.unwrap();
 
-    // Verify loan was created with 1,000 SKR locked bond
+    // Verify loan was created with a 100 SKR flat bond (the discount band for
+    // this stake's continuous 318-bps discount locks 100 SKR, not the stake).
     let loan_acc = ctx.banks_client.get_account(loan_pda).await.unwrap().unwrap();
     let loan = LoanOrder::unpack_from_slice(&loan_acc.data).unwrap();
-    assert_eq!(loan.locked_skr, 1_000_000_000, "Loan order must have 1000 SKR locked");
+    assert_eq!(loan.locked_skr, 100_000_000, "Loan order must have 100 SKR locked");
     assert!(loan.is_active);
 
-    // Verify profile has locked_skr == 1_000_000_000
+    // Verify profile has locked_skr == 100_000_000
     let profile_acc = ctx.banks_client.get_account(profile_pda).await.unwrap().unwrap();
     let prof = UserProfile::unpack_from_slice(&profile_acc.data).unwrap();
-    assert_eq!(prof.locked_skr, 1_000_000_000, "User profile locked_skr must be 1000 SKR");
+    assert_eq!(prof.locked_skr, 100_000_000, "User profile locked_skr must be 100 SKR");
 
     // 2. Borrower attempts to unstake SKR while loan is active -> MUST FAIL with StakeLocked!
     let unstake_ix = Instruction {
@@ -2258,7 +2670,7 @@ async fn test_bank_skr_bond_cannot_be_withdrawn_while_loan_is_active() {
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
         data: borsh::to_vec(&ClockLendInstruction::UnstakeSKR {
-            amount: 1_000_000_000, // Try to withdraw full bond
+            amount: 100_000_000, // Try to withdraw the full stake (all of it is the locked bond)
         }).unwrap(),
     };
 
@@ -2344,11 +2756,11 @@ async fn test_bank_skr_bond_cannot_be_withdrawn_while_loan_is_active() {
     // Verify tokens were transferred to borrower wallet
     let borrower_skr_acc = ctx.banks_client.get_account(borrower_skr.pubkey()).await.unwrap().unwrap();
     let tok = spl_token::state::Account::unpack(&borrower_skr_acc.data).unwrap();
-    assert_eq!(tok.amount, 1_000_000_000, "Borrower must have received unstaked tokens");
+    assert_eq!(tok.amount, 100_000_000, "Borrower must have received unstaked tokens");
 }
 
 #[tokio::test]
-async fn test_bank_claim_default_slashes_locked_bond() {
+async fn test_bank_claim_default_releases_bond_without_slashing() {
     let program_id = Pubkey::new_unique();
     let authority = Keypair::new();
     let borrower = Keypair::new();
@@ -2518,24 +2930,26 @@ async fn test_bank_claim_default_slashes_locked_bond() {
     let mut transaction = Transaction::new_with_payer(&[claim_ix], Some(&payer.pubkey()));
     transaction.sign(&[&payer, &authority], recent_blockhash);
     let result = banks_client.process_transaction(transaction).await;
-    assert!(result.is_ok(), "ClaimDefault with locked SKR bond must succeed! Result: {:?}", result);
+    assert!(result.is_ok(), "ClaimDefault with a locked SKR bond must succeed! Result: {:?}", result);
 
-    // 1. Borrower escrow was slashed for full locked bond (1,000 SKR -> 0)
+    // 1. The borrower's escrow is UNTOUCHED — a default takes no SKR, because
+    //    the lender is already made whole from the collateral. Taking the bond
+    //    as well would punish the same default twice.
     let updated_skr_escrow = banks_client.get_account(skr_escrow_pda).await.unwrap().unwrap();
     let skr_escrow_tok = spl_token::state::Account::unpack(&updated_skr_escrow.data).unwrap();
-    assert_eq!(skr_escrow_tok.amount, 0, "SKR escrow balance must be 0 after full locked bond slashed");
+    assert_eq!(skr_escrow_tok.amount, 1_000_000_000, "no SKR may leave the escrow on default");
 
-    // 2. Authority SKR slash destination credited with 1,000 SKR
+    // 2. The lender's SKR account receives nothing.
     let updated_slash_dest = banks_client.get_account(authority_skr_token.pubkey()).await.unwrap().unwrap();
     let slash_dest_tok = spl_token::state::Account::unpack(&updated_slash_dest.data).unwrap();
-    assert_eq!(slash_dest_tok.amount, 1_000_000_000, "Slash destination must receive full 1,000 SKR bond");
+    assert_eq!(slash_dest_tok.amount, 0, "the lender's SKR account must receive nothing");
 
-    // 3. UserProfile staked_skr and locked_skr debited
+    // 3. Stake intact; only the bond LOCK is released so the SKR is usable again.
     let updated_profile_acc = banks_client.get_account(profile_pda).await.unwrap().unwrap();
     let updated_profile = UserProfile::unpack_from_slice(&updated_profile_acc.data).unwrap();
-    assert_eq!(updated_profile.staked_skr, 0);
-    assert_eq!(updated_profile.locked_skr, 0);
-    assert_eq!(updated_profile.total_loans_defaulted, 1);
+    assert_eq!(updated_profile.staked_skr, 1_000_000_000, "stake must be untouched");
+    assert_eq!(updated_profile.locked_skr, 0, "the bond lock must be released");
+    assert_eq!(updated_profile.total_loans_defaulted, 1, "the default must still be recorded");
 }
 
 #[tokio::test]
@@ -2729,7 +3143,9 @@ async fn test_bank_create_p2p_offer_rejects_unreasonable_ltv() {
             offer_id: offer_id_valid,
             requested_amount: 100_000_000, // 100 USDC (well within 150% LTV of 1 SOL = $150)
             collateral_amount: 1_000_000_000, // 1 SOL
-            interest_offered: 10_000_000,
+            // 2 USDC interest over 7 days: under the term cap of
+            // 100 USDC * 1000 bps * 604800s / (10000 * 30 days) = 2.333 USDC.
+            interest_offered: 2_000_000,
             duration_seconds: 86400 * 7,
         }).unwrap(),
     };
@@ -2821,7 +3237,7 @@ async fn test_bank_create_p2p_offer_rejects_unallowlisted_liquidity_mint() {
             offer_id,
             requested_amount: 100_000_000, // 100 units of the fake mint
             collateral_amount: 1_000_000_000, // 1 SOL
-            interest_offered: 10_000_000,
+            interest_offered: 2_000_000, // under the 7-day term cap (2.333 USDC)
             duration_seconds: 86400 * 7,
         }).unwrap(),
     };
@@ -4010,7 +4426,7 @@ async fn test_bank_p2p_offer_already_active_rejected() {
             offer_id,
             collateral_amount: 1_000_000_000,
             requested_amount: 100_000_000,
-            interest_offered: 5_000_000,
+            interest_offered: 2_000_000, // under the 7-day term cap (2.333 USDC)
             duration_seconds: 86400 * 7,
         })
         .unwrap(),
@@ -4127,6 +4543,21 @@ async fn test_bank_p2p_offer_lifecycle_create_fund_repay() {
         },
     );
 
+    // Treasury USDC account — receives the P2P origination fee (25 bps of
+    // principal for native-SOL collateral).
+    let (treasury_pda, _) = Pubkey::find_program_address(&[TREASURY_SEED], &program_id);
+    let treasury_usdc = Pubkey::new_unique();
+    program_test.add_account(
+        treasury_usdc,
+        Account {
+            lamports: 10_000_000,
+            data: token_acct_data(usdc_mint, treasury_pda, 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
     let (banks_client, payer, recent_blockhash) = program_test.start().await;
 
     // 1. Create P2P Offer: 1 SOL collateral for 100 USDC requested, 5 USDC interest, 7 days
@@ -4147,7 +4578,8 @@ async fn test_bank_p2p_offer_lifecycle_create_fund_repay() {
             offer_id,
             collateral_amount: 1_000_000_000,
             requested_amount: 100_000_000,
-            interest_offered: 5_000_000,
+            // 2 USDC interest over 7 days: under the term cap of 2.333 USDC.
+            interest_offered: 2_000_000,
             duration_seconds: 86400 * 7,
         })
         .unwrap(),
@@ -4158,7 +4590,7 @@ async fn test_bank_p2p_offer_lifecycle_create_fund_repay() {
     let res_create = banks_client.process_transaction(tx_create).await;
     assert!(res_create.is_ok(), "CreateP2POffer MUST succeed! Result: {:?}", res_create);
 
-    // 2. Fund P2P Offer: Funder provides 100 USDC
+    // 2. Fund P2P Offer: Funder provides 100 USDC (less the origination fee)
     let fund_ix = Instruction {
         program_id,
         accounts: vec![
@@ -4167,7 +4599,7 @@ async fn test_bank_p2p_offer_lifecycle_create_fund_repay() {
             AccountMeta::new(funder_usdc, false),
             AccountMeta::new(creator_usdc, false),
             AccountMeta::new_readonly(spl_token::id(), false),
-            AccountMeta::new_readonly(creator.pubkey(), false),
+            AccountMeta::new(treasury_usdc, false),
         ],
         data: borsh::to_vec(&ClockLendInstruction::FundP2POffer).unwrap(),
     };
@@ -4178,7 +4610,24 @@ async fn test_bank_p2p_offer_lifecycle_create_fund_repay() {
     let res_fund = banks_client.process_transaction(tx_fund).await;
     assert!(res_fund.is_ok(), "FundP2POffer MUST succeed! Result: {:?}", res_fund);
 
-    // 3. Repay P2P Loan: Creator repays 105 USDC (100 requested + 5 interest)
+    // The fee is withheld from the disbursement: 25 bps of 100 USDC = 0.25 USDC.
+    // The funder is debited the full 100; the creator receives 99.75.
+    let creator_after_fund = banks_client.get_account(creator_usdc).await.unwrap().unwrap();
+    let creator_tok = spl_token::state::Account::unpack(&creator_after_fund.data).unwrap();
+    assert_eq!(
+        creator_tok.amount,
+        200_000_000 + 99_750_000,
+        "Creator must receive the principal less the 25 bps native-SOL origination fee"
+    );
+
+    let treasury_after_fund = banks_client.get_account(treasury_usdc).await.unwrap().unwrap();
+    let treasury_tok = spl_token::state::Account::unpack(&treasury_after_fund.data).unwrap();
+    assert_eq!(
+        treasury_tok.amount, 250_000,
+        "Treasury must receive the 25 bps origination fee"
+    );
+
+    // 3. Repay P2P Loan: Creator repays 102 USDC (100 requested + 2 interest)
     let repay_ix = Instruction {
         program_id,
         accounts: vec![
@@ -4192,7 +4641,7 @@ async fn test_bank_p2p_offer_lifecycle_create_fund_repay() {
             AccountMeta::new_readonly(solana_program::system_program::id(), false),
         ],
         data: borsh::to_vec(&ClockLendInstruction::RepayLoan {
-            repay_amount: 105_000_000,
+            repay_amount: 102_000_000,
         })
         .unwrap(),
     };
@@ -4323,7 +4772,7 @@ async fn test_bank_p2p_fund_wrong_mint_rejected() {
             offer_id,
             collateral_amount: 1_000_000_000,
             requested_amount: 100_000_000,
-            interest_offered: 5_000_000,
+            interest_offered: 2_000_000, // under the 7-day term cap (2.333 USDC)
             duration_seconds: 86400 * 7,
         }).unwrap(),
     };
@@ -4535,7 +4984,7 @@ async fn test_bank_p2p_create_without_oracle_rejected() {
             offer_id,
             collateral_amount: 1_000_000_000,
             requested_amount: 100_000_000,
-            interest_offered: 5_000_000,
+            interest_offered: 2_000_000, // under the 7-day term cap (2.333 USDC)
             duration_seconds: 86400 * 7,
         }).unwrap(),
     };
@@ -4921,7 +5370,7 @@ async fn test_bank_create_p2p_offer_rejects_excessive_interest() {
             offer_id,
             requested_amount: 100_000_000,
             collateral_amount: 1_000_000_000,
-            interest_offered: 200_000_000, // > principal — must be rejected
+            interest_offered: 200_000_000, // far above the 7-day term cap (2.333 USDC) — must be rejected
             duration_seconds: 86400 * 7,
         }).unwrap(),
     };
@@ -5315,6 +5764,164 @@ async fn test_bank_p2p_claim_default_after_grace() {
 
     let funder_after = banks_client.get_account(funder.pubkey()).await.unwrap().unwrap().lamports;
     assert_eq!(funder_after, funder_before + 1_000_000_000, "Funder must receive the 1 SOL collateral");
+
+    let offer_acc = banks_client.get_account(offer_pda).await.unwrap().unwrap();
+    let offer_state = P2POffer::unpack_from_slice(&offer_acc.data).unwrap();
+    assert_eq!(offer_state.status, OfferStatus::Defaulted, "Offer must be Defaulted");
+}
+
+#[tokio::test]
+async fn test_bank_p2p_claim_default_priced_split_returns_creator_surplus() {
+    // Round-16 extended to pawns: with a usable feed the funder is paid only the
+    // DEBT, the platform takes half the released surplus and the CREATOR (the
+    // pawn's borrower) keeps the rest — and the escrow still drains to zero.
+    //
+    // Before this, a pawn default handed the funder the entire escrow, which is
+    // the most borrower-hostile outcome the protocol could produce and was the
+    // path the product leads with.
+    use clock_lend::state::{OfferStatus, P2POffer};
+
+    let program_id = Pubkey::new_unique();
+    let mut program_test = ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
+
+    let creator = Keypair::new();
+    let funder = Keypair::new();
+
+    let offer_id: u64 = 21;
+    let (offer_pda, _) = Pubkey::find_program_address(
+        &[P2P_SEED, creator.pubkey().as_ref(), &offer_id.to_le_bytes()],
+        &program_id,
+    );
+    let (escrow_pda, _) = Pubkey::find_program_address(&[ESCROW_SEED, offer_pda.as_ref()], &program_id);
+    let (treasury_pda, _) = Pubkey::find_program_address(&[TREASURY_SEED], &program_id);
+
+    // 1 SOL of native-SOL collateral against a $101 debt.
+    let offer = P2POffer {
+        discriminator: P2POffer::DISCRIMINATOR,
+        is_initialized: true,
+        offer_id,
+        creator: creator.pubkey(),
+        funder: funder.pubkey(),
+        collateral_mint: Pubkey::default(), // native SOL
+        liquidity_mint: clock_lend::state::USDC_DEVNET_MINT,
+        collateral_amount: 1_000_000_000,   // 1 SOL
+        requested_amount: 100_000_000,      // $100
+        interest_offered: 1_000_000,        // $1  -> debt $101
+        duration_seconds: 86_400 * 7,
+        created_at: 1000,
+        due_time: 2000,
+        grace_period_expires: 0, // expired
+        status: OfferStatus::InGracePeriod,
+    };
+    program_test.add_account(offer_pda, Account {
+        lamports: 10_000_000,
+        data: borsh::to_vec(&offer).unwrap(),
+        owner: program_id,
+        executable: false,
+        rent_epoch: 0,
+    });
+    // The escrow holds the full 1 SOL of collateral.
+    program_test.add_account(escrow_pda, Account {
+        lamports: 1_000_000_000,
+        data: vec![],
+        owner: program_id,
+        executable: false,
+        rent_epoch: 0,
+    });
+
+    // Global native-SOL feed at $150.00, fresh.
+    let (sol_oracle_pda, _) = Pubkey::find_program_address(
+        &[ORACLE_SEED, spl_token::native_mint::id().as_ref()],
+        &program_id,
+    );
+    let sol_feed = PriceFeed {
+        discriminator: PriceFeed::DISCRIMINATOR,
+        is_initialized: true,
+        mint: spl_token::native_mint::id(),
+        price_micro_usd: 150_000_000,
+        decimals: 9,
+        last_updated_at: now_secs(),
+        max_staleness_seconds: 86400,
+        authority: Pubkey::default(),
+    };
+    program_test.add_account(
+        sol_oracle_pda,
+        Account {
+            lamports: 10_000_000,
+            data: borsh::to_vec(&sol_feed).unwrap(),
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    for kp in [&funder, &creator] {
+        program_test.add_account(kp.pubkey(), Account {
+            lamports: 10_000_000_000,
+            data: vec![],
+            owner: solana_program::system_program::id(),
+            executable: false,
+            rent_epoch: 0,
+        });
+    }
+    program_test.add_account(treasury_pda, Account {
+        lamports: 10_000_000,
+        data: vec![],
+        owner: solana_program::system_program::id(),
+        executable: false,
+        rent_epoch: 0,
+    });
+
+    let (banks_client, payer, recent_blockhash) = program_test.start().await;
+
+    let funder_before = banks_client.get_account(funder.pubkey()).await.unwrap().unwrap().lamports;
+    let creator_before = banks_client.get_account(creator.pubkey()).await.unwrap().unwrap().lamports;
+    let treasury_before = banks_client.get_account(treasury_pda).await.unwrap().unwrap().lamports;
+
+    let claim_ix = Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(funder.pubkey(), true),
+            AccountMeta::new(offer_pda, false),
+            AccountMeta::new(escrow_pda, false),
+            AccountMeta::new(funder.pubkey(), false), // funder's SOL destination
+            AccountMeta::new(treasury_pda, false),    // platform's share
+            AccountMeta::new(creator.pubkey(), false), // creator's surplus
+            AccountMeta::new_readonly(sol_oracle_pda, false),
+            AccountMeta::new_readonly(solana_program::system_program::id(), false),
+        ],
+        data: borsh::to_vec(&ClockLendInstruction::ClaimDefault).unwrap(),
+    };
+    let mut tx = Transaction::new_with_payer(&[claim_ix], Some(&payer.pubkey()));
+    tx.sign(&[&payer, &funder], recent_blockhash);
+    let res = banks_client.process_transaction(tx).await;
+    assert!(res.is_ok(), "Priced pawn default MUST succeed! Result: {:?}", res);
+
+    // debt $101 at $150/SOL = 673,333,333 lamports; surplus 326,666,667 splits
+    // 163,333,333 to the treasury and 163,333,334 back to the creator.
+    let funder_after = banks_client.get_account(funder.pubkey()).await.unwrap().unwrap().lamports;
+    let creator_after = banks_client.get_account(creator.pubkey()).await.unwrap().unwrap().lamports;
+    let treasury_after = banks_client.get_account(treasury_pda).await.unwrap().unwrap().lamports;
+
+    assert_eq!(
+        funder_after - funder_before,
+        673_333_333,
+        "funder must receive only the debt's worth of collateral"
+    );
+    assert_eq!(
+        treasury_after - treasury_before,
+        163_333_333,
+        "treasury must receive half the surplus"
+    );
+    assert_eq!(
+        creator_after - creator_before,
+        163_333_334,
+        "creator must get the other half of the surplus back"
+    );
+
+    // Everything left the escrow: purged by rent collection, nothing stranded.
+    let escrow = banks_client.get_account(escrow_pda).await.unwrap();
+    assert!(escrow.is_none(), "Escrow must drain to exactly zero and be purged");
 
     let offer_acc = banks_client.get_account(offer_pda).await.unwrap().unwrap();
     let offer_state = P2POffer::unpack_from_slice(&offer_acc.data).unwrap();

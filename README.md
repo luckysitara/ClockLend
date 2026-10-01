@@ -132,7 +132,7 @@ flowchart LR
    - 0ms local hybrid state hydration ensuring instantaneous launch and offline resilience.
 2. **Deep Economic Alignment with the $10,000 SKR Track**:
    - SKR is not a speculative add-on; it is the **fundamental reputation currency** of ClockLend.
-   - Staking SKR unlocks up to **50% interest-rate discounts** (two tiers: ≥100 SKR, ≥1,000 SKR), a merchant credit verification badge, and serves as a slashing bond. It does **not** change LTV.
+   - Staking SKR unlocks up to a **25% interest-rate discount**, sliding continuously from 1% at 100 SKR to 25% at 10,000 SKR, with a flat SKR bond per discount band (100 / 250 / 500 / 1,000 SKR) that is locked while a loan is live and released — never slashed — on default, plus a merchant credit verification badge. It does **not** change LTV.
    - SKR serves as the **default collateral asset** for instant micro-loans across the protocol.
 3. **Institutional-Grade Defense-in-Depth**:
    - Macro-free, native `solana-program` Rust smart contract with pure integer math (100% SBF floating-point immunity).
@@ -162,7 +162,9 @@ ClockLend introduces a hybrid credit paradigm combining **algorithmic micro-pool
      the SKR Yield Vault when the yield-vault accounts are supplied; otherwise 100% to the
      Treasury PDA.
    - **15% Interest Take-Rate**: Deducted from earned interest upon successful repayment.
-   - **5% Liquidation Margin**: Captured from seized collateral on expired default.
+   - **50% Surplus Split**: On a priced default, half of any collateral value above the
+     outstanding principal + interest goes to the treasury. With no usable price feed the
+     fallback is a flat 5% of the collateral instead.
    - There is **no insurance reserve**: no such mechanism exists in the program.
 
 ---
@@ -242,7 +244,7 @@ classDiagram
 | **Loan Escrow** | `[b"escrow", loan_pda]` | Atomically locks borrower collateral until full repayment |
 | **P2P Pawn Offer** | `[b"p2p_offer", creator, offer_id.to_le_bytes()]` | Bilateral offer record; the escrow is `[b"escrow", p2p_offer_pda]` |
 | **Reputation Profile** | `[b"profile", user_pubkey.as_ref()]` | Stores soulbound credit score, tier, and loan completion history |
-| **SKR Stake Escrow** | `[b"skr_escrow", user_pubkey.as_ref()]` | Holds slashable SKR reputation bond tokens |
+| **SKR Stake Escrow** | `[b"skr_escrow", user_pubkey.as_ref()]` | Holds staked SKR; the bond portion is locked while loans are live and released on settlement |
 | **Protocol Treasury** | `[b"treasury"]` | Accumulates origination fees and default liquidation spreads |
 | **Price Feed** | `[b"oracle", mint]` (global) or `[b"oracle", pool, mint]` (pool-scoped) | Admin-written price, with a 600s pricing bound |
 | **Admin Config** | `[b"admin"]` | Protocol admin + oracle authority; rooted in the program's upgrade authority |
@@ -279,12 +281,12 @@ flowchart TD
 #### A. Protocol Revenue Streams (How the Platform Earns)
 | Revenue Stream | Fee Rate | When Triggered | Destination | Smart Contract Logic |
 | :--- | :--- | :--- | :--- | :--- |
-| **Loan Origination Fee** | **0.25%** (SOL)<br>**0.50%** (USDC/SKR) | Withheld upfront at loan disbursement | **50%** Treasury PDA<br>**50%** SKR Yield Vault | [`processor.rs#L1742-L1827`](program/src/processor.rs#L1742-L1827) |
+| **Loan Origination Fee** | **0.25%** (SOL)<br>**0.50%** (USDC/SKR) | Withheld upfront at loan disbursement, on **both** pool borrows and P2P fundings. A percentage of principal only — it does **not** scale with term | **50%** Treasury PDA<br>**50%** SKR Yield Vault (pool borrows)<br>**100%** Treasury (P2P) | [`processor.rs#L1821`](program/src/processor.rs#L1821) |
 | **Interest Take-Rate** | **15%** of interest | Deducted upon borrower loan repayment | **100%** Treasury PDA | [`processor.rs#L2400-L2462`](program/src/processor.rs#L2400-L2462) |
 | **Liquidation Margin** | **5%** of collateral | Claimed if borrower defaults past 24h grace | **100%** Treasury PDA | [`processor.rs#L2952-L2975`](program/src/processor.rs#L2952-L2975) |
 
 #### B. What Happens to the Rest of the Capital?
-- **Lending Desk Owners & LPs**: Receive **100% of their loan principal** and **85% of all loan interest** compounded automatically into their pool vault PDA (`pool.vault_pda`). If a loan defaults past grace, they receive **95% of the seized collateral**. Desk owners can withdraw anytime via `WithdrawLiquidity` (Tag 9).
+- **Lending Desk Owners & LPs**: Receive **100% of their loan principal** and **85% of all loan interest** compounded automatically into their pool vault PDA (`pool.vault_pda`). If a loan defaults past grace, they receive collateral **worth the outstanding principal + interest** — not the whole escrow. Any surplus value above that is split equally between the borrower and the treasury. Desk owners can withdraw anytime via `WithdrawLiquidity` (Tag 9).
 - **SKR Token Stakers**: Receive **50% of all protocol origination fees** accumulated as a USDC dividend pool inside `SkrYieldVault`. Stakers claim proportional dividends anytime via `ClaimSkrYield` (Tag 17) protected by a 1-hour anti-flash-loan cooldown.
 - **P2P Pawn Funders**: Receive **100% of agreed loan interest** directly to their wallet upon borrower repayment, or 100% of the escrowed collateral on default. The deployed program escrows **native SOL or SKR only** — no NFT, cNFT, or other token is accepted as collateral.
 
@@ -349,26 +351,46 @@ node scripts/withdraw-treasury.mjs --amount 2.5 --token sol --dest <WALLET> --ne
 #### E. Staking Tiers & Reputation Slashes
 Staking SKR affects **the interest rate only**. It does **not** change the LTV available to a
 borrower — LTV is a property of the pool, fixed at `InitializePool` and capped at 7000 bps
-(processor.rs `process_initialize_pool`). There are exactly two discount tiers:
+(processor.rs `process_initialize_pool`).
 
-| Staked SKR (available, i.e. unstaked by other loans) | Interest Discount | Bond Locked While Borrowing |
+The discount **slides continuously** from 1% at 100 SKR to 25% at 10,000 SKR:
+
+```
+discount_bps = 100 + (available_skr − 100 SKR) × 2400 / (10,000 SKR − 100 SKR)
+```
+
+so every extra SKR bought moves the rate, with no cliff to game. The **bond** is not a
+percentage of anything — it is a flat amount per discount band, so the cost of defaulting
+is legible before you borrow:
+
+| Available SKR (i.e. not already backing another loan) | Discount off the pool rate | Bond Locked While Borrowing |
 | :--- | :--- | :--- |
-| ≥ 100 SKR (`100_000_000` base units) | 25% off the pool rate | 100 SKR |
-| ≥ 1,000 SKR (`1_000_000_000` base units) | 50% off the pool rate | 1,000 SKR |
+| ≥ 100 SKR | 1% → 5% (slides) | 100 SKR |
+| ≥ 1,750 SKR | 5% → 10% (slides) | 250 SKR |
+| ≥ 3,812.5 SKR | 10% → 18% (slides) | 500 SKR |
+| ≥ 7,112.5 SKR | 18% → 25% (slides) | 1,000 SKR |
+| 10,000 SKR (`10_000_000_000` base units) | 25% (cap) | 1,000 SKR |
 
-The bond is released on repayment and consumed on default. Reputation score is separate: it
-starts at 10000, gains +50 per completed loan (capped at 10000, so it cannot increase from
-the starting value), and loses 1000 per default.
+A borrower whose stake cannot cover their band's bond locks only what they have
+(`min(bond, available)`), so a small stake is never rejected outright. The bond is fully
+released on repayment **and on default** — it is a lock, never a penalty. Reputation score is
+separate: it starts at 10000 and loses 1000 per default.
 
-When a borrower defaults past the grace period, the on-chain engine slashes the SKR bond
-(processor.rs `process_claim_default`):
+When a borrower defaults past the grace period, **no SKR is taken at all**
+(processor.rs `process_claim_default`). The lender is already made whole from the
+**collateral**, so seizing the SKR bond as well would punish one default twice.
 
-$$\text{Slashed Amount} = \max(\text{loan.locked\_skr},\ \min(\text{staked\_skr} \times 20\%,\ \text{max\_slashable}))$$
+The bond is released, not slashed — the stake becomes usable again the moment the default
+settles. What the bond does is serve *during* the loan: it is locked while the loan is live,
+which is what stops a borrower taking the staking discount and immediately unstaking.
 
-where `max_slashable` protects stake backing other live loans. The slashed SKR is
-**transferred to the lender's SKR token account** (owned by the pool authority, the pool
-vault PDA, or the treasury) — it is **not burned**: the program contains no burn instruction.
-Burns happen only via manual operator runs of `scripts/burn-skr.mjs` against the treasury.
+A defaulter loses the collateral (see the default split above), takes a **1,000-point
+reputation hit**, and is refused future desk service at the pool authority's discretion. That
+is the whole penalty.
+
+For the record, since this rule has changed several times: the program contains **no burn
+instruction**, and SKR leaves the protocol only via borrower unstaking or manual operator runs
+of `scripts/burn-skr.mjs` against the treasury.
 
 ---
 
@@ -381,14 +403,14 @@ Burns happen only via manual operator runs of `scripts/burn-skr.mjs` against the
 - **Atomic Escrow Locking**: Collateral is transferred directly into a Program Derived Address (PDA) while principal is disbursed directly to the user's wallet in a single atomic transaction.
 
 ### 2. Merchant Desks & Circle Pools
-- **Individual Desks (Solo Lenders)**: Any user with idle USDC can deploy a dedicated community lending desk with custom APR (8% - 30%), maximum LTV (50% - 90%), and term limits (3 - 30 days).
+- **Individual Desks (Solo Lenders)**: Any user with idle USDC can deploy a dedicated community lending desk with a custom rate (up to 10% of principal per 30-day term), a maximum LTV capped at 70% (30% for oracle-free desks), and term limits inside a 30-day maximum.
 - **Circle Pools (Community / Hacker Houses)**: Collective lending vaults for DAOs, hacker house cohorts, or private groups. Members deposit capital into a shared pool and earn pro-rata yield on borrower repayments.
 - **NFC Phone Bump**: Seeker users can physically tap their phones together to share, verify, and join exclusive private lending circles in real life.
 
 ### 3. Circle Pawn Deck (1-on-1 Social Pawns)
 - **Collateral Support (as deployed)**: Borrowers lock **native SOL or the canonical SKR mint** into an Escrow PDA. The program allowlists exactly these two; NFT, cNFT, and arbitrary-token collateral are **not supported** and are rejected with `InvalidMint`. Broader collateral types are a roadmap item.
-- **Bilateral Terms**: Pawn creators set their requested USDC amount, fixed interest payoff, and duration.
-- **Peer-to-Peer Funding**: Any peer on the network can review the collateral and fund the pawn in 1 tap, claiming the guaranteed interest yield upon borrower repayment or claiming the asset upon default.
+- **Bilateral Terms**: Pawn creators set their requested USDC amount, fixed interest payoff, and duration. Interest is bounded by the **same ceiling as a pool** — 10% of the borrowed amount per 30-day term, prorated — so a 1-day pawn cannot charge what a 30-day one may. The program rejects anything above it.
+- **Peer-to-Peer Funding**: Any peer on the network can review the collateral and fund the pawn in 1 tap, claiming the agreed interest yield upon borrower repayment. On default the funder receives collateral **worth the outstanding requested amount + interest — not the whole escrow**; any surplus is split equally between the pawn's creator and the treasury. The **same 0.25% / 0.50% origination fee** applies as on a pool borrow, withheld from the disbursement, so the creator receives the requested amount less that fee.
 - **Cancellation & Rent Recovery**: Unfunded pawn offers can be cancelled at any time by the creator with a guaranteed 100% refund of locked assets and Solana account rent.
 
 ### 4. The Ticking Clock & 24h Social Grace Period
@@ -508,7 +530,7 @@ flowchart TD
 2. View your current Reputation Score and Tier (Standard, Silver, Gold, Diamond).
 3. Under **"SKR Reputation Bond"**, enter the amount of SKR you wish to stake (e.g., `2,500 SKR`).
 4. Tap **"Stake SKR Bond"** and sign via Seed Vault.
-5. Your tier updates immediately on-chain: your **interest rate** discount applies to all future loans (≥100 SKR → 25% off, ≥1,000 SKR → 50% off, each locking a bond of the same size while you borrow). **Staking does not change your LTV** — LTV is a property of the pool, set when the pool is created and capped at 7000 bps.
+5. Your discount updates immediately on-chain: it applies to all future loans, sliding from 1% at 100 SKR to 25% at 10,000 SKR, and locks a **flat bond per discount band** (100 / 250 / 500 / 1,000 SKR) while you borrow. **Staking does not change your LTV** — LTV is a property of the pool, set when the pool is created and capped at 7000 bps.
 
 ---
 
@@ -522,12 +544,12 @@ flowchart TD
 ### Scenario B: The Web3 Collector (Unlocking Liquidity Without Selling Genesis Holdings)
 * **User**: Maya, a Genesis Seeker pre-order holder.
 * **Problem**: Maya needs short-term stablecoins to mint an ecosystem pass but does not want to sell her SKR.
-* **Solution**: Maya lists **1,000 SKR** on the **Circle Pawn Deck** for 7 days at 15% interest. A fellow collector funds the pawn. Maya mints her pass, repays the loan 3 days later, and reclaims her SKR. *(The deployed program escrows SOL or SKR only — NFT/cNFT collateral is not yet supported.)*
+* **Solution**: Maya lists **1,000 SKR** on the **Circle Pawn Deck** for 7 days at 2% interest. A fellow collector funds the pawn. Maya mints her pass, repays the loan 3 days later, and reclaims her SKR. *(The deployed program escrows SOL or SKR only — NFT/cNFT collateral is not yet supported.)*
 
 ### Scenario C: The DAO / Hacker House Circle (Community Micro-Treasury)
 * **User**: The Superteam Nigeria / Berlin Hacker House.
 * **Problem**: The group wants to pool $2,000 USDC together so members can borrow for flights, conferences, and equipment without paperwork.
-* **Solution**: The group initializes a **Circle Pool** with 10% APR and 80% LTV. Members physically tap phones via **NFC Bump** to register their addresses. The circle collects interest yield while supporting its members.
+* **Solution**: The group initializes a **Circle Pool** charging 10% of principal per 30-day term, at 70% max LTV. Members physically tap phones via **NFC Bump** to register their addresses. The circle collects interest yield while supporting its members.
 
 ### Scenario D: The Peer Rescue / Market Crash (Social Grace Period in Action)
 * **User**: David, a borrower whose loan is due during a high-volatility market dip.
@@ -617,7 +639,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 | Evaluation Criteria | Weight | How ClockLend Meets & Exceeds |
 | :--- | :---: | :--- |
 | **Mobile-First UX** | 25% | Built natively for Solana Seeker. Features an animated ticking countdown clock, 1-tap Seed Vault MWA signing, biometric app locking, and NFC phone bumping. |
-| **$10,000 SKR Track** | 25% | SKR is the primary collateral asset and the protocol's core reputation engine. Staking SKR grants up to a 50% interest discount and enforces on-chain default slashing. It does not change LTV. |
+| **$10,000 SKR Track** | 25% | SKR is the primary collateral asset and the protocol's core reputation engine. Staking SKR grants up to a 25% interest discount, sliding continuously with stake size. It does not change LTV, and staked SKR is never seized — the bond is a lock, not a penalty. |
 | **Technical Execution** | 25% | Macro-free native Rust (`solana-program`) smart contract with pure integer math, 103 test functions, deployed and bytecode-hash-verified on Solana Mainnet-beta, plus an Android release build with R8 obfuscation and anti-emulator detection. |
 | **Real-World Impact** | 25% | Addresses the $500B+ informal peer credit market (ROSCAs, community lending, pawnshops) by providing decentralized, transparent, and non-predatory micro-loans on mobile. |
 

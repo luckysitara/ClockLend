@@ -567,7 +567,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </Text>
                 <BulletItem text="The loan becomes eligible for a 24-Hour Social Grace Period, which begins when the grace-period instruction is triggered on chain at or after the scheduled maturity timestamp. During this 24-hour window, the borrower retains the right to repay the full principal plus accrued interest to release their collateral." />
                 <BulletItem text="If the borrower fails to repay prior to the expiration of the Social Grace Period, the loan transitions to Default. The pool authority or P2P funder may execute ClaimDefault to liquidate and claim the escrowed collateral." />
-                <BulletItem text="For defaulted reputation borrowers, the smart contract slashes the greater of (a) the locked SKR reputation bond and (b) 20% of the staked SKR balance, capped at the staked balance. The slashed SKR is transferred to a token account controlled by the pool authority, pool vault PDA, or treasury; it is not burned." />
+                <BulletItem text="On default, NO staked SKR is taken. The SKR reputation bond is released rather than slashed, because the desk is already made whole from the collateral — seizing the bond as well would penalise the same default twice. The bond's purpose is served during the loan, where locking it prevents taking the staking discount and immediately unstaking. What a default does cost is the borrower's on-chain reputation score, which falls by 1,000 points." />
 
                 <Text style={[styles.docHeading, { color: colors.text }]}>6. Protocol Fees & Dividend Distribution</Text>
                 <Text style={[styles.docText, { color: colors.textSecondary }]}>
@@ -685,9 +685,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   ClockLend utilizes on-chain price feeds cranked from decentralized aggregators (Jupiter and CoinGecko). Although the protocol enforces a strict 600-second fail-closed staleness bound to prevent trading on obsolete prices, extreme market flash-crashes, oracle latency, or liquidity evaporation can cause rapid changes in your Loan-to-Value (LTV) ratio, potentially resulting in collateral liquidation.
                 </Text>
 
-                <Text style={[styles.docSubheading, { color: colors.text }]}>3.4. Collateral Liquidation & Slashing Risk</Text>
+                <Text style={[styles.docSubheading, { color: colors.text }]}>3.4. Collateral Liquidation Risk</Text>
                 <Text style={[styles.docText, { color: colors.textSecondary }]}>
-                  Borrowers who fail to repay their loans prior to the expiration of the loan duration plus the 24-Hour Social Grace Period (a window that begins only when the grace-period instruction is triggered on chain at or after the due time) are subject to forfeiture of the escrowed collateral, 95% of which is paid to the lending desk or P2P funder with a 5% protocol liquidation margin. Additionally, borrowers utilizing reputation staking may suffer a slash of the greater of their locked SKR reputation bond and 20% of their staked SKR balance, capped at the staked balance.
+                  Borrowers who fail to repay their loans prior to the expiration of the loan duration plus the 24-Hour Social Grace Period (a window that begins only when the grace-period instruction is triggered on chain at or after the due time) are subject to forfeiture of the escrowed collateral. Where the collateral can be reliably priced, the lending desk or P2P funder receives collateral equal in value to the outstanding principal and interest, and any surplus collateral value is split equally between the borrower and the protocol treasury. Where the collateral cannot be reliably priced, the desk or funder receives 95% of the escrowed collateral and the protocol treasury receives 5%.
+                </Text>
+                <Text style={[styles.docText, { color: colors.textSecondary }]}>
+                  No staked SKR is seized. The SKR reputation bond is released, not slashed. The borrower's on-chain reputation score falls by 1,000 points, and the default is recorded permanently against their profile.
                 </Text>
 
                 <Text style={[styles.docHeading, { color: colors.text }]}>4. Sanctions & Anti-Money Laundering (AML) Compliance</Text>

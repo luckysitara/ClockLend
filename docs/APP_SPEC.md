@@ -22,8 +22,9 @@ Solana Seeker hardware. It has two distinct lending mechanisms that share one pr
 | **Merchant Desk (pool)** | A single desk authority deposits USDC into a pool vault | The desk sets APR, LTV, min/max duration at creation | Native SOL or SKR |
 | **P2P Pawn (Circle Deck)** | Any peer funds a specific offer 1-on-1 | The borrower creates the offer; a peer chooses to fund it | Native SOL or SKR |
 
-A third subsystem, **SKR staking**, is not lending: it locks SKR to (a) discount the
-interest rate, and (b) act as a bond that is slashed on default.
+A third subsystem, **SKR staking**, is not lending: it locks SKR to discount the interest
+rate. The bond it locks is held for the *duration* of a loan only — it is released on
+settlement and **never slashed**, on repayment or on default.
 
 **Status of the deployment (2026-09-29).** Program `4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7`
 is live on mainnet-beta and its bytecode matches this repository byte-for-byte. On-chain
@@ -101,7 +102,7 @@ a signature over MWA. The app stores no seed, no private key and no auth token o
 | 5 | `FundP2POffer` | funder | Sends the principal directly funder → creator. |
 | 6 | `RepayLoan` | borrower | Repays exactly `principal + interest`; returns collateral. |
 | 7 | `TriggerGracePeriod` | borrower or pool authority | Starts the 24 h window. **Not automatic.** |
-| 8 | `ClaimDefault` | pool authority / P2P funder | Seizes collateral after grace; slashes the bond. |
+| 8 | `ClaimDefault` | pool authority / P2P funder | Pays the lender the debt's worth of collateral after grace, splits any surplus with the borrower, and releases the bond. Takes no SKR. |
 | 9 | `WithdrawLiquidity` | pool authority | Pulls unborrowed liquidity out. |
 | 10 | `CancelP2POffer` | creator | Refunds an unfunded pawn; closes the account. |
 | 11 | `UnstakeSKR` | user | Returns SKR, respecting the locked bond. |
@@ -117,20 +118,33 @@ a signature over MWA. The app stores no seed, no private key and no auth token o
 
 | Fee | Rate | Taken when | Split |
 | :--- | :--- | :--- | :--- |
-| Origination | **25 bps** (SOL collateral) / **50 bps** (SKR collateral) | At disbursement, withheld from principal | 50% treasury / 50% SKR yield vault — **but only if the yield-vault accounts are appended**; otherwise 100% to treasury |
+| Origination | **25 bps** (SOL collateral) / **50 bps** (SKR collateral) | At disbursement, withheld from principal. Charged on **both** routes to a loan — pool borrow and P2P fund | Pool: 50% treasury / 50% SKR yield vault — **but only if the yield-vault accounts are appended**; otherwise 100% to treasury. P2P: **100% treasury** |
 | Interest take-rate | **15%** of interest | On repayment | 100% treasury |
 | Liquidation margin | **5%** of seized collateral | On default | 100% treasury |
-| Bond slash | `max(locked_bond, 20% of stake)`, capped at stake | On default | Transferred to a SKR account of the pool authority / vault PDA / treasury — **not burned** |
+| Bond slash | **None.** No SKR is taken on default — the lender is made whole from the collateral, so seizing the bond too would punish one default twice. The bond lock is *released* | On default | n/a — the borrower keeps their full stake |
 
-Interest is simple: `principal × rate_bps × duration_secs / (10_000 × 31_536_000)`. Repayment
-must equal `principal + interest` exactly — there is no partial repayment.
+Interest is a **percentage of the principal per 30-day term**, not an annual rate:
+`principal × rate_bps × duration_secs / (10_000 × 2_592_000)`. A loan held for the full
+30-day maximum therefore costs exactly `rate_bps` of the principal, and shorter terms
+prorate linearly — a 3-day loan costs a tenth of a 30-day one. `rate_bps` is capped at
+1,000 (10% per 30 days, ≈122% APR). Repayment must equal `principal + interest` exactly —
+there is no partial repayment.
 
-**SKR staking tiers** (the only two, and they affect the *rate*, never the LTV):
+**SKR staking discount** — affects the *rate*, never the LTV. It slides continuously:
 
-| Available staked SKR | Interest discount | Bond locked while borrowing |
+```
+discount_bps = 100 + (available_skr − 100 SKR) × 2400 / (10,000 SKR − 100 SKR)
+```
+
+| Available SKR | Interest discount | Bond locked while borrowing |
 | :--- | :--- | :--- |
-| ≥ 100 SKR | 25% off the pool rate | 100 SKR |
-| ≥ 1,000 SKR | 50% off the pool rate | 1,000 SKR |
+| ≥ 100 SKR | 1% → 5% | 100 SKR |
+| ≥ 1,750 SKR | 5% → 10% | 250 SKR |
+| ≥ 3,812.5 SKR | 10% → 18% | 500 SKR |
+| ≥ 7,112.5 SKR | 18% → 25% | 1,000 SKR |
+
+The bond is flat per band, not a percentage of the stake or the loan, and a borrower whose
+available stake cannot cover their band locks only what they have.
 
 ### 2.5 Pricing and the oracle
 
@@ -293,8 +307,10 @@ may fund it later, at a different price.
 past due_time → TriggerGracePeriod (borrower or desk authority) → 24 h window
    ├─ borrower repays inside the window → collateral returned, bond released
    └─ window lapses → ClaimDefault (desk authority / P2P funder)
-         ├─ collateral: 95% to the lender, 5% liquidation margin to treasury
-         └─ SKR bond slashed → reputation −1000
+         ├─ collateral: the lender is paid only what the debt is worth; any surplus
+         │   splits 50/50 between the borrower and the treasury (fallback with no
+         │   usable feed: a flat 95% lender / 5% treasury)
+         └─ SKR bond released (nothing slashed) → reputation −1000
 ```
 
 ### 5.6 Stake SKR

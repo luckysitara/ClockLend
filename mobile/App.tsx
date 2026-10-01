@@ -1135,7 +1135,7 @@ function MainApp() {
         type: 'borrow',
         title: 'Lending Desk Initialized!',
         subtitle: `"${name}" (${poolType}) is now live on Solana. Fund it from the Fund Desk screen before borrowers can draw.`,
-        amount: `${aprPercent.toFixed(1)}% APR • ${maxLtvPercent.toFixed(0)}% Max LTV`,
+        amount: `${aprPercent.toFixed(1)}% per 30d • ${maxLtvPercent.toFixed(0)}% Max LTV`,
         collateral: poolPDA.toBase58().slice(0, 8) + '...',
         txSignature: sig,
         escrowAddress: poolPDA.toBase58(),

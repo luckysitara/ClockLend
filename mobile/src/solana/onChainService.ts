@@ -210,13 +210,27 @@ export function tierDiscountLabel(tier: CreditTier, aprDiscount?: number): strin
   return 'No SKR bond · 0% APR discount';
 }
 
-/** The bond the program locks while the loan is active (processor.rs:1990-2005). */
+/**
+ * The bond the program locks while the loan is active (processor.rs:1990-2005).
+ *
+ * The bond is FIXED per discount band — it is not a percentage of the stake and
+ * not a percentage of the loan (see `bond_for_discount_bps` in processor.rs for
+ * why). A band the borrower cannot fully cover locks only what they have, so
+ * this returns `min(available, band)`.
+ */
 export function bondLockedForSkrMicro(
   availableSkrMicro: number | bigint | { toString(): string }
 ): bigint {
   const available = toBigInt(availableSkrMicro);
   if (available < SKR_TIER_MIN_THRESHOLD_MICRO) return 0n;
-  return available < SKR_TIER_MAX_THRESHOLD_MICRO ? available : SKR_TIER_MAX_THRESHOLD_MICRO;
+  const discount = deriveAprDiscountPercent(available, 0n);
+  const discountBps = Math.round(discount * 100);
+  const required =
+    discountBps <= 500 ? 100_000_000n
+    : discountBps <= 1000 ? 250_000_000n
+    : discountBps <= 1800 ? 500_000_000n
+    : 1_000_000_000n;
+  return available < required ? available : required;
 }
 
 /** Mirrors the program's integer discount math bit-for-bit. */
@@ -228,7 +242,14 @@ export function applyAprDiscountBps(baseRateBps: number, aprDiscountPercent: num
 }
 
 // M-03: Integer Interest Calculation Helper matching Smart Contract exactly
-// (processor.rs:1926-1935: amount * effective_bps * duration / (10000 * 31536000)).
+// (processor.rs:2016-2023: amount * effective_bps * duration / (10000 * INTEREST_PERIOD_SECS)).
+//
+// LOAD-BEARING: the denominator is a 30-DAY period, not a year. Interest is a
+// percentage of the principal per 30-day term, prorated linearly for shorter
+// terms — so a full 30-day loan costs exactly `rateBps`. Using 365 days here
+// would quote the user ~12x less interest than the chain actually charges.
+export const INTEREST_PERIOD_SECS = 2_592_000; // 30 days
+
 export function calculateExactInterestDue(
   borrowAmountMicro: bigint,
   rateBps: number,
@@ -237,8 +258,27 @@ export function calculateExactInterestDue(
 ): bigint {
   const effectiveBps = applyAprDiscountBps(rateBps, aprDiscountPercent);
   const numerator = borrowAmountMicro * BigInt(effectiveBps) * BigInt(durationSeconds);
-  const denominator = BigInt(10000) * BigInt(31536000);
+  const denominator = BigInt(10000) * BigInt(INTEREST_PERIOD_SECS);
   return numerator / denominator;
+}
+
+/** The program's rate ceiling, in bps, per `INTEREST_PERIOD_SECS` (processor.rs). */
+export const MAX_INTEREST_RATE_BPS = 1000;
+
+/**
+ * The most interest a P2P pawn is allowed to offer (processor.rs
+ * `process_create_p2p_offer`). Same ceiling as a pool rate — 10% of the amount
+ * borrowed per 30-day term, prorated — so a 1-day pawn cannot charge what a
+ * 30-day one does. Floored by integer division, exactly as the program floors
+ * it, so this check can never pass something the chain would reject.
+ */
+export function maxP2PInterestOffered(
+  requestedAmountMicro: bigint,
+  durationSeconds: number
+): bigint {
+  const numerator =
+    requestedAmountMicro * BigInt(MAX_INTEREST_RATE_BPS) * BigInt(durationSeconds);
+  return numerator / (BigInt(10000) * BigInt(INTEREST_PERIOD_SECS));
 }
 
 // H-3: origination fee withheld from the disbursement (processor.rs:1742-1745):
@@ -2258,6 +2298,12 @@ export async function buildFundP2POfferTx(
   const offerMint = offer.liquidityMint ? new PublicKey(offer.liquidityMint) : USDC_MAINNET_MINT;
   const funderUsdcAccount = getAssociatedTokenAddress(offerMint, funder);
   const creatorUsdcAccount = getAssociatedTokenAddress(offerMint, creator);
+  // Index 5: the treasury's token account for this mint, which receives the
+  // origination fee. Required by the program — the funder is debited the full
+  // requested amount, the creator receives it less the fee. (processor.rs
+  // `process_fund_p2p_offer`.)
+  const [treasuryPDA] = getTreasuryPDA();
+  const treasuryUsdcAccount = getAssociatedTokenAddress(offerMint, treasuryPDA);
 
   const tx = new Transaction();
   tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 80_000 }));
@@ -2275,6 +2321,7 @@ export async function buildFundP2POfferTx(
       { pubkey: funderUsdcAccount, isSigner: false, isWritable: true },
       { pubkey: creatorUsdcAccount, isSigner: false, isWritable: true },
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: treasuryUsdcAccount, isSigner: false, isWritable: true },
     ],
     data,
   });
@@ -2791,16 +2838,22 @@ export async function buildClaimDefaultTx(
     poolPDA?: PublicKey;
     borrower?: PublicKey;
     isNativeSol?: boolean;
-    slashSkrDestination?: PublicKey;
+    /** Collateral mint: derives the price feed and the surplus destinations. */
+    collateralMint?: PublicKey;
+    /** Desk pinned its own feeds — the pool-scoped feed must be used. */
+    hasCustomOracle?: boolean;
   } = {}
 ): Promise<Transaction> {
   const tx = new Transaction();
-  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 100_000 }));
+  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 150_000 }));
   tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000 }));
 
   // Instruction 8: ClaimDefault -> 1 byte tag (8)
   const data = Buffer.alloc(1);
   data.writeUInt8(8, 0);
+
+  const isNativeSol = options.isNativeSol ?? true;
+  const collateralMint = options.collateralMint ?? (isNativeSol ? NATIVE_SOL_MINT : SKR_MINT);
 
   const keys = [
     { pubkey: caller, isSigner: true, isWritable: true },
@@ -2814,14 +2867,62 @@ export async function buildClaimDefaultTx(
     if (options.borrower) {
       const [profilePDA] = getProfilePDA(options.borrower);
       keys.push({ pubkey: profilePDA, isSigner: false, isWritable: true });
-      const [skrEscrowPDA] = getSkrEscrowPDA(options.borrower);
-      keys.push({ pubkey: skrEscrowPDA, isSigner: false, isWritable: true });
     }
-    const [treasuryPDA] = getTreasuryPDA();
-    keys.push({ pubkey: treasuryPDA, isSigner: false, isWritable: true });
-    if (options.slashSkrDestination) {
-      keys.push({ pubkey: options.slashSkrDestination, isSigner: false, isWritable: true });
+  }
+
+  // ORDER MATTERS: the treasury PDA must precede any other bare wallet. The
+  // program's account scan assigns the first non-token account that is not a
+  // known PDA to the treasury slot, so a borrower wallet sent first would be
+  // mistaken for the treasury and the priced split would fail closed with
+  // InvalidTreasuryAccount.
+  const [treasuryPDA] = getTreasuryPDA();
+  keys.push({ pubkey: treasuryPDA, isSigner: false, isWritable: true });
+
+  if (!isNativeSol) {
+    // The platform's share of the surplus is paid in the collateral mint.
+    keys.push({
+      pubkey: getAssociatedTokenAddress(collateralMint, treasuryPDA),
+      isSigner: false,
+      isWritable: true,
+    });
+  }
+
+  // Where the borrower's share of the surplus goes. Without it the program
+  // cannot pay a surplus and falls back to seizing the WHOLE escrow — so
+  // omitting this silently changes the economics of a default.
+  if (options.borrower) {
+    keys.push({
+      pubkey: isNativeSol
+        ? options.borrower
+        : getAssociatedTokenAddress(collateralMint, options.borrower),
+      isSigner: false,
+      isWritable: true,
+    });
+  }
+
+  // The collateral feed, so the lender is paid only what the debt is worth. A
+  // desk that pinned its own feeds is liquidated at the pool-scoped price — a
+  // global feed alone is rejected there (H-3 mirror), which would silently
+  // downgrade the split, so send the pool-scoped one when the desk has it.
+  if (options.hasCustomOracle && options.poolPDA) {
+    keys.push({
+      pubkey: getPoolOraclePDA(options.poolPDA, collateralMint)[0],
+      isSigner: false,
+      isWritable: false,
+    });
+    if (isNativeSol) {
+      keys.push({
+        pubkey: getPoolOraclePDA(options.poolPDA, NATIVE_SOL_MINT)[0],
+        isSigner: false,
+        isWritable: false,
+      });
     }
+  } else {
+    keys.push({
+      pubkey: getOraclePDA(isNativeSol ? NATIVE_SOL_MINT : collateralMint)[0],
+      isSigner: false,
+      isWritable: false,
+    });
   }
 
   keys.push(
@@ -2850,7 +2951,8 @@ export async function buildClaimDefaultTx(
   return tx;
 }
 
-// Build Claim Default for an Active Desk LoanOrder (Pool Authority seizes collateral & slashes bond)
+// Build Claim Default for an Active Desk LoanOrder (pool authority settles the
+// loan from collateral; no SKR is slashed — the bond is only released)
 export async function buildClaimLoanDefaultTx(
   authority: PublicKey,
   order: LoanOrder,
@@ -2861,8 +2963,9 @@ export async function buildClaimLoanDefaultTx(
   const [loanPDA] = getLoanPDA(poolPDA, borrower, order.id);
   const [escrowPDA] = getEscrowPDA(loanPDA);
   const isNativeSol = isNativeSolCollateralName(order.collateralName);
-  const authoritySkrAta = getAssociatedTokenAddress(SKR_MINT, authority);
-  const destinationCollateral = isNativeSol ? authority : authoritySkrAta;
+  const collateralMint = isNativeSol ? NATIVE_SOL_MINT : SKR_MINT;
+  const authorityCollateralAta = getAssociatedTokenAddress(collateralMint, authority);
+  const destinationCollateral = isNativeSol ? authority : authorityCollateralAta;
 
   return buildClaimDefaultTx(
     authority,
@@ -2873,12 +2976,15 @@ export async function buildClaimLoanDefaultTx(
       poolPDA,
       borrower,
       isNativeSol,
-      slashSkrDestination: authoritySkrAta,
+      collateralMint,
+      // A desk with its own feeds must be liquidated at the pool-scoped price.
+      hasCustomOracle: pool?.hasCustomOracle,
     }
   );
 }
 
-// Build Claim Default for a P2P Pawn (Funder seizes locked collateral)
+// Build Claim Default for a P2P Pawn (funder is paid the debt's worth of the
+// locked collateral; any surplus splits between the creator and the treasury)
 export async function buildClaimPawnDefaultTx(
   funder: PublicKey,
   offer: P2POffer
@@ -2887,14 +2993,22 @@ export async function buildClaimPawnDefaultTx(
   const [offerPDA] = getP2POfferPDA(creator, offer.id);
   const [escrowPDA] = getEscrowPDA(offerPDA);
   const isNativeSol = isNativeSolCollateralName(offer.collateralName);
-  const destinationCollateral = isNativeSol ? funder : getAssociatedTokenAddress(SKR_MINT, funder);
+  const collateralMint = isNativeSol ? NATIVE_SOL_MINT : SKR_MINT;
+  const destinationCollateral = isNativeSol ? funder : getAssociatedTokenAddress(collateralMint, funder);
 
   return buildClaimDefaultTx(
     funder,
     offerPDA,
     escrowPDA,
     destinationCollateral,
-    { isNativeSol }
+    {
+      isNativeSol,
+      collateralMint,
+      // For a pawn, the borrower is the offer's creator — this is where their
+      // share of any surplus is paid. Omitting it would hand the funder the
+      // whole escrow.
+      borrower: creator,
+    }
   );
 }
 

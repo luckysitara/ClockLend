@@ -112,7 +112,17 @@ pub enum ClockLendInstruction {
     /// 2. `[writable]` Funder Liquidity Token Account
     /// 3. `[writable]` Creator Liquidity Token Account (receives principal)
     /// 4. `[]` Token Program
-    /// 5. `[]` Clock Sysvar
+    /// 5. `[writable]` Treasury Liquidity Token Account (receives the
+    ///    origination fee; MUST be the treasury PDA's token account for the
+    ///    offer's liquidity mint). Required, not optional — see below.
+    ///
+    /// An origination fee of 25 bps (native-SOL collateral) or 50 bps (SKR) is
+    /// withheld from the disbursement, matching the pool borrow path. The funder
+    /// is debited exactly `requested_amount`; the creator receives
+    /// `requested_amount - fee`; the treasury receives the fee. The fee is a
+    /// percentage of principal and does NOT scale with term, so a 60-second pawn
+    /// costs the same as a 30-day one — otherwise near-zero interest on a very
+    /// short pawn would make credit free to roll indefinitely.
     FundP2POffer,
 
     /// 6. Repay active loan (Pool loan or P2P loan) & boost reputation score
@@ -139,6 +149,16 @@ pub enum ClockLendInstruction {
     TriggerGracePeriod,
 
     /// 8. Liquidate defaulted collateral after grace period expires
+    ///
+    /// The lender is made whole for the debt (principal + interest), priced in
+    /// collateral units from the optional feed; the platform takes
+    /// `PLATFORM_SURPLUS_FEE_BPS` of the released surplus and the borrower keeps
+    /// the rest. When the collateral cannot be priced — no feed, or one that is
+    /// uninitialized, stale, zero, mis-minted, or published with the wrong
+    /// decimals — the legacy split runs instead (5% of the collateral to the
+    /// treasury, 95% to the lender), so a broken oracle can never block a
+    /// default from settling.
+    ///
     /// Accounts:
     /// 0. `[signer]` Caller (Pool Authority, LP, or P2P Funder)
     /// 1. `[writable]` LoanOrder PDA OR P2POffer PDA
@@ -147,12 +167,23 @@ pub enum ClockLendInstruction {
     /// Optional / Context-specific Accounts:
     /// 4. `[writable, optional]` LendingPool PDA (required for pool loans)
     /// 5. `[writable, optional]` UserProfile PDA (for credit penalty & SKR slashing)
-    /// 6. `[writable, optional]` Treasury Account (required for 5% liquidation margin when collateral > 0)
+    /// 6. `[writable, optional]` Treasury Account (required when the active split
+    ///    owes the treasury a non-zero share: the legacy 5% margin or the
+    ///    platform's cut of the surplus)
     /// 7. `[writable, optional]` SKR Escrow Account PDA `[b"skr_escrow", borrower]` (if borrower has staked SKR)
     /// 8. `[writable, optional]` SKR Slash Destination Token Account (required for SOL loans when borrower has staked SKR)
     /// 9. `[]` Token Program (required for SPL collateral or SKR slashing)
     /// 10. `[]` System Program (required for Native SOL collateral)
     /// 11. `[]` Clock Sysvar
+    /// 12. `[]` Collateral PriceFeed PDA, matched against `[b"oracle", collateral_mint]`
+    ///     or `[b"oracle", pool_pda, collateral_mint]` (pool-scoped wins over
+    ///     global) — any other account here is ignored. When it prices the
+    ///     collateral successfully, the debt-only split above is used.
+    /// 13. `[writable, optional]` Borrower Collateral Destination: the borrower's
+    ///     wallet for native SOL, a token account owned by `loan.borrower` for SPL
+    ///     collateral. Receives the borrower's share of the surplus; if it is
+    ///     omitted (or has a non-zero share that cannot be paid) the legacy split
+    ///     runs instead, since an unpairable share would be stranded in the escrow.
     ClaimDefault,
 
     /// 9. Withdraw liquidity from pool vault (Pool Authority only)

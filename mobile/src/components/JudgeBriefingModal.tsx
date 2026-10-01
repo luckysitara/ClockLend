@@ -106,7 +106,7 @@ export const JudgeBriefingModal: React.FC<JudgeBriefingModalProps> = ({
                   <Text style={[styles.bulletDot, { color: colors.primary }]}>•</Text>
                   <Text style={[styles.bulletText, { color: colors.textSecondary }]}>
                     <Text style={{ fontWeight: '800', color: colors.text }}>Gamified Credit Progression: </Text>
-                    Your on-chain reputation score starts at 10,000, gains 50 per repaid loan (capped at 10,000, so it cannot rise from a fresh profile) and drops 1,000 on default. Separately, staking SKR cuts your interest rate by up to 50% (two tiers: ≥100 SKR, ≥1,000 SKR).
+                    Your on-chain reputation score starts at 10,000, gains 50 per repaid loan (capped at 10,000, so it cannot rise from a fresh profile) and drops 1,000 on default. Separately, staking SKR cuts your interest rate — the discount slides continuously from 1% at 100 SKR to 25% at 10,000 SKR, and locks a flat SKR bond per band while you borrow.
                   </Text>
                 </View>
                 <View style={styles.bulletItem}>
