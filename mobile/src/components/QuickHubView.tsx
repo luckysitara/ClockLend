@@ -8,7 +8,6 @@ import {
   TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -33,7 +32,7 @@ export const QuickHubView: React.FC<QuickHubViewProps> = ({
   onOpenJudgeBriefing,
   onLockApp,
 }) => {
-  const { colors, mode } = useTheme();
+  const { colors } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
 
   const actions = [
@@ -111,35 +110,22 @@ export const QuickHubView: React.FC<QuickHubViewProps> = ({
         )}
       </View>
 
-      {/* 4x2 Grid of Rounded Action Cards (Brand Primary Color Gradient) */}
+      {/* 4x2 Grid of Rounded Action Cards (Matches 94347e6f) */}
       <View style={styles.grid}>
         {filteredActions.map((action) => (
           <TouchableOpacity
             key={action.id}
-            style={styles.gridTileWrapper}
+            style={[styles.gridTile, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               action.onPress();
             }}
-            activeOpacity={0.8}
-            accessibilityRole="button"
-            accessibilityLabel={action.title}
+            activeOpacity={0.7}
           >
-            <LinearGradient
-              colors={
-                mode === 'dark'
-                  ? ['#172554', '#1E40AF', '#2563EB']
-                  : ['#1E3A8A', '#1D4ED8', '#2563EB']
-              }
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.gridTile}
-            >
-              <View style={styles.tileIconCircle}>
-                <Ionicons name={action.icon} size={24} color="#FFFFFF" />
-              </View>
-              <Text style={styles.tileTitle}>{action.title}</Text>
-            </LinearGradient>
+            <View style={[styles.tileIconCircle, { backgroundColor: colors.badgeBg }]}>
+              <Ionicons name={action.icon} size={24} color={colors.primary} />
+            </View>
+            <Text style={[styles.tileTitle, { color: colors.text }]}>{action.title}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -181,40 +167,30 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 12,
   },
-  gridTileWrapper: {
+  gridTile: {
     width: '48%',
     aspectRatio: 1.15,
     borderRadius: 20,
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  gridTile: {
-    flex: 1,
-    borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
   tileIconCircle: {
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   tileTitle: {
     fontSize: 14,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 0.2,
+    fontWeight: '700',
   },
 });
