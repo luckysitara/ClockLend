@@ -39,7 +39,7 @@ import { JudgeBriefingModal } from './src/components/JudgeBriefingModal';
 import { SplashScreenView } from './src/components/SplashScreenView';
 import { SecurityLockScreen, LockScreenMode } from './src/components/SecurityLockScreen';
 import { SecurityLockdownView } from './src/components/SecurityLockdownView';
-import { isLockEnabled, checkDeviceIntegrity, DeviceIntegrityResult } from './src/services/securityService';
+import { isLockEnabled, isPinConfigured, checkDeviceIntegrity, DeviceIntegrityResult } from './src/services/securityService';
 import { syncLoanReminders, clearLoanReminders } from './src/services/loanReminders';
 import * as SecureStore from 'expo-secure-store';
 import {
@@ -175,7 +175,8 @@ function MainApp() {
 
   const checkInitialLock = async () => {
     const enabled = await isLockEnabled();
-    if (enabled) {
+    const pinConfigured = await isPinConfigured();
+    if (enabled && pinConfigured) {
       setLockScreenMode('unlock');
       setIsLocked(true);
     }
@@ -186,7 +187,8 @@ function MainApp() {
     // (covers the wallet-authorization background/foreground bounce).
     if (Date.now() - lastUnlockAtRef.current < 90_000) return;
     const enabled = await isLockEnabled();
-    if (enabled) {
+    const pinConfigured = await isPinConfigured();
+    if (enabled && pinConfigured) {
       setLockScreenMode('unlock');
       setIsLocked(true);
     }
@@ -1345,8 +1347,17 @@ function MainApp() {
           barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
         />
         <ConnectWalletView
-          onConnected={(newSession) => {
+          onConnected={async (newSession) => {
             setSession(newSession);
+            try {
+              const configured = await isPinConfigured();
+              if (!configured) {
+                setLockScreenMode('setup');
+                setIsLocked(true);
+              }
+            } catch (err) {
+              console.log('Error checking pin configuration:', err);
+            }
           }}
         />
         {toastMessage && (
@@ -1436,6 +1447,7 @@ function MainApp() {
             walletAssets={walletAssets}
             onBorrow={handleBorrow}
             isLoadingPools={isLoadingPools}
+            onOpenAssetsModal={() => setShowAssetsModal(true)}
           />
         )}
 

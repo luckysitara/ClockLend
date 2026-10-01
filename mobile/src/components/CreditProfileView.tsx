@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { UserProfile, WalletAssets } from '../types';
-import { SkrYieldVaultState, UserYieldPositionState, tierDiscountLabel } from '../solana/onChainService';
+import { SkrYieldVaultState, UserYieldPositionState } from '../solana/onChainService';
 import {
   isLockEnabled,
   setLockEnabled,
@@ -93,8 +93,6 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
   const cleanHandle = skrHandle.replace(/^@/, '').replace(/\.skr$/i, '');
   const skrUsername = `${cleanHandle}.skr`;
 
-  const availableToUnstake = Math.max(0, userProfile.stakedSkr - (userProfile.lockedSkr || 0));
-
   if (subView === 'SETTINGS') {
     return (
       <SettingsView
@@ -171,135 +169,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         </View>
       </View>
 
-      {/* ── 2. On-Chain Credit Standing ── */}
-      <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        <View style={styles.creditHeaderRow}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
-            <Text style={[styles.cardHeading, { color: colors.text }]}>On-Chain Standing</Text>
-          </View>
-          <View style={[styles.tierTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
-            <Text style={[styles.tierTagText, { color: colors.primaryLabel }]}>
-              {tierDiscountLabel(userProfile.tier)}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.standingGrid}>
-          <View style={styles.standingItem}>
-            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Reputation Score</Text>
-            <Text style={[styles.metricValue, { color: colors.primaryLabel }]}>
-              {(userProfile.reputationScore / 100).toFixed(1)}%
-            </Text>
-          </View>
-          <View style={styles.standingItem}>
-            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Completed Loans</Text>
-            <Text style={[styles.metricValue, { color: colors.text }]}>
-              {userProfile.totalLoansCompleted} on-time
-            </Text>
-          </View>
-          <View style={styles.standingItem}>
-            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Defaults</Text>
-            <Text style={[styles.metricValue, { color: userProfile.totalLoansDefaulted > 0 ? colors.danger : colors.textSecondary }]}>
-              {userProfile.totalLoansDefaulted}
-            </Text>
-          </View>
-          <View style={styles.standingItem}>
-            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>APR Discount</Text>
-            <Text style={[styles.metricValue, { color: colors.success }]}>
-              {userProfile.aprDiscount > 0 ? `-${(userProfile.aprDiscount / 100).toFixed(0)}%` : '0%'}
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      {/* ── 3. SKR Reputation Bond Staking Card ── */}
-      <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-        <View style={styles.creditHeaderRow}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Ionicons name="lock-closed" size={18} color={colors.primary} />
-            <Text style={[styles.cardHeading, { color: colors.text }]}>SKR Reputation Bond</Text>
-          </View>
-          <View style={[styles.tierTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
-            <Text style={[styles.tierTagText, { color: colors.primaryLabel }]}>
-              {userProfile.stakedSkr >= 1000 ? 'Tier 2 Active' : userProfile.stakedSkr >= 100 ? 'Tier 1 Active' : 'No Tier Active'}
-            </Text>
-          </View>
-        </View>
-
-        <Text style={[styles.bondExplainer, { color: colors.textSecondary }]}>
-          Stake SKR to unlock interest discounts across all lending desks. 100 SKR unlocks 25% off; 1,000 SKR unlocks 50% off. Bonds backing active loans remain safely locked on-chain.
-        </Text>
-
-        <View style={styles.bondStatsRow}>
-          <View style={[styles.bondStatBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-            <Text style={[styles.bondStatLabel, { color: colors.textMuted }]}>Staked Bond</Text>
-            <Text style={[styles.bondStatValue, { color: colors.text }]}>
-              {userProfile.stakedSkr.toLocaleString()} SKR
-            </Text>
-          </View>
-          <View style={[styles.bondStatBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-            <Text style={[styles.bondStatLabel, { color: colors.textMuted }]}>Loan Locked</Text>
-            <Text style={[styles.bondStatValue, { color: colors.warning }]}>
-              {(userProfile.lockedSkr || 0).toLocaleString()} SKR
-            </Text>
-          </View>
-        </View>
-
-        {/* Quick Stake Preset Buttons */}
-        <View style={styles.presetSection}>
-          <Text style={[styles.presetSectionLabel, { color: colors.textMuted }]}>QUICK STAKE PRESETS</Text>
-          <View style={styles.presetRow}>
-            <TouchableOpacity
-              style={[styles.presetBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
-              onPress={() => {
-                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
-                onStakeSkr(100);
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.presetBtnText, { color: colors.primaryLabel }]}>+100 SKR</Text>
-              <Text style={[styles.presetBtnSub, { color: colors.textMuted }]}>Tier 1 (25% off)</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.presetBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
-              onPress={() => {
-                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
-                onStakeSkr(1000);
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.presetBtnText, { color: colors.primaryLabel }]}>+1,000 SKR</Text>
-              <Text style={[styles.presetBtnSub, { color: colors.textMuted }]}>Tier 2 (50% off)</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Unstake Action */}
-        {onUnstakeSkr && availableToUnstake > 0 && (
-          <TouchableOpacity
-            style={[styles.unstakeBtn, { borderColor: colors.cardBorder, backgroundColor: colors.cardAlt }]}
-            onPress={() => {
-              Alert.alert(
-                'Unstake SKR Reputation Bond',
-                `You have ${availableToUnstake.toLocaleString()} SKR available to unstake (${(userProfile.lockedSkr || 0).toLocaleString()} SKR is currently locked by active loans).\n\nProceed to withdraw ${availableToUnstake.toLocaleString()} SKR?`,
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Unstake All', onPress: () => onUnstakeSkr(availableToUnstake) },
-                ]
-              );
-            }}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.unstakeBtnText, { color: colors.textSecondary }]}>
-              Unstake Available SKR ({availableToUnstake.toLocaleString()})
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* ── 4. Staking Yield Rewards (If Position Exists) ── */}
+      {/* ── 2. Staking Yield Rewards (If Position Exists) ── */}
       {yieldPosition && accruedUsd > 0 && (
         <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           <View style={styles.creditHeaderRow}>

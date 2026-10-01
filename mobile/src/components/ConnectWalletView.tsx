@@ -8,6 +8,7 @@ import {
   Alert,
   Image,
   Animated,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,6 +16,7 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { connectSeekerWallet, SeekerSession } from '../solana/seekerWallet';
 
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const LOGO_IMG = require('../../assets/logo.png');
 
 interface ConnectWalletViewProps {
@@ -147,14 +149,12 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
         </TouchableOpacity>
       </View>
 
-      {/* ── Brand Logo Only (No Text) ── */}
+      {/* ── Brand Logo Only (Clean Floating, No Box/Background) ── */}
       <View style={styles.heroSection}>
-        <View style={[styles.logoContainer, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-          <Image source={LOGO_IMG} style={styles.logoImage} resizeMode="contain" />
-        </View>
+        <Image source={LOGO_IMG} style={styles.logoImage} resizeMode="contain" />
       </View>
 
-      {/* ── Centered Bigger Showcase Card (Horizontal Carousel) ── */}
+      {/* ── Centered Bigger Showcase Card (Occupies 45-50% of Screen) ── */}
       <View style={styles.centerSection}>
         <View style={[styles.cardWrapper, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           <Animated.View
@@ -171,7 +171,7 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
             </View>
 
             <View style={[styles.iconBox, { backgroundColor: colors.badgeBg }]}>
-              <Ionicons name={slide.icon} size={36} color={colors.primary} />
+              <Ionicons name={slide.icon} size={42} color={colors.primary} />
             </View>
 
             <Text style={[styles.cardTitle, { color: colors.text }]}>{slide.title}</Text>
@@ -200,7 +200,8 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
           style={[styles.connectBtnContainer, isConnecting && styles.btnDisabled]}
           onPress={handleMwaConnect}
           disabled={isConnecting}
-          activeOpacity={0.88}
+          activeOpacity={0.8}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityRole="button"
           accessibilityLabel="Connect Seeker Hardware Wallet"
         >
@@ -209,6 +210,7 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.connectBtnGradient}
+            pointerEvents="none"
           >
             {isConnecting ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
@@ -265,94 +267,86 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   themeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   heroSection: {
     alignItems: 'center',
-    paddingTop: 8,
-    paddingBottom: 4,
-  },
-  logoContainer: {
-    width: 84,
-    height: 84,
-    borderRadius: 28,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#1D4ED8',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    elevation: 4,
+    paddingTop: 10,
+    paddingBottom: 6,
   },
   logoImage: {
-    width: 54,
-    height: 54,
+    width: 68,
+    height: 68,
   },
   centerSection: {
     flex: 1,
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 8,
   },
   cardWrapper: {
+    minHeight: Math.round(SCREEN_HEIGHT * 0.48),
     borderRadius: 28,
     borderWidth: 1,
-    paddingVertical: 28,
-    paddingHorizontal: 24,
+    paddingVertical: 26,
+    paddingHorizontal: 22,
     alignItems: 'center',
+    justifyContent: 'space-between',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.1,
     shadowRadius: 18,
     elevation: 4,
   },
   cardInner: {
+    flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
     width: '100%',
   },
   badgePill: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 14,
     borderWidth: 1,
     marginBottom: 16,
   },
   badgeText: {
     fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.6,
+    letterSpacing: 0.8,
   },
   iconBox: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
   },
   cardTitle: {
-    fontSize: 21,
-    fontWeight: '800',
-    marginBottom: 10,
+    fontSize: 23,
+    fontWeight: '900',
+    marginBottom: 12,
     textAlign: 'center',
+    letterSpacing: -0.2,
   },
   cardDesc: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '500',
-    lineHeight: 22,
+    lineHeight: 23,
     textAlign: 'center',
-    paddingHorizontal: 10,
-    marginBottom: 22,
+    paddingHorizontal: 8,
   },
   dotsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginTop: 16,
   },
   dot: {
     width: 8,
@@ -365,6 +359,8 @@ const styles = StyleSheet.create({
   },
   bottomSection: {
     gap: 12,
+    zIndex: 10,
+    elevation: 5,
   },
   connectBtnContainer: {
     borderRadius: 28,

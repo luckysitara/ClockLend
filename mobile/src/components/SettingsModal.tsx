@@ -17,6 +17,12 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 
+const STATUS_BAR_INSET = Platform.select({
+  android: Math.max(StatusBar.currentHeight ?? 0, 36) + 16,
+  ios: 52,
+  default: 24,
+});
+
 export interface SettingsViewProps {
   onBack: () => void;
   skrHandle: string;
@@ -406,6 +412,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         onRequestClose={() => setActiveModal(null)}
       >
         <View style={[styles.modalSheetContainer, { backgroundColor: colors.background }]}>
+          <StatusBar
+            translucent
+            backgroundColor="transparent"
+            barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
+          />
           <View style={[styles.modalSheetHeader, { borderBottomColor: colors.divider }]}>
             <Text style={[styles.modalSheetTitle, { color: colors.text }]}>
               {activeModal === 'TERMS_CONDITIONS' && 'Terms & Conditions'}
@@ -625,7 +636,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 12 : 16,
+    paddingTop: STATUS_BAR_INSET,
     paddingBottom: 14,
     borderBottomWidth: 1,
   },
@@ -705,15 +716,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 18,
+    paddingTop: STATUS_BAR_INSET,
+    paddingBottom: 16,
     borderBottomWidth: 1,
   },
   modalSheetTitle: {
     fontSize: 18,
     fontWeight: '800',
+    flex: 1,
+    marginRight: 12,
   },
   modalSheetClose: {
-    padding: 2,
+    padding: 4,
   },
   modalSheetBody: {
     flex: 1,

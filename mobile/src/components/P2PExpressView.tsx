@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
   Image,
   Modal,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -27,6 +28,7 @@ import {
   isAssetPriceUsable,
 } from '../solana/onChainService';
 
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SOL_LOGO = require('../../assets/tokens/sol.png');
 const SKR_LOGO = require('../../assets/tokens/skr.png');
 
@@ -41,6 +43,7 @@ interface P2PExpressViewProps {
     pool: LendingPool,
     durationDays: number
   ) => void;
+  onOpenAssetsModal?: () => void;
   onRequestAirdrop?: () => void;
   isLoadingPools?: boolean;
   initialAmount?: string;
@@ -51,6 +54,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
   userProfile,
   walletAssets,
   onBorrow,
+  onOpenAssetsModal,
   isLoadingPools = false,
   initialAmount,
 }) => {
@@ -223,9 +227,26 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
           <Image source={require('../../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
           <Text style={[styles.headerTitle, { color: colors.text }]}>Instant Borrow</Text>
         </View>
-        <View style={[styles.walletChip, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <TouchableOpacity
+          style={[styles.walletChip, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+          onPress={() => {
+            try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+            if (onOpenAssetsModal) {
+              onOpenAssetsModal();
+            } else {
+              Alert.alert(
+                'Wallet Balances',
+                `SOL: ${solBalance.toFixed(3)}\nSKR: ${skrBalance.toLocaleString()}\nUSDC: $${walletAssets?.usdcBalance?.toFixed(2) ?? '0.00'}`
+              );
+            }
+          }}
+          activeOpacity={0.7}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          accessibilityRole="button"
+          accessibilityLabel="Open wallet assets"
+        >
           <Ionicons name="wallet-outline" size={18} color={colors.textSecondary} />
-        </View>
+        </TouchableOpacity>
       </View>
 
       {/* ── Main Card ── */}
@@ -619,9 +640,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   mainCard: {
-    borderRadius: 24,
+    minHeight: Math.round(SCREEN_HEIGHT * 0.78),
+    borderRadius: 28,
     borderWidth: 1,
-    padding: 20,
+    padding: 22,
+    justifyContent: 'space-between',
+    marginBottom: 24,
     shadowColor: '#1D4ED8',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.12,
@@ -629,9 +653,10 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   inputBox: {
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
-    padding: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
   },
   inputHeaderRow: {
     flexDirection: 'row',
@@ -659,14 +684,15 @@ const styles = StyleSheet.create({
   },
   numberInput: {
     flex: 1,
-    fontSize: 26,
-    fontWeight: '800',
-    paddingVertical: 0,
+    fontSize: 32,
+    fontWeight: '900',
+    paddingVertical: 4,
   },
   collateralAmountText: {
     flex: 1,
-    fontSize: 24,
-    fontWeight: '800',
+    fontSize: 30,
+    fontWeight: '900',
+    paddingVertical: 4,
   },
   tokenTag: {
     flexDirection: 'row',
@@ -718,9 +744,9 @@ const styles = StyleSheet.create({
   },
   durationPill: {
     flex: 1,
-    paddingVertical: 6,
+    paddingVertical: 8,
     paddingHorizontal: 8,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -731,9 +757,10 @@ const styles = StyleSheet.create({
   },
   summaryPanel: {
     marginTop: 18,
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
-    padding: 14,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -751,8 +778,8 @@ const styles = StyleSheet.create({
   },
   borrowBtn: {
     marginTop: 20,
-    borderRadius: 20,
-    height: 52,
+    borderRadius: 24,
+    height: 56,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -271,7 +271,9 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
         </View>
         {onCancel && (
           <TouchableOpacity onPress={onCancel} style={styles.cancelBtn}>
-            <Text style={[styles.cancelText, { color: colors.textSecondary }]}>Cancel</Text>
+            <Text style={[styles.cancelText, { color: colors.textSecondary }]}>
+              {currentMode === 'setup' ? 'Skip' : 'Cancel'}
+            </Text>
           </TouchableOpacity>
         )}
       </View>

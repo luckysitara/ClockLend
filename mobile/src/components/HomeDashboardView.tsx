@@ -89,17 +89,17 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
   useEffect(() => {
     const timer = setInterval(() => {
       Animated.parallel([
-        Animated.timing(bannerFadeAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
-        Animated.timing(bannerSlideAnim, { toValue: -6, duration: 250, useNativeDriver: true }),
+        Animated.timing(bannerFadeAnim, { toValue: 0, duration: 320, useNativeDriver: true }),
+        Animated.timing(bannerSlideAnim, { toValue: -6, duration: 320, useNativeDriver: true }),
       ]).start(() => {
         setActiveBanner((prev) => (prev + 1) % BANNER_CARDS.length);
         bannerSlideAnim.setValue(6);
         Animated.parallel([
-          Animated.timing(bannerFadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
-          Animated.timing(bannerSlideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+          Animated.timing(bannerFadeAnim, { toValue: 1, duration: 360, useNativeDriver: true }),
+          Animated.timing(bannerSlideAnim, { toValue: 0, duration: 360, useNativeDriver: true }),
         ]).start();
       });
-    }, 4200);
+    }, 7500);
 
     return () => clearInterval(timer);
   }, []);

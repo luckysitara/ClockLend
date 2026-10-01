@@ -144,6 +144,7 @@ export async function setUserPin(pin: string): Promise<void> {
     const hash = hashPinWithSalt(pin, salt);
     await SecureStore.setItemAsync(KEY_PIN_HASH, hash);
     await SecureStore.setItemAsync(KEY_PIN_CONFIGURED, 'true');
+    await SecureStore.setItemAsync(KEY_LOCK_ENABLED, 'true');
     await resetFailedAttempts();
   } catch (err) {
     console.warn('Error saving user PIN hash:', err);
