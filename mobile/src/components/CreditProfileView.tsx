@@ -7,12 +7,21 @@ import {
   ScrollView,
   Image,
   Alert,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { UserProfile, WalletAssets } from '../types';
-import { SkrYieldVaultState, UserYieldPositionState } from '../solana/onChainService';
+import {
+  SkrYieldVaultState,
+  UserYieldPositionState,
+  tierDiscountLabel,
+  livePrices,
+} from '../solana/onChainService';
 import {
   isLockEnabled,
   setLockEnabled,
@@ -61,6 +70,12 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
   const [hasCustomPin, setHasCustomPin] = useState<boolean>(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  // Staking & Unstaking modal state
+  const [showStakeModal, setShowStakeModal] = useState<boolean>(false);
+  const [showUnstakeModal, setShowUnstakeModal] = useState<boolean>(false);
+  const [stakeInput, setStakeInput] = useState<string>('');
+  const [unstakeInput, setUnstakeInput] = useState<string>('');
+
   useEffect(() => {
     loadSecurityPrefs();
   }, []);
@@ -88,10 +103,83 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
 
   const shorten = (addr: string) => `${addr.slice(0, 8)}...${addr.slice(-8)}`;
 
+  const sanitizeDecimal = (val: string): string => {
+    return val.replace(/[^0-9.]/g, '').replace(/(\..*?)\..*/g, '$1');
+  };
+
+  // Live Balances & Calculations
+  const walletSkr = walletAssets?.skrBalance ?? 0;
+  const stakedSkr = userProfile.stakedSkr ?? 0;
+  const lockedSkr = userProfile.lockedSkr ?? 0;
+  const availableToUnstake = Math.max(0, stakedSkr - lockedSkr);
+  const skrPrice = livePrices.skr || 0.024;
+  const stakedUsd = stakedSkr * skrPrice;
   const accruedUsd = (yieldPosition?.accruedRewards ?? 0) / 1_000_000;
+  const totalClaimedUsd = (yieldPosition?.totalClaimed ?? 0) / 1_000_000;
   const canClaimYield = !!onClaimYield && accruedUsd > 0;
   const cleanHandle = skrHandle.replace(/^@/, '').replace(/\.skr$/i, '');
   const skrUsername = `${cleanHandle}.skr`;
+
+  // Tier progress bar calculations
+  let progressRatio = 0;
+  let progressLabel = '';
+  if (stakedSkr < 100) {
+    progressRatio = Math.min(1, Math.max(0.04, stakedSkr / 100));
+    progressLabel = `${(100 - stakedSkr).toLocaleString()} SKR to Tier 1 (25% OFF)`;
+  } else if (stakedSkr < 1000) {
+    progressRatio = Math.min(1, Math.max(0.08, (stakedSkr - 100) / 900));
+    progressLabel = `${(1000 - stakedSkr).toLocaleString()} SKR to Tier 2 (50% OFF)`;
+  } else {
+    progressRatio = 1;
+    progressLabel = 'Max Tier 2 Active (50% APR Discount)';
+  }
+
+  // Stake Modal Live Computations
+  const parsedStakeAmount = parseFloat(stakeInput) || 0;
+  const isStakeExceeding = parsedStakeAmount > walletSkr;
+  const canConfirmStake = parsedStakeAmount > 0 && !isStakeExceeding;
+  const projectedStakedTotal = stakedSkr + parsedStakeAmount;
+  const projectedAvailable = Math.max(0, projectedStakedTotal - lockedSkr);
+  const projectedAprDiscount = projectedAvailable >= 1000 ? 50 : projectedAvailable >= 100 ? 25 : 0;
+  const projectedTier = projectedAprDiscount >= 50 ? 'Tier 2' : projectedAprDiscount >= 25 ? 'Tier 1' : 'Standard';
+
+  // Unstake Modal Live Computations
+  const parsedUnstakeAmount = parseFloat(unstakeInput) || 0;
+  const isUnstakeExceeding = parsedUnstakeAmount > availableToUnstake;
+  const canConfirmUnstake = parsedUnstakeAmount > 0 && !isUnstakeExceeding;
+  const remainingAvailable = Math.max(0, (stakedSkr - parsedUnstakeAmount) - lockedSkr);
+  const remainingAprDiscount = remainingAvailable >= 1000 ? 50 : remainingAvailable >= 100 ? 25 : 0;
+  const willDowngradeTier = parsedUnstakeAmount > 0 && remainingAprDiscount < userProfile.aprDiscount;
+
+  const handleOpenStake = (initialAmt?: number) => {
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+    setStakeInput(initialAmt ? initialAmt.toString() : '');
+    setShowStakeModal(true);
+  };
+
+  const handleOpenUnstake = () => {
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+    setUnstakeInput('');
+    setShowUnstakeModal(true);
+  };
+
+  const handleConfirmStake = () => {
+    if (!canConfirmStake) return;
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch {}
+    const amount = parsedStakeAmount;
+    setShowStakeModal(false);
+    setStakeInput('');
+    onStakeSkr(amount);
+  };
+
+  const handleConfirmUnstake = () => {
+    if (!canConfirmUnstake || !onUnstakeSkr) return;
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch {}
+    const amount = parsedUnstakeAmount;
+    setShowUnstakeModal(false);
+    setUnstakeInput('');
+    onUnstakeSkr(amount);
+  };
 
   if (subView === 'SETTINGS') {
     return (
@@ -163,40 +251,186 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         </View>
       </View>
 
-      {/* ── 2. Staking Yield Rewards (If Position Exists) ── */}
-      {yieldPosition && accruedUsd > 0 && (
-        <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
-          <View style={styles.creditHeaderRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name="sparkles" size={18} color={colors.success} />
-              <Text style={[styles.cardHeading, { color: colors.text }]}>Staking Yield</Text>
-            </View>
-            <View style={[styles.tierTag, { backgroundColor: 'rgba(16, 185, 129, 0.12)', borderColor: colors.success }]}>
-              <Text style={[styles.tierTagText, { color: colors.success }]}>REWARDS READY</Text>
-            </View>
+      {/* ── 2. SKR Staking Hub Card ── */}
+      <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <View style={styles.creditHeaderRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="sparkles" size={18} color={colors.primary} />
+            <Text style={[styles.cardHeading, { color: colors.text }]}>SKR Staking</Text>
           </View>
-          <View style={styles.yieldRow}>
-            <View>
-              <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Accrued Protocol Yield</Text>
-              <Text style={[styles.yieldAmountText, { color: colors.text }]}>${accruedUsd.toFixed(4)} USDC</Text>
-            </View>
-            {canClaimYield && (
-              <TouchableOpacity
-                style={[styles.claimYieldBtn, { backgroundColor: colors.success }]}
-                onPress={() => {
-                  try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch {}
-                  onClaimYield();
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.claimYieldText}>Claim Yield</Text>
-              </TouchableOpacity>
-            )}
+          <View style={[styles.tierTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
+            <Text style={[styles.tierTagText, { color: colors.primaryLabel }]}>
+              {userProfile.tier === 'Tier 2' ? 'Tier 2 Active (50% OFF)' : userProfile.tier === 'Tier 1' ? 'Tier 1 Active (25% OFF)' : 'Standard Tier'}
+            </Text>
           </View>
         </View>
-      )}
 
-      {/* ── 5. Wallet Information Card ── */}
+        <Text style={[styles.bondExplainer, { color: colors.textSecondary }]}>
+          Stake SKR to unlock interest discounts across all lending desks and earn real USDC dividends from 50% of protocol origination fees.
+        </Text>
+
+        {/* Primary Staking Balances Grid */}
+        <View style={styles.bondStatsRow}>
+          <View style={[styles.bondStatBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+            <Text style={[styles.bondStatLabel, { color: colors.textMuted }]}>Staked Balance</Text>
+            <Text style={[styles.bondStatValue, { color: colors.text }]}>
+              {stakedSkr.toLocaleString()} SKR
+            </Text>
+            <Text style={[styles.bondStatSub, { color: colors.textMuted }]}>
+              ≈ ${stakedUsd.toFixed(2)} USD
+            </Text>
+          </View>
+          <View style={[styles.bondStatBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+            <Text style={[styles.bondStatLabel, { color: colors.textMuted }]}>In Wallet</Text>
+            <Text style={[styles.bondStatValue, { color: colors.primaryLabel }]}>
+              {walletSkr.toLocaleString()} SKR
+            </Text>
+            <Text style={[styles.bondStatSub, { color: colors.textMuted }]}>
+              Available to Stake
+            </Text>
+          </View>
+        </View>
+
+        {/* Breakdown if loan locked */}
+        {lockedSkr > 0 && (
+          <View style={[styles.lockWarningBanner, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+            <Ionicons name="lock-closed" size={14} color={colors.warning} />
+            <Text style={[styles.lockWarningText, { color: colors.textSecondary }]}>
+              <Text style={{ fontWeight: '800', color: colors.text }}>{lockedSkr.toLocaleString()} SKR</Text> is currently locked backing active loans. Unstake available: <Text style={{ fontWeight: '800', color: colors.text }}>{availableToUnstake.toLocaleString()} SKR</Text>.
+            </Text>
+          </View>
+        )}
+
+        {/* Tier Progress Bar */}
+        <View style={styles.progressContainer}>
+          <View style={styles.progressHeaderRow}>
+            <Text style={[styles.progressTitle, { color: colors.textMuted }]}>TIER LEVEL PROGRESS</Text>
+            <Text style={[styles.progressBadgeText, { color: colors.primaryLabel }]}>
+              {userProfile.aprDiscount > 0 ? `${userProfile.aprDiscount}% APR OFF` : '0% DISCOUNT'}
+            </Text>
+          </View>
+          <View style={[styles.progressBarTrack, { backgroundColor: colors.cardAlt }]}>
+            <View style={[styles.progressBarFill, { width: `${Math.round(progressRatio * 100)}%`, backgroundColor: colors.primary }]} />
+          </View>
+          <Text style={[styles.progressSubText, { color: colors.textSecondary }]}>{progressLabel}</Text>
+        </View>
+
+        {/* Benefits Badges */}
+        <View style={styles.benefitsRow}>
+          <View style={[styles.benefitPill, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+            <Ionicons name="flash-outline" size={13} color={colors.primary} />
+            <Text style={[styles.benefitPillText, { color: colors.text }]}>25% OFF @ 100 SKR</Text>
+          </View>
+          <View style={[styles.benefitPill, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+            <Ionicons name="diamond-outline" size={13} color={colors.primary} />
+            <Text style={[styles.benefitPillText, { color: colors.text }]}>50% OFF @ 1k SKR</Text>
+          </View>
+          <View style={[styles.benefitPill, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+            <Ionicons name="cash-outline" size={13} color={colors.success} />
+            <Text style={[styles.benefitPillText, { color: colors.text }]}>USDC Yield Vault</Text>
+          </View>
+        </View>
+
+        {/* Action Buttons: Stake & Unstake */}
+        <View style={styles.stakingActionsRow}>
+          <TouchableOpacity
+            style={[styles.primaryStakeBtn, { backgroundColor: colors.primary }]}
+            onPress={() => handleOpenStake()}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.primaryStakeBtnText}>Stake SKR</Text>
+          </TouchableOpacity>
+
+          {availableToUnstake > 0 && onUnstakeSkr && (
+            <TouchableOpacity
+              style={[styles.secondaryUnstakeBtn, { borderColor: colors.cardBorder, backgroundColor: colors.cardAlt }]}
+              onPress={handleOpenUnstake}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-undo-outline" size={16} color={colors.textSecondary} />
+              <Text style={[styles.secondaryUnstakeBtnText, { color: colors.textSecondary }]}>Unstake</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Quick Presets Section */}
+        <View style={styles.presetSection}>
+          <Text style={[styles.presetSectionLabel, { color: colors.textMuted }]}>1-TAP PRESET STAKES</Text>
+          <View style={styles.presetRow}>
+            <TouchableOpacity
+              style={[styles.presetBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
+              onPress={() => handleOpenStake(100)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.presetBtnText, { color: colors.primaryLabel }]}>+100 SKR</Text>
+              <Text style={[styles.presetBtnSub, { color: colors.textMuted }]}>Tier 1 (25% off)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.presetBtn, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
+              onPress={() => handleOpenStake(1000)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.presetBtnText, { color: colors.primaryLabel }]}>+1,000 SKR</Text>
+              <Text style={[styles.presetBtnSub, { color: colors.textMuted }]}>Tier 2 (50% off)</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
+      {/* ── 3. Staking Yield Rewards Card ── */}
+      <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <View style={styles.creditHeaderRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="gift-outline" size={18} color={colors.success} />
+            <Text style={[styles.cardHeading, { color: colors.text }]}>Protocol Yield Dividends</Text>
+          </View>
+          <View style={[styles.tierTag, { backgroundColor: accruedUsd > 0 ? 'rgba(16, 185, 129, 0.12)' : colors.cardAlt, borderColor: accruedUsd > 0 ? colors.success : colors.cardBorder }]}>
+            <Text style={[styles.tierTagText, { color: accruedUsd > 0 ? colors.success : colors.textMuted }]}>
+              {accruedUsd > 0 ? 'REWARDS READY' : 'DIVIDENDS ACTIVE'}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={[styles.yieldExplainer, { color: colors.textSecondary }]}>
+          ClockLend distributes 50% of borrow origination fees on-chain to staked SKR holders. Dividends accrue directly in real USDC.
+        </Text>
+
+        <View style={styles.yieldStatsGrid}>
+          <View style={[styles.yieldStatItem, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Accrued Yield</Text>
+            <Text style={[styles.yieldAmountText, { color: colors.text }]}>${accruedUsd.toFixed(4)} USDC</Text>
+          </View>
+          <View style={[styles.yieldStatItem, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+            <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Lifetime Claimed</Text>
+            <Text style={[styles.yieldAmountText, { color: colors.textSecondary }]}>${totalClaimedUsd.toFixed(4)} USDC</Text>
+          </View>
+        </View>
+
+        {canClaimYield ? (
+          <TouchableOpacity
+            style={[styles.claimYieldFullBtn, { backgroundColor: colors.success }]}
+            onPress={() => {
+              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch {}
+              onClaimYield();
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.claimYieldFullBtnText}>Claim ${accruedUsd.toFixed(4)} USDC</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={[styles.cooldownNotice, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+            <Ionicons name="time-outline" size={14} color={colors.textMuted} />
+            <Text style={[styles.cooldownText, { color: colors.textMuted }]}>
+              Yield accumulates automatically from borrowers. Claims are subject to a 1-hour anti-flash-loan cooldown.
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* ── 4. Wallet Information Card ── */}
       <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         <Text style={[styles.cardHeading, { color: colors.text }]}>Wallet Information</Text>
 
@@ -255,7 +489,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         </View>
       </View>
 
-      {/* ── 6. Disconnect Wallet Button ── */}
+      {/* ── 5. Disconnect Wallet Button ── */}
       <TouchableOpacity
         style={[styles.disconnectBtn, { borderColor: colors.danger, backgroundColor: colors.card }]}
         onPress={() => {
@@ -273,6 +507,319 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         <Ionicons name="log-out-outline" size={18} color={colors.danger} />
         <Text style={[styles.disconnectBtnText, { color: colors.danger }]}>Disconnect Wallet</Text>
       </TouchableOpacity>
+
+      {/* ══════════════════════════════════════════════════════ */}
+      {/* ── MODAL: STAKE SKR ───────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════ */}
+      <Modal
+        visible={showStakeModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowStakeModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={styles.modalDismissArea}
+            activeOpacity={1}
+            onPress={() => setShowStakeModal(false)}
+          />
+
+          <View style={[styles.modalSheet, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="sparkles" size={20} color={colors.primary} />
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Stake SKR</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowStakeModal(false)}
+                style={[styles.modalCloseBtn, { backgroundColor: colors.cardAlt }]}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalBalanceRow}>
+              <Text style={[styles.modalBalanceLabel, { color: colors.textMuted }]}>Wallet Balance:</Text>
+              <Text style={[styles.modalBalanceValue, { color: colors.text }]}>
+                {walletSkr.toLocaleString()} SKR
+              </Text>
+            </View>
+
+            {/* Input Box */}
+            <View style={[styles.inputBox, { backgroundColor: colors.cardAlt, borderColor: isStakeExceeding ? colors.danger : colors.cardBorder }]}>
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={[styles.textInput, { color: colors.text }]}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="decimal-pad"
+                  value={stakeInput}
+                  onChangeText={(val) => setStakeInput(sanitizeDecimal(val))}
+                  autoFocus={true}
+                />
+                <Text style={[styles.inputTokenLabel, { color: colors.primaryLabel }]}>SKR</Text>
+                <TouchableOpacity
+                  style={[styles.maxBtn, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}
+                  onPress={() => {
+                    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+                    setStakeInput(walletSkr > 0 ? walletSkr.toString() : '0');
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.maxBtnText, { color: colors.primaryLabel }]}>MAX</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.inputUsdEstimate, { color: colors.textMuted }]}>
+                ≈ ${(parsedStakeAmount * skrPrice).toFixed(2)} USD
+              </Text>
+            </View>
+
+            {/* Preset increment chips */}
+            <View style={styles.chipRow}>
+              {[100, 500, 1000].map((amt) => (
+                <TouchableOpacity
+                  key={amt}
+                  style={[styles.presetChip, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
+                  onPress={() => {
+                    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+                    const cur = parseFloat(stakeInput) || 0;
+                    setStakeInput(Math.min(walletSkr, cur + amt).toString());
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.presetChipText, { color: colors.text }]}>+{amt}</Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                style={[styles.presetChip, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
+                onPress={() => {
+                  try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+                  setStakeInput(walletSkr > 0 ? walletSkr.toString() : '0');
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.presetChipText, { color: colors.primaryLabel }]}>MAX</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Projected Tier Preview */}
+            <View style={[styles.projectedCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+              <View style={styles.projectedRow}>
+                <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>Projected Tier</Text>
+                <Text style={[styles.projectedVal, { color: colors.primaryLabel }]}>
+                  {projectedTier} ({projectedAprDiscount}% APR OFF)
+                </Text>
+              </View>
+              <View style={styles.projectedRow}>
+                <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>New Total Stake</Text>
+                <Text style={[styles.projectedVal, { color: colors.text }]}>
+                  {projectedStakedTotal.toLocaleString()} SKR
+                </Text>
+              </View>
+            </View>
+
+            {/* Error Message */}
+            {isStakeExceeding && (
+              <View style={[styles.errorBox, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
+                <Ionicons name="alert-circle" size={16} color={colors.danger} />
+                <Text style={[styles.errorText, { color: colors.danger }]}>
+                  Amount exceeds your wallet balance ({walletSkr.toLocaleString()} SKR).
+                </Text>
+              </View>
+            )}
+
+            {/* Informational bullet note */}
+            <Text style={[styles.modalNote, { color: colors.textMuted }]}>
+              • Staked SKR automatically qualifies for 50% protocol loan fee dividends.{'\n'}
+              • You can unstake anytime when not locked in active loans.
+            </Text>
+
+            {/* Confirm Stake Button */}
+            <TouchableOpacity
+              style={[
+                styles.modalSubmitBtn,
+                { backgroundColor: canConfirmStake ? colors.primary : colors.cardAlt },
+              ]}
+              onPress={handleConfirmStake}
+              disabled={!canConfirmStake}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.modalSubmitBtnText,
+                  { color: canConfirmStake ? '#FFFFFF' : colors.textMuted },
+                ]}
+              >
+                {isStakeExceeding
+                  ? 'Insufficient SKR Balance'
+                  : parsedStakeAmount > 0
+                  ? `Stake ${parsedStakeAmount.toLocaleString()} SKR`
+                  : 'Enter Stake Amount'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ══════════════════════════════════════════════════════ */}
+      {/* ── MODAL: UNSTAKE SKR ─────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════ */}
+      <Modal
+        visible={showUnstakeModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowUnstakeModal(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity
+            style={styles.modalDismissArea}
+            activeOpacity={1}
+            onPress={() => setShowUnstakeModal(false)}
+          />
+
+          <View style={[styles.modalSheet, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <View style={styles.modalHeaderRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="arrow-undo-circle" size={20} color={colors.primary} />
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Unstake SKR</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowUnstakeModal(false)}
+                style={[styles.modalCloseBtn, { backgroundColor: colors.cardAlt }]}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Balances summary */}
+            <View style={[styles.projectedCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+              <View style={styles.projectedRow}>
+                <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>Total Staked</Text>
+                <Text style={[styles.projectedVal, { color: colors.text }]}>{stakedSkr.toLocaleString()} SKR</Text>
+              </View>
+              <View style={styles.projectedRow}>
+                <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>Available to Unstake</Text>
+                <Text style={[styles.projectedVal, { color: colors.success }]}>{availableToUnstake.toLocaleString()} SKR</Text>
+              </View>
+              {lockedSkr > 0 && (
+                <View style={styles.projectedRow}>
+                  <Text style={[styles.projectedLabel, { color: colors.warning }]}>Locked in Loans</Text>
+                  <Text style={[styles.projectedVal, { color: colors.warning }]}>{lockedSkr.toLocaleString()} SKR</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Input Box */}
+            <View style={[styles.inputBox, { backgroundColor: colors.cardAlt, borderColor: isUnstakeExceeding ? colors.danger : colors.cardBorder }]}>
+              <View style={styles.inputRow}>
+                <TextInput
+                  style={[styles.textInput, { color: colors.text }]}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="decimal-pad"
+                  value={unstakeInput}
+                  onChangeText={(val) => setUnstakeInput(sanitizeDecimal(val))}
+                  autoFocus={true}
+                />
+                <Text style={[styles.inputTokenLabel, { color: colors.primaryLabel }]}>SKR</Text>
+                <TouchableOpacity
+                  style={[styles.maxBtn, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}
+                  onPress={() => {
+                    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+                    setUnstakeInput(availableToUnstake > 0 ? availableToUnstake.toString() : '0');
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.maxBtnText, { color: colors.primaryLabel }]}>MAX</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.inputUsdEstimate, { color: colors.textMuted }]}>
+                ≈ ${(parsedUnstakeAmount * skrPrice).toFixed(2)} USD
+              </Text>
+            </View>
+
+            {/* Percentage Chips */}
+            <View style={styles.chipRow}>
+              {[0.25, 0.5, 0.75].map((pct) => (
+                <TouchableOpacity
+                  key={pct}
+                  style={[styles.presetChip, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
+                  onPress={() => {
+                    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+                    const amt = Math.floor(availableToUnstake * pct);
+                    setUnstakeInput(amt.toString());
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.presetChipText, { color: colors.text }]}>{pct * 100}%</Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                style={[styles.presetChip, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}
+                onPress={() => {
+                  try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+                  setUnstakeInput(availableToUnstake > 0 ? availableToUnstake.toString() : '0');
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.presetChipText, { color: colors.primaryLabel }]}>MAX</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Downgrade Alert */}
+            {willDowngradeTier && (
+              <View style={[styles.errorBox, { backgroundColor: 'rgba(245, 158, 11, 0.12)' }]}>
+                <Ionicons name="warning" size={16} color={colors.warning} />
+                <Text style={[styles.errorText, { color: colors.warning }]}>
+                  Unstaking will lower your APR discount from {userProfile.aprDiscount}% to {remainingAprDiscount}%.
+                </Text>
+              </View>
+            )}
+
+            {/* Error Message */}
+            {isUnstakeExceeding && (
+              <View style={[styles.errorBox, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
+                <Ionicons name="alert-circle" size={16} color={colors.danger} />
+                <Text style={[styles.errorText, { color: colors.danger }]}>
+                  Amount exceeds available unstake balance ({availableToUnstake.toLocaleString()} SKR).
+                </Text>
+              </View>
+            )}
+
+            {/* Confirm Unstake Button */}
+            <TouchableOpacity
+              style={[
+                styles.modalSubmitBtn,
+                { backgroundColor: canConfirmUnstake ? colors.primary : colors.cardAlt },
+              ]}
+              onPress={handleConfirmUnstake}
+              disabled={!canConfirmUnstake}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.modalSubmitBtnText,
+                  { color: canConfirmUnstake ? '#FFFFFF' : colors.textMuted },
+                ]}
+              >
+                {isUnstakeExceeding
+                  ? 'Exceeds Available Balance'
+                  : parsedUnstakeAmount > 0
+                  ? `Unstake ${parsedUnstakeAmount.toLocaleString()} SKR`
+                  : 'Enter Unstake Amount'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 };
@@ -400,22 +947,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
   },
-  standingGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  standingItem: {
-    width: '47%',
-  },
   metricLabel: {
     fontSize: 12,
     fontWeight: '500',
     marginBottom: 3,
-  },
-  metricValue: {
-    fontSize: 16,
-    fontWeight: '800',
   },
   bondExplainer: {
     fontSize: 13,
@@ -426,7 +961,7 @@ const styles = StyleSheet.create({
   bondStatsRow: {
     flexDirection: 'row',
     gap: 10,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   bondStatBox: {
     flex: 1,
@@ -443,8 +978,110 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
+  bondStatSub: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  lockWarningBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  lockWarningText: {
+    fontSize: 12,
+    lineHeight: 16,
+    flex: 1,
+  },
+  progressContainer: {
+    marginBottom: 14,
+  },
+  progressHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  progressTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  progressBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  progressBarTrack: {
+    height: 7,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  progressSubText: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 6,
+  },
+  benefitsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 16,
+  },
+  benefitPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  benefitPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  stakingActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  primaryStakeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  primaryStakeBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  secondaryUnstakeBtn: {
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  secondaryUnstakeBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
   presetSection: {
-    marginBottom: 10,
+    marginBottom: 4,
   },
   presetSectionLabel: {
     fontSize: 11,
@@ -473,36 +1110,53 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginTop: 2,
   },
-  unstakeBtn: {
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  unstakeBtnText: {
+  yieldExplainer: {
     fontSize: 13,
-    fontWeight: '700',
+    lineHeight: 18,
+    fontWeight: '500',
+    marginBottom: 12,
   },
-  yieldRow: {
+  yieldStatsGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 12,
+  },
+  yieldStatItem: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
   },
   yieldAmountText: {
-    fontSize: 20,
-    fontWeight: '900',
-    marginTop: 4,
-  },
-  claimYieldBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  claimYieldText: {
-    color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 16,
     fontWeight: '800',
+    marginTop: 2,
+  },
+  claimYieldFullBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  claimYieldFullBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  cooldownNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  cooldownText: {
+    fontSize: 11,
+    lineHeight: 16,
+    flex: 1,
   },
   dataField: {
     paddingVertical: 4,
@@ -576,6 +1230,154 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   disconnectBtnText: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'flex-end',
+  },
+  modalDismissArea: {
+    flex: 1,
+  },
+  modalSheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    padding: 22,
+    paddingBottom: 36,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalBalanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  modalBalanceLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  modalBalanceValue: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  inputBox: {
+    borderRadius: 16,
+    borderWidth: 1.5,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 12,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 24,
+    fontWeight: '900',
+    padding: 0,
+  },
+  inputTokenLabel: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginRight: 10,
+  },
+  maxBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  maxBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  inputUsdEstimate: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 6,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  presetChip: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  presetChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  projectedCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 14,
+    gap: 8,
+  },
+  projectedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  projectedLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  projectedVal: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 10,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  errorText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  modalNote: {
+    fontSize: 11,
+    lineHeight: 16,
+    marginBottom: 16,
+  },
+  modalSubmitBtn: {
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalSubmitBtnText: {
     fontSize: 15,
     fontWeight: '800',
   },

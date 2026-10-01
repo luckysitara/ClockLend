@@ -1191,6 +1191,13 @@ function MainApp() {
       await refreshWalletAssets(session.publicKey, selectedNetwork);
       const freshProfile = await fetchLiveUserProfile(session.publicKey, session.skrHandle, selectedNetwork);
       setUserProfile(freshProfile);
+      Promise.all([
+        fetchSkrYieldVault(selectedNetwork, USDC_MAINNET_MINT, { force: true }),
+        fetchUserYieldPosition(selectedNetwork, session.publicKey, USDC_MAINNET_MINT, { force: true }),
+      ]).then(([v, p]) => {
+        if (v) setSkrYieldVault(v);
+        if (p) setUserYieldPosition(p);
+      }).catch(() => {});
 
       setTransactionNotice({
         type: 'borrow',
@@ -1284,6 +1291,13 @@ function MainApp() {
       await refreshWalletAssets(session.publicKey, selectedNetwork);
       const freshProfile = await fetchLiveUserProfile(session.publicKey, session.skrHandle, selectedNetwork);
       setUserProfile(freshProfile);
+      Promise.all([
+        fetchSkrYieldVault(selectedNetwork, USDC_MAINNET_MINT, { force: true }),
+        fetchUserYieldPosition(selectedNetwork, session.publicKey, USDC_MAINNET_MINT, { force: true }),
+      ]).then(([v, p]) => {
+        if (v) setSkrYieldVault(v);
+        if (p) setUserYieldPosition(p);
+      }).catch(() => {});
 
       setTransactionNotice({
         type: 'repay',
