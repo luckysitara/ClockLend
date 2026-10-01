@@ -143,7 +143,7 @@
       <p style="text-align: center; color: var(--text-muted); font-size: 0.8rem; margin-top: 14px; max-width: 620px; margin-left: auto; margin-right: auto;">
         Illustrative UI mockup, not live data. Maximum LTV is a per-pool parameter set at pool initialization
         (program cap 7,000 bps / 70%); the live mainnet pool charges 3.5% APR. Staked SKR discounts the interest
-        rate only — it does not raise LTV.
+        rate along a continuous linear curve (1.0%&ndash;25.0% for 100&ndash;10,000 SKR) &mdash; it does not raise LTV.
       </p>
 
       <!-- Metrics Grid -->
@@ -283,11 +283,11 @@
             </li>
             <li>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span><strong>85% Interest to Desk Owners:</strong> Liquidity providers earn 85% of all borrower interest, and on a default past grace they receive 95% of the seized collateral (the protocol takes a 5% liquidation margin). There is <strong>no principal-protection mechanism</strong>: if the collateral's price has fallen, the seized collateral can be worth less than the principal lent.</span>
+              <span><strong>85% Interest & Liquidity Control for Desks:</strong> Liquidity providers earn 85% of all borrower interest, and on a default past grace they receive 95% of the seized collateral (the protocol takes a 5% liquidation margin). Desk owners maintain full control of their idle funds and can withdraw unborrowed USDC capital back to their wallet at any time via <code>WithdrawLiquidity</code>. There is <strong>no principal-protection mechanism</strong>: if the collateral's price has fallen, the seized collateral can be worth less than the principal lent.</span>
             </li>
             <li>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-              <span><strong>Staking Tiers & Per-Pool LTV:</strong> Staked SKR discounts the <em>interest rate</em> in exactly two tiers — 100 SKR for 25% off, 1,000 SKR for 50% off, each locking a bond of the same size while you borrow. Staking does not change LTV: the maximum loan-to-value is a pool parameter, set when the pool is initialized and capped at 7,000 bps (70%).</span>
+              <span><strong>Continuous Staking Discount (1.0% to 25.0% APR Off):</strong> Staked SKR unlocks a continuous linear interest rate discount ranging from 1.0% (at 100 SKR staked) up to a maximum 25.0% discount (at 10,000+ SKR staked). Stakers can unstake their tokens on-chain anytime by amount or percentage, provided they are not locked by active borrows. Staking does not change LTV: maximum loan-to-value is a pool parameter capped at 7,000 bps (70%).</span>
             </li>
           </ul>
         </div>
@@ -303,12 +303,16 @@
             <span style="font-weight: 700; color: var(--accent);">50% Automatic Split</span>
           </div>
           <div class="vault-stat-row">
+            <span style="color: var(--text-muted);">SKR Staking APR Discount</span>
+            <span style="font-weight: 700; color: var(--accent);">1.0% &ndash; 25.0% Continuous Linear Curve</span>
+          </div>
+          <div class="vault-stat-row">
             <span style="color: var(--text-muted);">Protocol Revenue Buy & Burn</span>
             <span style="font-weight: 700; color: #06b6d4;">30% Dedicated to $SKR</span>
           </div>
           <div class="vault-stat-row">
-            <span style="color: var(--text-muted);">Desk Owner Interest Share</span>
-            <span style="font-weight: 700; color: #fff;">85% + 95% of Seized Collateral on Default</span>
+            <span style="color: var(--text-muted);">Desk Capital Access</span>
+            <span style="font-weight: 700; color: #fff;">85% Interest + Instant Withdrawals</span>
           </div>
           <div class="vault-stat-row">
             <span style="color: var(--text-muted);">Claim Cooldown</span>
@@ -320,7 +324,7 @@
           </div>
           <div class="vault-stat-row">
             <span style="color: var(--text-muted);">Slashing Ratio on Default</span>
-            <span style="font-weight: 700; color: #f43f5e;">Locked Bond or 20% of Stake — Whichever Is Larger</span>
+            <span style="font-weight: 700; color: #f43f5e;">Locked Bond or 20% of Stake &mdash; Whichever Is Larger</span>
           </div>
         </div>
       </div>
@@ -423,6 +427,26 @@
           </button>
           <div class="faq-answer">
             <p>Every time a borrower takes a loan through ClockLend, an origination fee is withheld from the principal. Half of that fee is routed into the SkrYieldVault token account — but only when the yield-vault accounts are appended to the borrow; without them the whole fee goes to the treasury instead. The mainnet yield vault has not been funded yet. Stakers earn proportional dividends in USDC based on their staked SKR shares, subject to a 1-hour anti-flash-loan cooldown.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question">
+            <span>How does the continuous SKR staking discount &amp; unstaking work?</span>
+            <span class="faq-icon">+</span>
+          </button>
+          <div class="faq-answer">
+            <p>Borrowers who stake $SKR into ClockLend receive an immediate, continuous linear discount on borrow interest rates. The discount starts at 1.0% for 100 SKR staked, scaling linearly up to a maximum 25.0% discount for 10,000+ SKR staked. Stakers can unstake their $SKR on-chain at any time by specifying an exact token amount or percentage, provided those tokens are not currently bonded to an active loan.</p>
+          </div>
+        </div>
+
+        <div class="faq-item">
+          <button class="faq-question">
+            <span>Can desk owners withdraw unborrowed liquidity?</span>
+            <span class="faq-icon">+</span>
+          </button>
+          <div class="faq-answer">
+            <p>Yes. Desk creators maintain non-custodial authority over their pools. At any point, a desk owner can execute <code>WithdrawLiquidity</code> to return unborrowed USDC funds directly from the pool PDA vault back to their connected wallet account.</p>
           </div>
         </div>
 
