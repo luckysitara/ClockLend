@@ -11,8 +11,9 @@
 name: ClockLend Keeper Backup
 
 on:
-  schedule:
-    - cron: '*/6 * * * *'
+  # schedule REMOVED 2026-10-02: the primary keeper now runs on the DigitalOcean
+  # droplet (systemd timer, every 3 min). This workflow stays as a MANUAL
+  # failover — trigger it by hand from the Actions tab if the droplet is down.
   workflow_dispatch: {}
 
 # Only one crank at a time; a queued pile-up can only waste lamports.

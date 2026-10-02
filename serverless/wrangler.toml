@@ -3,12 +3,12 @@ main = "src/index.ts"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
-# Scheduled Cron Trigger
-# Runs every 3 minutes. The on-chain program caps admin-feed pricing at 600s
-# (ADMIN_FEED_MAX_PRICE_AGE_SECS in program/src/processor.rs), so this gives a
-# 2x safety margin against the fail-closed staleness bound.
-[triggers]
-crons = ["*/3 * * * *"]
+# Scheduled Cron Trigger — DISABLED 2026-10-02: the primary keeper now runs on
+# the DigitalOcean droplet (systemd timer, every 3 min). The worker stays
+# deployed for /health and the manual POST /crank failover. Re-enable the cron
+# below (and `npx wrangler triggers deploy`) if the droplet ever goes away.
+# [triggers]
+# crons = ["*/3 * * * *"]
 
 [vars]
 PROGRAM_ID = "4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7"
