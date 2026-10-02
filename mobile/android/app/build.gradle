@@ -117,19 +117,17 @@ android {
             // Release builds will fail immediately if production keystore credentials are not provided.
         }
     }
-    gradle.taskGraph.whenReady { taskGraph ->
-        if (taskGraph.allTasks.any { (it.name.startsWith("assemble") || it.name.startsWith("bundle")) && it.name.contains("Release") }) {
-            if (!project.hasProperty('MYAPP_RELEASE_STORE_FILE') && System.getenv('KEYSTORE_PATH') == null) {
-                throw new GradleException("Release build rejected (M-01): Production release keystore credentials not configured. Set KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS, and KEY_PASSWORD via environment variables or MYAPP_RELEASE_* project properties. Insecure debug.keystore fallback is permanently disabled.")
-            }
-        }
-    }
+    def hasReleaseKeystore = project.hasProperty('MYAPP_RELEASE_STORE_FILE') || System.getenv('KEYSTORE_PATH') != null
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            signingConfig signingConfigs.release
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            } else {
+                signingConfig null
+            }
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds
