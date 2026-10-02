@@ -371,6 +371,39 @@ function MainApp() {
     loadProtocolData(session.publicKey, session.skrHandle, selectedNetwork).catch(() => {});
   };
 
+  // Load public pools and offers immediately on startup and network change (independent of wallet auth)
+  useEffect(() => {
+    let cancelled = false;
+    setIsLoadingPools(true);
+    Promise.allSettled([
+      fetchLivePools(selectedNetwork),
+      fetchLiveP2POffers(selectedNetwork),
+    ])
+      .then(([poolsRes, offersRes]) => {
+        if (cancelled) return;
+        if (poolsRes.status === 'fulfilled' && poolsRes.value) {
+          setPools(poolsRes.value);
+          poolsRef.current = poolsRes.value;
+          setPoolsStatus('ok');
+        }
+        if (offersRes.status === 'fulfilled' && offersRes.value) {
+          setOffers(offersRes.value);
+          offersRef.current = offersRes.value;
+          setOffersStatus('ok');
+        }
+      })
+      .catch((err) => {
+        console.warn('Initial public market fetch notice:', err);
+        if (!cancelled) setPoolsStatus('error');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingPools(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedNetwork]);
+
   // When wallet connects or network changes, trigger instant cache hydration, asset query, and parallel protocol fetch
   useEffect(() => {
     if (session?.publicKey) {
@@ -407,9 +440,27 @@ function MainApp() {
 
   // Real-time market & protocol data poller every 12s so desk & pawn counts are live on-chain
   useEffect(() => {
-    if (!session?.publicKey) return;
     const interval = setInterval(() => {
-      loadProtocolData(session.publicKey, session.skrHandle, selectedNetwork).catch(() => {});
+      if (session?.publicKey) {
+        loadProtocolData(session.publicKey, session.skrHandle, selectedNetwork).catch(() => {});
+      } else {
+        fetchLivePools(selectedNetwork)
+          .then((p) => {
+            if (p && p.length > 0) {
+              setPools(p);
+              poolsRef.current = p;
+            }
+          })
+          .catch(() => {});
+        fetchLiveP2POffers(selectedNetwork)
+          .then((o) => {
+            if (o) {
+              setOffers(o);
+              offersRef.current = o;
+            }
+          })
+          .catch(() => {});
+      }
     }, 12_000);
     return () => clearInterval(interval);
   }, [session?.publicKey, selectedNetwork]);
