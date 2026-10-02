@@ -78,6 +78,7 @@ const PROGRAM_ID = new PublicKey(process.env.PROGRAM_ID || '4Dp2A6SHQHEpuoMT4Guz
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const ASSOC_TOKEN_PROGRAM = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 const USDC_MAINNET_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
+const USDC_DEVNET_MINT = new PublicKey('4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU');
 const SKR_MINT = new PublicKey('SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3');
 const NATIVE_MINT = new PublicKey('So11111111111111111111111111111111111111112');
 const BPF_LOADER = new PublicKey('BPFLoaderUpgradeab1e11111111111111111111111');
@@ -110,6 +111,7 @@ const CLUSTER = normalizeCluster(
 if (!GENESIS_HASHES[CLUSTER]) {
   throw new Error(`Unknown cluster "${CLUSTER}" — expected mainnet-beta or devnet.`);
 }
+const USDC_MINT = CLUSTER === 'devnet' ? USDC_DEVNET_MINT : USDC_MAINNET_MINT;
 const _rpcFlagIdx = process.argv.indexOf('--rpc');
 const RPC = (_rpcFlagIdx !== -1 ? process.argv[_rpcFlagIdx + 1] : null) ||
   process.env.MAINNET_RPC || process.env.SOLANA_RPC_URL || process.env.HELIUS_RPC_URL ||
@@ -430,11 +432,11 @@ async function main() {
 
   // 3. Create the treasury USDC token account (owner = treasury PDA)
   const [treasuryPda] = PublicKey.findProgramAddressSync([TREASURY_SEED], PROGRAM_ID);
-  const treasuryAta = await getAssociatedTokenAddress(USDC_MAINNET_MINT, treasuryPda);
+  const treasuryAta = await getAssociatedTokenAddress(USDC_MINT, treasuryPda);
   console.log('Creating treasury USDC ATA...');
   await sendTxWithRetry([
     createAssociatedTokenAccountIdempotentInstruction(
-      keypair.publicKey, treasuryAta, treasuryPda, USDC_MAINNET_MINT
+      keypair.publicKey, treasuryAta, treasuryPda, USDC_MINT
     )
   ], [keypair]);
   console.log(`Treasury USDC ATA: ${treasuryAta.toBase58()}`);
@@ -475,7 +477,7 @@ async function main() {
       keys: [
         { pubkey: keypair.publicKey, isSigner: true, isWritable: true },
         { pubkey: poolPda, isSigner: false, isWritable: true },
-        { pubkey: USDC_MAINNET_MINT, isSigner: false, isWritable: false },
+        { pubkey: USDC_MINT, isSigner: false, isWritable: false },
         { pubkey: vaultPda, isSigner: false, isWritable: true },
         { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
         { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
@@ -491,15 +493,15 @@ async function main() {
   console.log('Initializing SKR yield vault (reward mint = USDC)...');
   {
     const [yieldVaultPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from('skr_yield_vault'), USDC_MAINNET_MINT.toBuffer()], PROGRAM_ID);
+      [Buffer.from('skr_yield_vault'), USDC_MINT.toBuffer()], PROGRAM_ID);
     const [yieldTokenPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from('skr_yield_token'), USDC_MAINNET_MINT.toBuffer()], PROGRAM_ID);
+      [Buffer.from('skr_yield_token'), USDC_MINT.toBuffer()], PROGRAM_ID);
     await sendTxWithRetry([new TransactionInstruction({
       programId: PROGRAM_ID,
       keys: [
         { pubkey: keypair.publicKey, isSigner: true, isWritable: true },
         { pubkey: yieldVaultPda, isSigner: false, isWritable: true },
-        { pubkey: USDC_MAINNET_MINT, isSigner: false, isWritable: false },
+        { pubkey: USDC_MINT, isSigner: false, isWritable: false },
         { pubkey: yieldTokenPda, isSigner: false, isWritable: true },
         { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
         { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },

@@ -200,7 +200,7 @@ const initPoolIx = new TransactionInstruction({
     { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
     { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
   ],
-  data: Buffer.concat([Buffer.from([0]), w64(POOL_ID), Buffer.from([1]), u16(800), u16(6500), w64s(3 * 86400), w64s(30 * 86400), name, Buffer.from([1])]), // is_oracle_free = true
+  data: Buffer.concat([Buffer.from([0]), w64(POOL_ID), Buffer.from([1]), u16(800), u16(3000), w64s(3 * 86400), w64s(30 * 86400), name, Buffer.from([1])]), // is_oracle_free = true, LTV <= 3000 (Round 11)
 });
 const initPoolRes = await run('InitializePool (native SOL, id 9025, oracle-free)', [initPoolIx], [authority], authority);
 if (initPoolRes.custom === 25) console.log('  (pool already exists from a prior run — continuing)');
@@ -327,7 +327,7 @@ const createOfferIx = new TransactionInstruction({
     { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     { pubkey: solOracle, isSigner: false, isWritable: false },
   ],
-  data: Buffer.concat([Buffer.from([4]), w64(offerId), w64(10_000_000), w64(100_000_000), w64(500_000), w64s(7 * 86400)]),
+  data: Buffer.concat([Buffer.from([4]), w64(offerId), w64(10_000_000), w64(100_000_000), w64(200_000), w64s(7 * 86400)]),
 });
 const offerRes = await run('CreateP2POffer 0.1 SOL vs $10 USDC', [createOfferIx], [authority], authority);
 if (offerRes.ok) {

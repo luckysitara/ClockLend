@@ -15,19 +15,18 @@ faucet/switch UI has been removed, and the data layer is fully network-aware.
 
 **Program** — **deployed on Solana Mainnet-beta**, bytecode-verified against this repo:
 - Program `4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7`, ProgramData
-  `9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG` (367,757 B allocated / 364,536 B ELF;
-  the remainder is retained zero padding), deploy slot `451698349`,
+  `9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG` (377,997 B allocated / 371,632 B ELF;
+  the remainder is retained zero padding),
   upgrade authority `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds`
-- **Last verified deploy: 2026-09-29.** At that moment the deployed bytecode matched a local
-  `cargo-build-sbf` build of this repository byte-for-byte over all 364,521 non-padding bytes
-  (artifact sha256 `6d1c3ec2443f713e2cefd29fcd45a0d26c54b63454d0a4d6323f5d7878b7249b`, which is
+- **Last verified deploy: 2026-10-02.** At that moment the deployed bytecode matched a local
+  `cargo-build-sbf` build of this repository byte-for-byte over all 371,632 non-padding bytes
+  (artifact sha256 `6a3375bf6c7deea30ae0a94c35323f3b2dfd892234bae9e5c5940f2d23afc69d`, which is
   what `deploy-mainnet.mjs` compares against the on-chain slice
   `ProgramData.data[45 : 45 + localSize]`). Recipe and re-verification procedure:
   [`docs/MAINNET_RUNBOOK.md`](docs/MAINNET_RUNBOOK.md) §1.1
-- ⚠️ **The source has since moved ahead of the deployment.** The round-15 hardening below is
-  committed but **not yet on chain**, so a rebuild today will NOT reproduce the hash above and
-  the deployed program is no longer provably this repository. Re-verify (and re-record the
-  hash) after the next upgrade. Until then, treat the deployed program as round-14-state.
+- **Round-15 program hardening is deployed.** Includes four key fixes: P2P LTV capped under
+  shared `MAX_LTV_BPS` = 7000; pool-PDA re-derivation added to `BorrowFromPool`; permissionless
+  borrow parks yield fee; and redundant 182-byte `AccountKind` heuristic removed.
 - 103 on-chain test functions across six suites (`grep -c '#\[test\]\|#\[tokio::test\]' program/tests/*.rs`)
 - 8-byte account discriminators with fail-closed dispatch, ProgramData-derived admin root,
   PDA-verified escrows with front-run authority defense

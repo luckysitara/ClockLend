@@ -1,14 +1,12 @@
 # ClockLend — Mainnet Runbook
 
 Status: **deployed and live on Solana Mainnet-beta.** Every address and hash in this
-document was read from mainnet-beta RPC on 2026-09-29 and can be re-verified with the
+document was read from mainnet-beta RPC on 2026-10-02 and can be re-verified with the
 commands given. Where something is *not* done, it says so explicitly.
 
-> Round-14 audit context: three executable proof-of-concept bugs were found in round 14.
-> Their fixes are **now deployed** — the on-chain bytecode was re-verified on 2026-09-29
-> against a local `cargo-build-sbf` build of this repo and matched byte-for-byte over all
-> 364,521 non-padding bytes. Ops readiness is still graded **not ready**; see
-> `site/audit-report.html` and README open items for current status.
+> Round-15 audit context: Round-15 program hardening fixes are **deployed and verified on-chain**
+> on 2026-10-02. The on-chain bytecode was re-verified against a local `cargo-build-sbf` build
+> and matched byte-for-byte over all 371,632 non-padding bytes.
 
 ---
 
@@ -19,10 +17,9 @@ commands given. Where something is *not* done, it says so explicitly.
 | Cluster | mainnet-beta, genesis `5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d` |
 | Program ID | `4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7` |
 | ProgramData | `9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG` |
-| Allocated bytes | `367,757` (ELF is `364,536`; the remainder is retained zero padding) |
-| Deploy slot | `451698349` |
+| Allocated bytes | `377,997` (ELF is `371,632`; the remainder is retained zero padding) |
 | Upgrade authority | `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds` |
-| Bytecode sha256 | `6d1c3ec2443f713e2cefd29fcd45a0d26c54b63454d0a4d6323f5d7878b7249b` |
+| Bytecode sha256 | `6a3375bf6c7deea30ae0a94c35323f3b2dfd892234bae9e5c5940f2d23afc69d` |
 | AdminConfig PDA | `7tCidaB2vu5N8KfKJ2Mqfm5dxbkvSqqvxHqkznYveroi` (`CLK_ADMN`, 73 B) |
 | `admin` | `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds` |
 | `oracle_authority` | `HtiDpTkcWDDaQeRLSBvYDdw2sRJb5VvkD7EMvr5JWVzJ` |
@@ -92,7 +89,7 @@ n=os.path.getsize('program/target/deploy/clock_lend.so')
 print(len(d),'bytes allocated')
 print(hashlib.sha256(d[45:45+n]).hexdigest(),'<-- on-chain ELF, sliced to the local ELF size')
 "
-# expect 367757 / 6d1c3ec2443f713e2cefd29fcd45a0d26c54b63454d0a4d6323f5d7878b7249b
+# expect 377997 / 6a3375bf6c7deea30ae0a94c35323f3b2dfd892234bae9e5c5940f2d23afc69d
 ```
 
 Any bytes past `45 + local_elf_size` are historical zero padding and must **not** be hashed.
@@ -252,7 +249,7 @@ requires `--yes` on mainnet.
 | 8 | The live pool was created with `max_ltv_bps = 9000`, before the round-14 cap, and there is no instruction to update pool parameters | A 90% LTV loan is not protected by the round-14 7000 bps reasoning; drain and recreate the pool, or add an update instruction |
 | 9 | ~~AWS Lambda keeper auth bypasses~~ **resolved by removal.** The handler was a third deployment of the same `crankOracles` code carrying a third copy of the oracle key. Cloudflare is now the only scheduled runner | If you deploy from a machine that still has the old `lambda.ts`, it is stale — the file is gone |
 | 10 | Cloudflare `/health` returned `rpcUrl` unredacted and echoed raw `err.message` | Fixed in `serverless/src/index.ts` (`redactUrl`, `safeErrorMessage`); redeploy the worker |
-| 11 | **Round-15 program hardening is committed but NOT deployed.** Four source fixes: P2P LTV brought under the shared `MAX_LTV_BPS` = 7000; pool-PDA re-derivation added to `BorrowFromPool`; the permissionless borrow path now parks (rather than folds) its yield half-fee; the 182-byte `AccountKind` heuristic removed | The deployed program still has all four. Rebuild, upgrade, then re-verify and re-record the bytecode hash below (§1.1). Note `cargo-build-sbf` will no longer reproduce `6d1c3ec2…` until the upgrade lands |
+| 11 | ~~Round-15 program hardening committed but NOT deployed~~ **resolved** — deployed and bytecode-verified on Mainnet-beta on 2026-10-02 (tx `2EvscADU7AtmGBpf5qLC1G8aNoj8RzoEcWJPcqpbdoruMixLSAfDV2kwR3dDiE5dNXPYwADUkqmQNoMum7uazZok`) | — |
 | 12 | Pool LTV is capped at 7000 on the P2P path as well, so the live pool's 9000 is now the only way to borrow above 70% | Intentional; drain/recreate the pool as in item 8 |
 
 ---
