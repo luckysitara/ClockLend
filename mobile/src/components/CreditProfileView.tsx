@@ -25,7 +25,6 @@ import {
 import {
   isLockEnabled,
   setLockEnabled,
-  getUserPin,
 } from '../services/securityService';
 import { SettingsView } from './SettingsModal';
 
@@ -38,8 +37,6 @@ interface CreditProfileViewProps {
   onOpenAssetsModal?: () => void;
   onDisconnectWallet: () => void;
   onLockApp?: () => void;
-  onSetupPin?: () => void;
-  onChangePin?: () => void;
   onOpenLeaderboard?: () => void;
   onOpenJudgeBriefing?: () => void;
   yieldVault?: SkrYieldVaultState;
@@ -56,8 +53,6 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
   onOpenAssetsModal,
   onDisconnectWallet,
   onLockApp,
-  onSetupPin,
-  onChangePin,
   onOpenLeaderboard,
   onOpenJudgeBriefing,
   yieldVault,
@@ -67,7 +62,6 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
   const { colors, mode } = useTheme();
   const [subView, setSubView] = useState<'PROFILE' | 'SETTINGS'>('PROFILE');
   const [lockEnabled, setLockEnabledState] = useState<boolean>(false);
-  const [hasCustomPin, setHasCustomPin] = useState<boolean>(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Staking & Unstaking modal state
@@ -82,9 +76,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
 
   const loadSecurityPrefs = async () => {
     const l = await isLockEnabled();
-    const p = await getUserPin();
     setLockEnabledState(l);
-    setHasCustomPin(!!p);
   };
 
   const handleToggleLock = async (val: boolean) => {
@@ -197,11 +189,8 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
       <SettingsView
         onBack={() => setSubView('PROFILE')}
         skrHandle={skrUsername}
-        hasCustomPin={hasCustomPin}
         lockEnabled={lockEnabled}
         onToggleLock={handleToggleLock}
-        onSetupPin={onSetupPin ?? (() => {})}
-        onChangePin={onChangePin ?? (() => {})}
         onLockApp={onLockApp ?? (() => {})}
         onOpenLeaderboard={onOpenLeaderboard ?? (() => {})}
         onOpenJudgeBriefing={onOpenJudgeBriefing ?? (() => {})}

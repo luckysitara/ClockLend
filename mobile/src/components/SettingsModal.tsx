@@ -26,11 +26,11 @@ const STATUS_BAR_INSET = Platform.select({
 export interface SettingsViewProps {
   onBack: () => void;
   skrHandle: string;
-  hasCustomPin: boolean;
+  hasCustomPin?: boolean;
   lockEnabled: boolean;
   onToggleLock: (val: boolean) => void;
-  onSetupPin: () => void;
-  onChangePin: () => void;
+  onSetupPin?: () => void;
+  onChangePin?: () => void;
   onLockApp: () => void;
   onOpenLeaderboard?: () => void;
   onOpenJudgeBriefing?: () => void;
@@ -202,27 +202,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           <View style={[styles.divider, { backgroundColor: colors.divider }]} />
 
-          {/* Security PIN */}
-          <TouchableOpacity
-            style={styles.settingRow}
-            onPress={() => {
-              try { Haptics.selectionAsync(); } catch {}
-              if (hasCustomPin) onChangePin();
-              else onSetupPin();
-            }}
-            activeOpacity={0.7}
-          >
+          {/* Device Security */}
+          <View style={styles.settingRow}>
             <View style={[styles.iconCircle, { backgroundColor: colors.badgeBg }]}>
               <Ionicons name="shield-checkmark-outline" size={20} color={colors.primary} />
             </View>
             <View style={styles.textCol}>
-              <Text style={[styles.rowTitle, { color: colors.text }]}>Security PIN</Text>
+              <Text style={[styles.rowTitle, { color: colors.text }]}>Device Screen Lock</Text>
               <Text style={[styles.rowSub, { color: colors.textMuted }]}>
-                {hasCustomPin ? 'Change 4-digit security PIN' : 'Set up 4-digit security PIN'}
+                System PIN, pattern, or password
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-          </TouchableOpacity>
+            <View style={[styles.pillBadge, { backgroundColor: colors.badgeBg }]}>
+              <Text style={[styles.pillBadgeText, { color: colors.primaryLabel }]}>Active</Text>
+            </View>
+          </View>
 
           <View style={[styles.divider, { backgroundColor: colors.divider }]} />
 
@@ -446,7 +440,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <Ionicons name="open-outline" size={16} color={colors.textMuted} />
           </TouchableOpacity>
 
-          {hasCustomPin && lockEnabled && (
+          {lockEnabled && (
             <>
               <View style={[styles.divider, { backgroundColor: colors.divider }]} />
               <TouchableOpacity

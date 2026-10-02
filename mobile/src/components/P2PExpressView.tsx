@@ -46,6 +46,9 @@ interface P2PExpressViewProps {
   onOpenAssetsModal?: () => void;
   isLoadingPools?: boolean;
   initialAmount?: string;
+  // Desk explicitly chosen in the Markets screen. When set it is honored over
+  // the lowest-APR auto-router; when null the router picks as before.
+  preselectedPool?: LendingPool | null;
 }
 
 export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
@@ -56,6 +59,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
   onOpenAssetsModal,
   isLoadingPools = false,
   initialAmount,
+  preselectedPool = null,
 }) => {
   const { colors, mode } = useTheme();
   // Use placeholder instead of hardcoded '50'
@@ -87,7 +91,21 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
       setPrices({ ...updated });
       syncPriceTrust();
     });
-    const freshnessTimer = setInterval(syncPriceTrust, 15_000);
+    // Self-healing poll: the CTA blocks until each collateral asset has a
+    // TRUSTED on-chain price under 600s old, and only the oracle keeper can
+    // produce one. The WSS push only fires on account change, so when the
+    // keeper lapses past the staleness bound nothing else would recover the
+    // screen. fetchLivePrices() is internally throttled to one real attempt
+    // per 10s, so this 15s cadence is effectively one RPC read per tick and
+    // unblocks the CTA on its own as soon as a fresh feed lands on-chain.
+    const freshnessTimer = setInterval(() => {
+      fetchLivePrices()
+        .then((p) => {
+          setPrices({ ...p });
+          syncPriceTrust();
+        })
+        .catch(() => syncPriceTrust());
+    }, 15_000);
     return () => {
       unsubscribe();
       clearInterval(freshnessTimer);
@@ -96,15 +114,30 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
 
   const numAmount = parseFloat(amountStr) || 0;
 
-  const fundedPools = pools.filter((p) => p.totalLiquidity > 0);
-  const affordablePools = pools.filter((p) => p.totalLiquidity >= numAmount);
-  const lowestApr = (list: typeof pools) =>
+  const validPools = pools.filter((p) => {
+    const n = (p.name || '').toLowerCase();
+    return (
+      !n.includes('seeker genesis') &&
+      !n.includes('chad') &&
+      p.id !== 1 &&
+      p.id !== 958 &&
+      p.poolPubkey !== '4YC4rCNXva8ty6f1pKRC2NX7e5kufqowBYJDCMor12Wu'
+    );
+  });
+
+  const fundedPools = validPools.filter((p) => p.totalLiquidity > 0);
+  const affordablePools = validPools.filter((p) => p.totalLiquidity >= numAmount);
+  const lowestApr = (list: typeof validPools) =>
     list.length > 0
       ? list.reduce((min, p) => (p.interestRateBps < min.interestRateBps ? p : min), list[0])
       : null;
   const routeCandidates =
-    affordablePools.length > 0 ? affordablePools : fundedPools.length > 0 ? fundedPools : pools;
-  const bestPool = lowestApr(routeCandidates);
+    affordablePools.length > 0 ? affordablePools : fundedPools.length > 0 ? fundedPools : validPools;
+  // A desk chosen in the Markets screen wins outright — the router must not
+  // silently re-route the user to a different (lower-APR) desk. All terms
+  // below (LTV, APR, liquidity, interest) then derive from THIS desk, and
+  // amounts beyond its liquidity are blocked in handleOpenConfirm.
+  const bestPool = preselectedPool ?? lowestApr(routeCandidates);
 
   const solBalance = walletAssets?.solBalance || 0;
   const skrBalance = walletAssets?.skrBalance || 0;
@@ -387,6 +420,22 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
 
         {/* Section 4: Loan Breakdown */}
         <View style={[styles.summaryPanel, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+          {bestPool && (
+            <View style={styles.summaryRow}>
+              <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>
+                {preselectedPool ? 'Selected Desk' : 'Desk'}
+              </Text>
+              <Text
+                style={[
+                  styles.summaryValue,
+                  { color: preselectedPool ? colors.primaryLabel : colors.text, flex: 1, textAlign: 'right', marginLeft: 12 },
+                ]}
+                numberOfLines={1}
+              >
+                {bestPool.name} • {(bestPool.interestRateBps / 100).toFixed(1)}% / 30d
+              </Text>
+            </View>
+          )}
           <View style={styles.summaryRow}>
             <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Interest Fee</Text>
             <Text style={[styles.summaryValue, { color: colors.text }]}>

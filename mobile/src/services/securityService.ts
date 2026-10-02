@@ -76,13 +76,12 @@ function sha256(ascii: string): string {
 }
 
 export async function isLockEnabled(): Promise<boolean> {
-  // Fail CLOSED: a SecureStore read error must never boot the app unlocked.
   try {
     const val = await SecureStore.getItemAsync(KEY_LOCK_ENABLED);
-    return val !== 'false';
+    return val === 'true';
   } catch (err) {
-    console.warn('Error reading lock state — defaulting to LOCKED:', err);
-    return true;
+    console.warn('Error reading lock state:', err);
+    return false;
   }
 }
 
@@ -271,20 +270,42 @@ export async function checkBiometricHardware(): Promise<{
   }
 }
 
-export async function authenticateWithBiometrics(
-  prompt: string = 'Unlock ClockLend with Biometrics'
+export async function authenticateDeviceLock(
+  prompt: string = 'Unlock ClockLend'
 ): Promise<boolean> {
-  try {
-    const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: prompt,
-      fallbackLabel: 'Use PIN',
-      disableDeviceFallback: false,
-    });
-    return result.success;
-  } catch {
-    return false;
-  }
+  const timeoutPromise = new Promise<boolean>((resolve) => {
+    setTimeout(() => resolve(false), 15000);
+  });
+
+  const nativeAuth = async (): Promise<boolean> => {
+    if (Platform.OS === 'android' && ClockLendSecurity?.authenticateDeviceLock) {
+      try {
+        const success = await ClockLendSecurity.authenticateDeviceLock(
+          prompt,
+          'Confirm device PIN, pattern, or password'
+        );
+        return Boolean(success);
+      } catch (err) {
+        console.warn('ClockLendSecurity authenticateDeviceLock notice:', err);
+      }
+    }
+
+    try {
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: prompt,
+        fallbackLabel: 'Use Device Screen Lock',
+        disableDeviceFallback: false,
+      });
+      return result.success;
+    } catch {
+      return false;
+    }
+  };
+
+  return Promise.race([nativeAuth(), timeoutPromise]);
 }
+
+export const authenticateWithBiometrics = authenticateDeviceLock;
 
 const { ClockLendSecurity } = NativeModules;
 

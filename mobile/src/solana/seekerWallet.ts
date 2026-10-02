@@ -1,5 +1,5 @@
 import '../polyfill';
-import { PublicKey, Transaction, Keypair } from '@solana/web3.js';
+import { PublicKey, Transaction } from '@solana/web3.js';
 import { transact, Web3MobileWallet } from '@solana-mobile/mobile-wallet-adapter-protocol-web3js';
 import { base64ToUint8Array, base64ToBase58 } from '@solana-mobile/mobile-wallet-adapter-protocol/encoding';
 import { Buffer } from 'buffer';
@@ -185,34 +185,6 @@ export async function createManualSession(pubkeyInput: string | PublicKey): Prom
   };
 }
 
-const PREVIEW_WALLET_KEY = 'clocklend_preview_demo_key';
-
-export async function getOrCreatePreviewWallet(): Promise<PublicKey> {
-  try {
-    const saved = await SecureStore.getItemAsync(PREVIEW_WALLET_KEY);
-    if (saved && saved.length >= 32) {
-      return new PublicKey(saved);
-    }
-    const ephemeralKey = Keypair.generate().publicKey;
-    await SecureStore.setItemAsync(PREVIEW_WALLET_KEY, ephemeralKey.toBase58());
-    return ephemeralKey;
-  } catch {
-    return Keypair.generate().publicKey;
-  }
-}
-
-export async function createPreviewSession(): Promise<SeekerSession> {
-  const previewPubkey = await getOrCreatePreviewWallet();
-  const skrHandle = await deriveSkrUsername(previewPubkey);
-  return {
-    publicKey: previewPubkey,
-    skrHandle,
-    // Honest default: SGT ownership is confirmed on-chain by fetchLiveWalletAssets
-    // (exact mint match) and surfaced via assets.hasSeekerGenesisToken.
-    isSeekerGenesisVerified: false,
-  };
-}
-
 export const ALLOWED_PROGRAM_IDS = new Set<string>([
   PROGRAM_ID.toBase58(),
   '11111111111111111111111111111111', // System Program
@@ -307,3 +279,49 @@ export async function signAndSendSeekerTransaction(
 
   return signature;
 }
+
+const SAVED_SESSION_KEY = 'clocklend_persisted_session';
+
+export async function saveSeekerSession(session: SeekerSession): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(
+      SAVED_SESSION_KEY,
+      JSON.stringify({
+        publicKey: session.publicKey.toBase58(),
+        skrHandle: session.skrHandle,
+        authToken: session.authToken,
+        isSeekerGenesisVerified: session.isSeekerGenesisVerified,
+      })
+    );
+  } catch (err) {
+    console.warn('Error saving session:', err);
+  }
+}
+
+export async function getSavedSeekerSession(): Promise<SeekerSession | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(SAVED_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.publicKey) {
+      return {
+        publicKey: new PublicKey(parsed.publicKey),
+        skrHandle: parsed.skrHandle || 'seeker.skr',
+        authToken: parsed.authToken,
+        isSeekerGenesisVerified: !!parsed.isSeekerGenesisVerified,
+      };
+    }
+  } catch (err) {
+    console.warn('Error reading saved session:', err);
+  }
+  return null;
+}
+
+export async function clearSavedSeekerSession(): Promise<void> {
+  try {
+    await SecureStore.deleteItemAsync(SAVED_SESSION_KEY);
+  } catch (err) {
+    console.warn('Error clearing saved session:', err);
+  }
+}
+

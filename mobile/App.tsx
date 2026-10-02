@@ -39,7 +39,7 @@ import { JudgeBriefingModal } from './src/components/JudgeBriefingModal';
 import { SplashScreenView } from './src/components/SplashScreenView';
 import { SecurityLockScreen, LockScreenMode } from './src/components/SecurityLockScreen';
 import { SecurityLockdownView } from './src/components/SecurityLockdownView';
-import { isLockEnabled, isPinConfigured, checkDeviceIntegrity, DeviceIntegrityResult } from './src/services/securityService';
+import { isLockEnabled, checkDeviceIntegrity, DeviceIntegrityResult } from './src/services/securityService';
 import { syncLoanReminders, clearLoanReminders } from './src/services/loanReminders';
 import * as SecureStore from 'expo-secure-store';
 import {
@@ -82,12 +82,16 @@ import {
   describeTransactionError,
   isNativeSolCollateralName,
   subscribeToUserLoans,
+  GENESIS_MAINNET_POOL,
 } from './src/solana/onChainService';
 import { getLoanPDA, getPoolPDA } from './src/solana/program';
 import {
   signAndSendSeekerTransaction,
   deriveSkrUsername,
   SeekerSession,
+  saveSeekerSession,
+  getSavedSeekerSession,
+  clearSavedSeekerSession,
 } from './src/solana/seekerWallet';
 import { LendingPool, LoanOrder, P2POffer, OfferStatus, UserProfile, WalletAssets, SolanaNetwork } from './src/types';
 
@@ -102,6 +106,7 @@ type Tab = 'HOME' | 'BORROW' | 'HUB' | 'MARKET' | 'LOANS' | 'PROFILE';
  */
 type SliceStatus = 'loading' | 'ok' | 'error';
 
+const INITIAL_COMMUNITY_POOLS: LendingPool[] = [GENESIS_MAINNET_POOL];
 const INITIAL_COMMUNITY_OFFERS: P2POffer[] = [];
 
 function MainApp() {
@@ -118,6 +123,10 @@ function MainApp() {
   // First-time Quick-Start guided bar (post-auth feature discovery, shown once per device)
   const [showQuickStart, setShowQuickStart] = useState<boolean>(false);
   const [borrowPreset, setBorrowPreset] = useState<string | null>(null);
+  // Desk the user explicitly picked in the Markets screen. While set, the
+  // Borrow screen borrows from THIS desk instead of auto-routing to the
+  // lowest-APR funded desk. Cleared on tab-bar re-entry and after a loan.
+  const [selectedPool, setSelectedPool] = useState<LendingPool | null>(null);
   const [transactionNotice, setTransactionNotice] = useState<TransactionNoticeData | null>(null);
   const [showLeaderboard, setShowLeaderboard] = useState<boolean>(false);
   const [showJudgeBriefing, setShowJudgeBriefing] = useState<boolean>(false);
@@ -163,10 +172,17 @@ function MainApp() {
     } catch {}
   };
 
-  // Auto-lock and hardware integrity check on app launch and background resume
+  // Auto-lock, hardware integrity check, and saved wallet session restoration on app launch
   useEffect(() => {
     checkInitialLock();
     checkDeviceIntegrity().then((res) => setIntegrity(res));
+
+    // Restore saved wallet session so user doesn't have to reconnect every time
+    getSavedSeekerSession().then((saved) => {
+      if (saved) {
+        setSession(saved);
+      }
+    });
 
     const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (nextState === 'active') {
@@ -179,8 +195,7 @@ function MainApp() {
 
   const checkInitialLock = async () => {
     const enabled = await isLockEnabled();
-    const pinConfigured = await isPinConfigured();
-    if (enabled && pinConfigured) {
+    if (enabled) {
       setLockScreenMode('unlock');
       setIsLocked(true);
     }
@@ -191,8 +206,7 @@ function MainApp() {
     // (covers the wallet-authorization background/foreground bounce).
     if (Date.now() - lastUnlockAtRef.current < 90_000) return;
     const enabled = await isLockEnabled();
-    const pinConfigured = await isPinConfigured();
-    if (enabled && pinConfigured) {
+    if (enabled) {
       setLockScreenMode('unlock');
       setIsLocked(true);
     }
@@ -240,8 +254,8 @@ function MainApp() {
     }
   };
 
-  const [pools, setPools] = useState<LendingPool[]>([]);
-  const poolsRef = useRef<LendingPool[]>([]);
+  const [pools, setPools] = useState<LendingPool[]>(INITIAL_COMMUNITY_POOLS);
+  const poolsRef = useRef<LendingPool[]>(INITIAL_COMMUNITY_POOLS);
   const [orders, setOrders] = useState<LoanOrder[]>([]);
   const ordersRef = useRef<LoanOrder[]>([]);
   const offersRef = useRef<P2POffer[]>(INITIAL_COMMUNITY_OFFERS);
@@ -510,6 +524,7 @@ function MainApp() {
   const handleDisconnect = () => {
     // Drop this user's scheduled reminders so the next one does not inherit them.
     void clearLoanReminders();
+    void clearSavedSeekerSession();
     setShowAssetsModal(false);
     const handle = session?.skrHandle ? `@${session.skrHandle}` : 'wallet';
     setSession(null);
@@ -668,7 +683,8 @@ function MainApp() {
         onSecondaryPress: () => setActiveTab('LOANS'),
       });
 
-      // 5. Immediately switch to LOANS tab
+      // 5. Immediately switch to LOANS tab (the desk selection ends with the loan)
+      setSelectedPool(null);
       setActiveTab('LOANS');
     } catch (err: any) {
       if (err?.message?.includes('Cancellation') || err?.name?.includes('Cancellation')) {
@@ -1629,7 +1645,7 @@ function MainApp() {
           lastUnlockAtRef.current = Date.now();
           setIsLocked(false);
         }}
-        onCancel={lockScreenMode !== 'unlock' ? () => setIsLocked(false) : undefined}
+        onCancel={() => setIsLocked(false)}
       />
     );
   }
@@ -1646,15 +1662,8 @@ function MainApp() {
         <ConnectWalletView
           onConnected={async (newSession) => {
             setSession(newSession);
-            try {
-              const configured = await isPinConfigured();
-              if (!configured) {
-                setLockScreenMode('setup');
-                setIsLocked(true);
-              }
-            } catch (err) {
-              console.log('Error checking pin configuration:', err);
-            }
+            await saveSeekerSession(newSession);
+            showToast(`Connected: @${newSession.skrHandle}`);
           }}
         />
         {toastMessage && (
@@ -1744,6 +1753,7 @@ function MainApp() {
             walletAssets={walletAssets}
             onBorrow={handleBorrow}
             isLoadingPools={isLoadingPools}
+            preselectedPool={selectedPool}
             onOpenAssetsModal={() => setShowAssetsModal(true)}
           />
         )}
@@ -1771,6 +1781,7 @@ function MainApp() {
             userPubkey={session.publicKey.toBase58()}
             walletAssets={walletAssets}
             onSelectPool={(pool) => {
+              setSelectedPool(pool);
               setActiveTab('BORROW');
             }}
             onFundPawnOffer={handleFundPawnOffer}
@@ -1782,7 +1793,7 @@ function MainApp() {
             onWithdrawLiquidity={handleWithdrawLiquidity}
             onClaimPawnDefault={handleClaimPawnDefault}
             onTriggerPawnGrace={handleTriggerPawnGrace}
-            isLoading={isProtocolLoading}
+            isLoading={isLoadingPools || poolsStatus === 'loading'}
             loadFailed={poolsStatus === 'error' || offersStatus === 'error'}
             poolsLoadFailed={poolsStatus === 'error'}
             offersLoadFailed={offersStatus === 'error'}
@@ -1797,7 +1808,7 @@ function MainApp() {
             onTriggerGrace={handleTriggerGrace}
             onClaimDefault={handleClaimLoanDefault}
             onNavigateBorrow={() => setActiveTab('BORROW')}
-            isLoading={isProtocolLoading}
+            isLoading={ordersStatus === 'loading'}
             loadFailed={ordersStatus === 'error'}
             onRetry={retryProtocolData}
           />
@@ -1817,14 +1828,6 @@ function MainApp() {
             onClaimYield={handleClaimYield}
             onLockApp={() => {
               setLockScreenMode('unlock');
-              setIsLocked(true);
-            }}
-            onSetupPin={() => {
-              setLockScreenMode('setup');
-              setIsLocked(true);
-            }}
-            onChangePin={() => {
-              setLockScreenMode('change_pin');
               setIsLocked(true);
             }}
             onOpenLeaderboard={() => setShowLeaderboard(true)}
@@ -1863,7 +1866,12 @@ function MainApp() {
         {/* 2. Borrow */}
         <TouchableOpacity
           style={styles.tabItem}
-          onPress={() => setActiveTab('BORROW')}
+          onPress={() => {
+            // Direct tab entry means "fresh" borrow: drop any desk picked in
+            // the Markets screen and let the screen auto-route again.
+            setSelectedPool(null);
+            setActiveTab('BORROW');
+          }}
           activeOpacity={0.7}
           accessibilityRole="tab"
           accessibilityState={{ selected: activeTab === 'BORROW' }}

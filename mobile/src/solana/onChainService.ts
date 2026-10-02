@@ -387,6 +387,27 @@ const SEEDED_POOLS: PublicKey[] = [
   new PublicKey('DqjjKqmntorNQYa9dJ6forBxZFPup5TmZ2ZpMBy4EZpF'), // ClockLend Genesis USDC Desk
 ];
 
+export const GENESIS_MAINNET_POOL: LendingPool = {
+  id: 2,
+  poolType: 'Circle',
+  authority: '8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds',
+  name: 'ClockLend Genesis USDC Desk',
+  liquidityMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+  totalLiquidity: 50,
+  totalBorrowed: 0,
+  stakedSkrAmount: 0,
+  interestRateBps: 800,
+  maxLtvBps: 6500,
+  minDurationDays: 3,
+  maxDurationDays: 30,
+  loansOriginated: 0,
+  loansRepaid: 0,
+  successRate: null,
+  poolPubkey: 'DqjjKqmntorNQYa9dJ6forBxZFPup5TmZ2ZpMBy4EZpF',
+  isVerifiedMerchant: true,
+  hasCustomOracle: false,
+};
+
 // Helper to query with automatic fallback to secondary RPC endpoints
 export async function queryRpcWithFallback<T>(
   network: SolanaNetwork,
@@ -445,11 +466,22 @@ function decodeName(bytes: Uint8Array): string {
   return decoded.length > 0 ? decoded : 'Community Pool';
 }
 
-function parsePoolData(pubkey: string, data: Buffer, id: number): LendingPool | null {
+function parsePoolData(pubkey: string, rawData: Buffer | Uint8Array, id: number): LendingPool | null {
+  const data = Buffer.isBuffer(rawData) ? rawData : Buffer.from(rawData);
   if (data.length !== 200 && data.length !== 182) return null;
   const isV2 = data.length === 200;
   // NEW-4: discriminator-gated parsing — never parse a non-pool account as a pool
-  if (isV2 && data.subarray(0, 8).toString() !== 'CLK_POOL') return null;
+  // Check bytes directly: 'CLK_POOL' = [67, 76, 75, 95, 80, 79, 79, 76]
+  const isClkPool =
+    data[0] === 67 &&
+    data[1] === 76 &&
+    data[2] === 75 &&
+    data[3] === 95 &&
+    data[4] === 80 &&
+    data[5] === 79 &&
+    data[6] === 79 &&
+    data[7] === 76;
+  if (isV2 && !isClkPool) return null;
   const offset = isV2 ? 8 : 0;
   const isInitialized = data.readUInt8(offset) === 1;
   if (!isInitialized) return null;
@@ -469,6 +501,19 @@ function parsePoolData(pubkey: string, data: Buffer, id: number): LendingPool | 
   const loansOriginated = data.readUInt32LE(isV2 ? 158 : 142);
   const loansRepaid = data.readUInt32LE(isV2 ? 162 : 146);
   const name = decodeName(data.subarray(isV2 ? 166 : 150, isV2 ? 198 : 182));
+
+  // Explicitly exclude legacy / test pools requested to be removed
+  const cleanName = name.trim().toLowerCase();
+  if (
+    cleanName.includes('seeker genesis') ||
+    cleanName.includes('chad') ||
+    poolId === 1 ||
+    poolId === 958 ||
+    pubkey === '4YC4rCNXva8ty6f1pKRC2NX7e5kufqowBYJDCMor12Wu'
+  ) {
+    return null;
+  }
+
   // state.rs LendingPool is 200 bytes with has_custom_oracle as the trailing
   // byte (offset 199); the 182-byte legacy layout predates the flag.
   const hasCustomOracle = isV2 ? data.readUInt8(199) === 1 : false;
@@ -492,7 +537,8 @@ function parsePoolData(pubkey: string, data: Buffer, id: number): LendingPool | 
     loansOriginated,
     loansRepaid,
     successRate: successRate === null ? null : parseFloat(successRate.toFixed(1)),
-    isVerifiedMerchant: stakedSkrAmount > 0,
+    poolPubkey: pubkey,
+    isVerifiedMerchant: stakedSkrAmount > 0 || pubkey === 'DqjjKqmntorNQYa9dJ6forBxZFPup5TmZ2ZpMBy4EZpF',
     hasCustomOracle,
   };
 }
@@ -550,7 +596,21 @@ async function fetchLivePoolsUncached(network: SolanaNetwork): Promise<LendingPo
     console.warn('Full pool scan notice:', err);
   }
 
-  return Array.from(poolsMap.values());
+  // Fallback guarantee: if mainnet scan returned 0 pools, preserve the verified Genesis desk
+  if (network === 'mainnet-beta' && poolsMap.size === 0) {
+    poolsMap.set(GENESIS_MAINNET_POOL.poolPubkey!, GENESIS_MAINNET_POOL);
+  }
+
+  return Array.from(poolsMap.values()).filter((p) => {
+    const n = (p.name || '').trim().toLowerCase();
+    return (
+      !n.includes('seeker genesis') &&
+      !n.includes('chad') &&
+      p.id !== 1 &&
+      p.id !== 958 &&
+      p.poolPubkey !== '4YC4rCNXva8ty6f1pKRC2NX7e5kufqowBYJDCMor12Wu'
+    );
+  });
 }
 
 // Fetch live user loan orders directly from the contract & on-chain state
@@ -596,7 +656,7 @@ export async function fetchLiveUserOrders(
       if (acc.account.data.length === 170) {
         const data = Buffer.from(acc.account.data);
         // NEW-4: discriminator-gated parsing — never parse a non-loan account as a loan
-        if (data.subarray(0, 8).toString() !== 'CLK_LOAN') continue;
+        if (readDiscriminator(data) !== 'CLK_LOAN') continue;
         const isActive = data.readUInt8(8) === 1;
 
         const borrowerOnChain = new PublicKey(data.subarray(17, 49));
@@ -651,8 +711,8 @@ export async function fetchLiveUserOrders(
         const id = loanId;
         ordersMap.set(id, {
           id,
-          poolId: matchedPool ? matchedPool.id : 1,
-          poolName: matchedPool ? matchedPool.name : 'Seeker Genesis Circle',
+          poolId: matchedPool ? matchedPool.id : 2,
+          poolName: matchedPool ? matchedPool.name : 'ClockLend Genesis USDC Desk',
           poolPubkey: poolPubkeyStr,
           borrower: borrowerOnChain.toBase58(),
           principalAmount,
@@ -821,7 +881,7 @@ export async function fetchLiveUserOrders(
       // The loan PDA is the single source of truth for amounts, terms and status.
       const info = await rpcConn.getAccountInfo(loanPDA);
       const data = info?.data ? Buffer.from(info.data) : undefined;
-      if (!data || data.length < 170 || data.subarray(0, 8).toString() !== 'CLK_LOAN') {
+      if (!data || data.length < 170 || readDiscriminator(data) !== 'CLK_LOAN') {
         console.warn(`[Orders] memo candidate #${cand.id} has no on-chain loan PDA — skipped`);
         continue;
       }
@@ -928,7 +988,7 @@ async function fetchLiveP2POffersUncached(network: SolanaNetwork): Promise<P2POf
         // NEW-4/L-3: discriminator-gated parsing — only CLK_PAWN accounts are
         // offers, and only the two lengths the program defines (202 current,
         // 170 legacy) are decoded.
-        const kind = data.subarray(0, 8).toString();
+        const kind = readDiscriminator(data);
         if (kind !== 'CLK_PAWN') continue;
         if (data.length >= 202) {
           isInitialized = data.readUInt8(8) === 1;
@@ -1116,7 +1176,7 @@ export async function fetchLiveLeaderboard(
     for (const acc of accounts) {
       if (acc.account.data.length >= 67) {
         const data = Buffer.from(acc.account.data);
-        if (data.subarray(0, 8).toString() !== 'CLK_PROF') continue;
+        if (readDiscriminator(data) !== 'CLK_PROF') continue;
         const isInit = data.readUInt8(8) === 1;
         if (!isInit) continue;
 
@@ -1302,6 +1362,22 @@ function aggregatePriceSource(): PriceSource {
 }
 
 /**
+ * H-9: decode an 8-byte account discriminator WITHOUT Buffer.toString().
+ * On Hermes, a typed-array subarray's toString() yields the comma-joined byte
+ * values ("67,76,75,..."), not the decoded string — so every
+ * `data.subarray(0,8).toString() === 'CLK_*'` check silently failed on-device
+ * while passing in Node. Decode byte-by-byte instead; this is engine-agnostic.
+ */
+export function readDiscriminator(data: Uint8Array | Buffer): string {
+  const b = data.subarray(0, 8);
+  let s = '';
+  for (let i = 0; i < 8 && i < b.length; i++) {
+    s += String.fromCharCode(b[i]);
+  }
+  return s;
+}
+
+/**
  * Unpack ClockLend on-chain PriceFeed account (98 bytes)
  * Layout:
  *   [0..8]: discriminator
@@ -1316,7 +1392,7 @@ function aggregatePriceSource(): PriceSource {
 export function unpackPriceFeed(data: Buffer | Uint8Array): OnChainPriceFeed | null {
   try {
     const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
-    if (buf.length < 98 || buf.subarray(0, 8).toString() !== 'CLK_FEED') return null;
+    if (buf.length < 98 || readDiscriminator(buf) !== 'CLK_FEED') return null;
     const isInit = buf[8] === 1;
     if (!isInit) return null;
     const mint = new PublicKey(buf.subarray(9, 41));
@@ -1950,7 +2026,7 @@ export interface OnChainLoanState {
 
 export function decodeLoanOrderAccount(data: Buffer | Uint8Array): OnChainLoanState | null {
   const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
-  if (buf.length < 170 || buf.subarray(0, 8).toString() !== 'CLK_LOAN') return null;
+  if (buf.length < 170 || readDiscriminator(buf) !== 'CLK_LOAN') return null;
   const collateralMint = new PublicKey(buf.subarray(89, 121)).toBase58();
   const isNativeSol =
     collateralMint === NATIVE_SOL_MINT.toBase58() ||
@@ -2127,7 +2203,7 @@ export async function buildRepayTx(
     const loanInfo = await getConnection(network).getAccountInfo(loanPDA);
     const loanData = loanInfo?.data;
     // NEW-4: discriminator-gated read of the loan PDA for the exact amount
-    if (loanData && loanData.length === 170 && loanData.subarray(0, 8).toString() === 'CLK_LOAN') {
+    if (loanData && loanData.length === 170 && readDiscriminator(loanData) === 'CLK_LOAN') {
       const principal = loanData.readBigUInt64LE(81);
       const interest = loanData.readBigUInt64LE(129);
       exactRepayLamports = BigInt(principal.toString()) + BigInt(interest.toString());
@@ -2401,7 +2477,7 @@ export async function buildRepayPawnOfferTx(
     // NEW-1: read the CURRENT (202-byte) offer layout — requested_amount @153,
     // interest_offered @161 — with the discriminator gate. The legacy 170-byte
     // layout (121/129) is only used for pre-v3 offers.
-    if (data && data.subarray(0, 8).toString() === 'CLK_PAWN') {
+    if (data && readDiscriminator(data) === 'CLK_PAWN') {
       if (data.length >= 200) {
         const requested = data.readBigUInt64LE(153);
         const interest = data.readBigUInt64LE(161);

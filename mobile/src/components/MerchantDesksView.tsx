@@ -298,8 +298,20 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
     onCreatePawnOffer(assetName, amt, prof, d);
   };
 
+  // Filter out legacy / test desks
+  const validPools = pools.filter((p) => {
+    const name = (p.name || '').toLowerCase();
+    return (
+      !name.includes('seeker genesis') &&
+      !name.includes('chad') &&
+      p.id !== 1 &&
+      p.id !== 958 &&
+      p.poolPubkey !== '4YC4rCNXva8ty6f1pKRC2NX7e5kufqowBYJDCMor12Wu'
+    );
+  });
+
   // Filtered pools
-  const filteredPools = pools.filter((pool) => {
+  const filteredPools = validPools.filter((pool) => {
     if (deskFilter === 'VERIFIED') return pool.isVerifiedMerchant;
     if (deskFilter === 'CIRCLES') return pool.poolType === 'Circle';
     if (deskFilter === 'MY_DESKS') return Boolean(userPubkey && pool.authority.toLowerCase() === userPubkey.toLowerCase());
@@ -314,8 +326,8 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
     return true;
   });
 
-  const totalPoolLiquidity = pools.reduce((acc, p) => acc + p.totalLiquidity, 0);
-  const minApr = pools.length > 0 ? Math.min(...pools.map((p) => p.interestRateBps / 100)) : 8.0;
+  const totalPoolLiquidity = validPools.reduce((acc, p) => acc + p.totalLiquidity, 0);
+  const minApr = validPools.length > 0 ? Math.min(...validPools.map((p) => p.interestRateBps / 100)) : 8.0;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -362,7 +374,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                 subTab === 'POOLS' && { color: colors.text, fontWeight: '800' },
               ]}
             >
-              Lending Desks ({pools.length})
+              Lending Desks ({validPools.length})
             </Text>
           </TouchableOpacity>
 
@@ -434,7 +446,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                 const isSel = deskFilter === key;
                 const label =
                   key === 'ALL'
-                    ? `All (${pools.length})`
+                    ? `All (${validPools.length})`
                     : key === 'VERIFIED'
                     ? 'Verified'
                     : key === 'CIRCLES'

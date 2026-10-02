@@ -21,6 +21,7 @@ export interface LendingPool {
   loansRepaid: number;
   successRate: number | null; // null = no loan history yet
   isVerifiedMerchant: boolean;
+  poolPubkey?: string;
   // Last byte of the 200-byte pool account: the desk pinned its own oracle
   // PDAs, so the borrow tx must carry the pool-scoped feeds (processor.rs
   // round-11 H-3 gate). Always false for legacy 182-byte pools.
