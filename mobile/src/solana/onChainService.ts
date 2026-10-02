@@ -383,7 +383,9 @@ export function createAssociatedTokenAccountIdempotentInstruction(
 }
 
 // Seeded pool addresses for instantaneous retrieval (populated after mainnet desk creation)
-const SEEDED_POOLS: PublicKey[] = [];
+const SEEDED_POOLS: PublicKey[] = [
+  new PublicKey('DqjjKqmntorNQYa9dJ6forBxZFPup5TmZ2ZpMBy4EZpF'), // ClockLend Genesis USDC Desk
+];
 
 // Helper to query with automatic fallback to secondary RPC endpoints
 export async function queryRpcWithFallback<T>(

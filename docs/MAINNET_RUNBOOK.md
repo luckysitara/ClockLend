@@ -25,7 +25,8 @@ commands given. Where something is *not* done, it says so explicitly.
 | `oracle_authority` | `HtiDpTkcWDDaQeRLSBvYDdw2sRJb5VvkD7EMvr5JWVzJ` |
 | SOL feed PDA | `49b74tSY5EgaTHUA3GZLJFJ3piwfkNUgXz9itachPyyH` (`CLK_FEED`, 98 B) |
 | SKR feed PDA | `Fpcvf78bzAkdeKzvB6ZqgudzmWWvs4detDpEkmz1W6X8` (`CLK_FEED`, 98 B) |
-| Lending pool | `4YC4rCNXva8ty6f1pKRC2NX7e5kufqowBYJDCMor12Wu` (`CLK_POOL`, 200 B) |
+| Lending pool (Active) | `DqjjKqmntorNQYa9dJ6forBxZFPup5TmZ2ZpMBy4EZpF` (`CLK_POOL`, ID #2, 50 USDC, 65% LTV, 8% APR) |
+| Lending pool (Legacy) | `4YC4rCNXva8ty6f1pKRC2NX7e5kufqowBYJDCMor12Wu` (`CLK_POOL`, ID #1, drained to 0 USDC) |
 | SKR yield vault | `6tY1CpFg9gr7nXZcgxX8WvBXGgKozd3URXzwFnChQQx4` (`CLK_SYLD`, 121 B) |
 | Treasury PDA | `5buCUcCHHDCzQpanMKCK8uruErL5D2UzSFVrbtPrKV7y` — **no account on chain yet** |
 | Treasury USDC ATA | `9UozceLNGCansqNeDcGFvirwLrnCyrTQFRSKGvmfnG63` — exists, **0 USDC** |
@@ -246,7 +247,7 @@ requires `--yes` on mainnet.
 | 5 | SKR yield vault initialized but never funded; the one pool holds $50 USDC of team liquidity and has originated zero loans | Yield feature is inert in practice |
 | 6 | No third-party audit has been performed | Internal, AI-assisted rounds only |
 | 7 | Committed Helius RPC key in `serverless/wrangler.toml` (now removed from the text, still in git history) | **Must be rotated with the provider** — deleting the text does not revoke it |
-| 8 | The live pool was created with `max_ltv_bps = 9000`, before the round-14 cap, and there is no instruction to update pool parameters | A 90% LTV loan is not protected by the round-14 7000 bps reasoning; drain and recreate the pool, or add an update instruction |
+| 8 | ~~The live pool was created with max_ltv_bps = 9000~~ **resolved** — drained legacy pool #1 (tx `4dH2PXDjcFaNdDSvm6MC4DT6GC5iEdkAnSA9JuB6sWYS8MmefY3M3ZZPpMhiWdMXrNzuunZYzJ19jHVLD8aYRhZH`) and created new production pool #2 with 65% LTV (6500 bps) and 8.00% APR funded with 50 USDC (tx `24iWRBUXMufkewT2DWvH6uCo8zw96hb93MzzCcUvPXWMgsXmhfbVZdNcUxvxy1QbH31fAagZNCtiBYGyenynJHRf`) | — |
 | 9 | ~~AWS Lambda keeper auth bypasses~~ **resolved by removal.** The handler was a third deployment of the same `crankOracles` code carrying a third copy of the oracle key. Cloudflare is now the only scheduled runner | If you deploy from a machine that still has the old `lambda.ts`, it is stale — the file is gone |
 | 10 | Cloudflare `/health` returned `rpcUrl` unredacted and echoed raw `err.message` | Fixed in `serverless/src/index.ts` (`redactUrl`, `safeErrorMessage`); redeploy the worker |
 | 11 | ~~Round-15 program hardening committed but NOT deployed~~ **resolved** — deployed and bytecode-verified on Mainnet-beta on 2026-10-02 (tx `2EvscADU7AtmGBpf5qLC1G8aNoj8RzoEcWJPcqpbdoruMixLSAfDV2kwR3dDiE5dNXPYwADUkqmQNoMum7uazZok`) | — |
