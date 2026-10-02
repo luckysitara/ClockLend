@@ -40,34 +40,50 @@ import {
   CreditTier,
 } from '../types';
 
-const GATEKEEPER_RPC = process.env.EXPO_PUBLIC_HELIUS_GATEKEEPER_RPC_URL;
-const SOLANA_RPC = process.env.EXPO_PUBLIC_SOLANA_RPC_URL;
-const HELIUS_KEY =
-  process.env.EXPO_PUBLIC_HELIUS_API_KEY ||
-  SOLANA_RPC?.match(/api-key=([a-zA-Z0-9-]+)/)?.[1] ||
-  GATEKEEPER_RPC?.match(/api-key=([a-zA-Z0-9-]+)/)?.[1] ||
-  '';
+// ── RPC endpoints ───────────────────────────────────────────────────────────
+//
+// NO API KEY MAY EVER APPEAR IN THIS FILE. `EXPO_PUBLIC_*` variables are inlined
+// into the JS bundle at build time, and the bundle ships inside the APK, where
+// `strings` — or a Hermes disassembler — will find anything you put in it. A key
+// written here is a key you have published.
+//
+// To use a paid RPC, point these at a proxy you control that injects the key
+// server-side. `serverless/src/index.ts` serves exactly that on `/rpc`:
+//
+//   EXPO_PUBLIC_SOLANA_RPC_URL=https://<your-worker>.workers.dev/rpc
+//
+// The URL is safe to inline (it is not a secret); the key stays in the Worker's
+// secret store. This block deliberately does NOT parse `api-key=` out of a URL
+// any more — an earlier version did, so merely setting a keyed URL was enough to
+// bake the key into a build without anyone intending it.
+const PROXIED_RPC = process.env.EXPO_PUBLIC_SOLANA_RPC_URL;
+const PROXIED_RPC_GATEKEEPER = process.env.EXPO_PUBLIC_HELIUS_GATEKEEPER_RPC_URL;
 
-export const HELIUS_DEVNET_RPC = HELIUS_KEY
-  ? `https://devnet.helius-rpc.com/?api-key=${HELIUS_KEY}`
-  : 'https://api.devnet.solana.com';
-export const HELIUS_DEVNET_WSS = HELIUS_KEY
-  ? `wss://devnet.helius-rpc.com/?api-key=${HELIUS_KEY}`
-  : 'wss://api.devnet.solana.com';
-export const HELIUS_MAINNET_WSS = GATEKEEPER_RPC
-  ? GATEKEEPER_RPC.replace(/^http/, 'ws')
-  : (HELIUS_KEY ? `wss://mainnet.helius-rpc.com/?api-key=${HELIUS_KEY}` : 'wss://api.mainnet-beta.solana.com');
+// Fail loudly at build/dev time rather than silently publishing a key. This is
+// the one mistake in this file that is unrecoverable once shipped.
+if (PROXIED_RPC && /api-key=/.test(PROXIED_RPC)) {
+  console.warn(
+    '[ClockLend] EXPO_PUBLIC_SOLANA_RPC_URL contains an api-key and will be inlined ' +
+      'into the shipped bundle. Use a keyless proxy URL instead (see serverless /rpc).'
+  );
+}
 
-export const DEVNET_RPCS = [
-  ...(HELIUS_KEY ? [HELIUS_DEVNET_RPC] : []),
-  'https://api.devnet.solana.com',
-];
+const PUBLIC_DEVNET_RPC = 'https://api.devnet.solana.com';
+const PUBLIC_MAINNET_RPC = 'https://api.mainnet-beta.solana.com';
+
+// Names kept for import compatibility; neither is a Helius endpoint any more.
+export const HELIUS_DEVNET_RPC = PROXIED_RPC || PUBLIC_DEVNET_RPC;
+export const HELIUS_DEVNET_WSS = PUBLIC_DEVNET_RPC.replace(/^http/, 'ws');
+export const HELIUS_MAINNET_WSS = PROXIED_RPC_GATEKEEPER
+  ? PROXIED_RPC_GATEKEEPER.replace(/^http/, 'ws')
+  : 'wss://api.mainnet-beta.solana.com';
+
+export const DEVNET_RPCS = [PUBLIC_DEVNET_RPC];
 
 export const MAINNET_RPCS = [
-  ...(GATEKEEPER_RPC ? [GATEKEEPER_RPC] : []),
-  ...(SOLANA_RPC ? [SOLANA_RPC] : []),
+  ...(PROXIED_RPC ? [PROXIED_RPC] : []),
   'https://solana-rpc.publicnode.com',
-  'https://api.mainnet-beta.solana.com',
+  PUBLIC_MAINNET_RPC,
 ];
 
 // Base58-encoded 8-byte account discriminators for RPC-side gPA filters.

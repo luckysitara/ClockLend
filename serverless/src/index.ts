@@ -390,6 +390,49 @@ export async function verifyFeedsAdvanced(
   return unconfirmed;
 }
 
+/**
+ * RPC methods the mobile client is allowed to relay through `/rpc`.
+ *
+ * Whitelisted rather than deny-listed so a new upstream method cannot silently
+ * become reachable. This is a cost/abuse control (it stops the proxy being used
+ * as a free general-purpose RPC), NOT a security boundary — the endpoints it
+ * forwards to are public blockchain state.
+ *
+ * `sendTransaction` is included because the client signs locally and submits
+ * here. It cannot be used to move anyone else's funds: the transaction still
+ * has to carry a valid signature.
+ */
+const ALLOWED_RPC_METHODS = new Set([
+  'getAccountInfo',
+  'getBalance',
+  'getBlockHeight',
+  'getEpochInfo',
+  'getFeeForMessage',
+  'getGenesisHash',
+  'getHealth',
+  'getLatestBlockhash',
+  'getMinimumBalanceForRentExemption',
+  'getMultipleAccounts',
+  'getRecentPrioritizationFees',
+  'getSignatureStatuses',
+  'getSlot',
+  'getTokenAccountBalance',
+  'getTokenAccountsByOwner',
+  'getTransaction',
+  'getVersion',
+  'isBlockhashValid',
+  'sendTransaction',
+  'simulateTransaction',
+]);
+
+/** Small JSON responder. Never includes upstream URLs (they carry API keys). */
+function json(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
 function safeErrorMessage(err: any): string {
   const raw = String(err?.message ?? err);
   return raw.replace(/([?&](?:api-?key|token|secret|auth|pass)[^=]*=)[^&\s"']+/gi, '$1REDACTED');
@@ -487,6 +530,63 @@ export default {
   // 2. HTTP Request Handler (Health, Status, and Manual Trigger)
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+
+    // ── RPC proxy ──────────────────────────────────────────────────────────
+    //
+    // The mobile client needs a paid RPC endpoint, but ANYTHING shipped in an
+    // app bundle is public: `EXPO_PUBLIC_*` variables are inlined into the JS at
+    // build time, and Hermes bytecode is trivially `strings`-able. So the API
+    // key lives HERE, in the Worker's secret store (`wrangler secret put
+    // RPC_URL`), and the app is configured with this Worker's URL instead.
+    //
+    // The method whitelist matters: without it this is an open relay that lets
+    // anyone spend the protocol's paid RPC quota. It is a cost/abuse control,
+    // not a security boundary — pair it with a Cloudflare Rate Limiting rule on
+    // this path.
+    if (url.pathname === '/rpc') {
+      if (request.method !== 'POST') {
+        return json({ error: 'POST only' }, 405);
+      }
+      const upstream = (env.RPC_URL || '').trim();
+      if (!upstream) {
+        return json({ error: 'RPC_URL is not configured on this Worker' }, 503);
+      }
+
+      let body: any;
+      try {
+        body = await request.json();
+      } catch {
+        return json({ error: 'invalid JSON body' }, 400);
+      }
+
+      // Batch requests carry an array; validate every method in it.
+      const calls = Array.isArray(body) ? body : [body];
+      for (const call of calls) {
+        if (!call || typeof call.method !== 'string' || !ALLOWED_RPC_METHODS.has(call.method)) {
+          return json(
+            { error: `RPC method not allowed through this proxy: ${String(call?.method)}` },
+            403
+          );
+        }
+      }
+
+      try {
+        const upstreamRes = await fetch(upstream, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        // Pass the upstream status and body through unchanged so the client's
+        // existing error handling keeps working.
+        return new Response(upstreamRes.body, {
+          status: upstreamRes.status,
+          headers: { 'content-type': 'application/json' },
+        });
+      } catch (err: any) {
+        // Never echo the upstream URL — it carries the API key.
+        return json({ error: safeErrorMessage(err) }, 502);
+      }
+    }
 
     // Health / Status endpoint
     if (url.pathname === '/' || url.pathname === '/health' || url.pathname === '/status') {
