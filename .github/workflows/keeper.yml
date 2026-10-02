@@ -83,6 +83,10 @@ jobs:
         env:
           ORACLE_KEYPAIR: ${{ secrets.KEEPER_KEYPAIR_JSON }}
           RPC_URL: ${{ secrets.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com' }}
+          # 2026-10-02: 25k µlam/CU (the crank default) let a signed crank sit in
+          # the mempool until "block height exceeded". 300k µlam/CU costs ~5k
+          # lamports per crank and reliably lands.
+          PRIORITY_FEE_MICRO_LAMPORTS: '300000'
         run: node serverless/src/cli.mjs
 
       - name: Confirm feeds are fresh after crank
