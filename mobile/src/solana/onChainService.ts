@@ -2585,13 +2585,15 @@ export async function buildCreatePoolTx(
   interestRateBps: number,
   maxLtvBps: number,
   minDurationDays: number,
-  maxDurationDays: number
+  maxDurationDays: number,
+  initialLiquidityUsdc: number = 0
 ): Promise<{ tx: Transaction; poolPDA: PublicKey; vaultPDA: PublicKey }> {
   const [poolPDA] = getPoolPDA(authority, poolId);
   const [vaultPDA] = getVaultPDA(poolPDA);
 
   const tx = new Transaction();
-  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 140_000 }));
+  // Allocate compute budget: 220k CU if funding atomically, 140k CU if creation only
+  tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: initialLiquidityUsdc > 0 ? 220_000 : 140_000 }));
   tx.add(ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000 }));
 
   // ClockLendInstruction::InitializePool:
@@ -2642,7 +2644,30 @@ export async function buildCreatePoolTx(
 
   tx.add(ix);
 
-  const memoText = `ClockLend: Create Lending Desk #${poolId} "${name}" | Type: ${poolType} | APR: ${(interestRateBps / 100).toFixed(1)}% | Max LTV: ${(maxLtvBps / 100).toFixed(0)}%`;
+  // If initial liquidity is provided, bundle DepositLiquidity atomically into the same transaction
+  if (initialLiquidityUsdc > 0) {
+    const userTokenAcc = getAssociatedTokenAddress(USDC_MAINNET_MINT, authority);
+    const depositData = Buffer.alloc(9);
+    depositData.writeUInt8(1, 0); // Instruction 1: DepositLiquidity
+    writeU64LE(BigInt(Math.round(initialLiquidityUsdc * 1_000_000))).copy(depositData, 1);
+
+    const depositIx = new TransactionInstruction({
+      programId: PROGRAM_ID,
+      keys: [
+        { pubkey: authority, isSigner: true, isWritable: true },
+        { pubkey: poolPDA, isSigner: false, isWritable: true },
+        { pubkey: userTokenAcc, isSigner: false, isWritable: true },
+        { pubkey: vaultPDA, isSigner: false, isWritable: true },
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      ],
+      data: depositData,
+    });
+    tx.add(depositIx);
+  }
+
+  const memoText = initialLiquidityUsdc > 0
+    ? `ClockLend: Create & Fund Lending Desk #${poolId} "${name}" | Liquidity: $${initialLiquidityUsdc} USDC | APR: ${(interestRateBps / 100).toFixed(1)}%`
+    : `ClockLend: Create Lending Desk #${poolId} "${name}" | Type: ${poolType} | APR: ${(interestRateBps / 100).toFixed(1)}% | Max LTV: ${(maxLtvBps / 100).toFixed(0)}%`;
   tx.add(
     new TransactionInstruction({
       programId: MEMO_PROGRAM_ID,

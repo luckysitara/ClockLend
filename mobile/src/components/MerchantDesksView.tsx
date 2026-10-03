@@ -589,13 +589,25 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                             <Text style={[styles.fundSmallBtnText, { color: colors.danger }]}>Withdraw</Text>
                           </TouchableOpacity>
                         )}
-                        <TouchableOpacity
-                          style={[styles.borrowActionBtn, { backgroundColor: colors.primary }]}
-                          onPress={() => onSelectPool(pool)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={[styles.borrowActionBtnText, { color: colors.primaryText }]}>Borrow →</Text>
-                        </TouchableOpacity>
+                        {isMyDesk ? (
+                          <View
+                            style={[
+                              styles.myDeskIndicatorPill,
+                              { backgroundColor: 'rgba(245, 158, 11, 0.12)', borderColor: 'rgba(245, 158, 11, 0.3)' },
+                            ]}
+                          >
+                            <Ionicons name="shield-checkmark-outline" size={13} color="#F59E0B" />
+                            <Text style={[styles.myDeskIndicatorText, { color: '#F59E0B' }]}>Your Desk</Text>
+                          </View>
+                        ) : (
+                          <TouchableOpacity
+                            style={[styles.borrowActionBtn, { backgroundColor: colors.primary }]}
+                            onPress={() => onSelectPool(pool)}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={[styles.borrowActionBtnText, { color: colors.primaryText }]}>Borrow →</Text>
+                          </TouchableOpacity>
+                        )}
                       </View>
                     </View>
                   </View>
@@ -1477,6 +1489,19 @@ const styles = StyleSheet.create({
   borrowActionBtnText: {
     fontSize: 13,
     fontWeight: '800',
+  },
+  myDeskIndicatorPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  myDeskIndicatorText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   statusRow: {
     flexDirection: 'row',

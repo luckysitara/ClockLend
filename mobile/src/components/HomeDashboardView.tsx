@@ -28,6 +28,7 @@ interface HomeDashboardViewProps {
   onNavigateDesks: () => void;
   onOpenAssetsModal: () => void;
   onOpenLeaderboard: () => void;
+  onNavigateHub?: () => void;
   onRefresh?: () => void;
   isLoading?: boolean;
 }
@@ -46,6 +47,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
   onNavigateDesks,
   onOpenAssetsModal,
   onOpenLeaderboard,
+  onNavigateHub,
   onRefresh,
   isLoading = false,
 }) => {
@@ -57,6 +59,11 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
   const carouselRef = useRef<ScrollView>(null);
 
   const availableUsdc = walletAssets?.usdcBalance || 0;
+  // Total portfolio USD balance across all assets (SOL, USDC, SKR, BONK) like standard Solana wallets
+  const totalBalanceUsd =
+    walletAssets?.totalUsdValue !== undefined && walletAssets.totalUsdValue > 0
+      ? walletAssets.totalUsdValue
+      : availableUsdc;
 
   // Rotating showcase banners.
   //
@@ -138,6 +145,21 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
         </View>
 
         <View style={styles.topRightControls}>
+          {onNavigateHub && (
+            <TouchableOpacity
+              style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+              onPress={() => {
+                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+                onNavigateHub();
+              }}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Quick Hub"
+            >
+              <Ionicons name="grid-outline" size={18} color={colors.text} />
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
             onPress={() => {
@@ -166,7 +188,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
         </View>
       </View>
 
-      {/* ── Deep Blue Gradient Hero Balance Card ── */}
+      {/* ── Deep Blue Gradient Hero Balance Card (Aggregated Portfolio Net Worth) ── */}
       <LinearGradient
         colors={mode === 'dark' ? ['#172554', '#1E40AF', '#2563EB'] : ['#1E3A8A', '#1D4ED8', '#2563EB']}
         start={{ x: 0, y: 0 }}
@@ -175,7 +197,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
       >
         <View style={styles.heroTopRow}>
           <View style={styles.availableLabelRow}>
-            <Text style={styles.availableLabel}>Available Balance</Text>
+            <Text style={styles.availableLabel}>Total Available Balance</Text>
             <TouchableOpacity
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -199,14 +221,16 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
         </View>
 
         <Text style={styles.heroBalance}>
-          {showBalance ? `$${availableUsdc.toFixed(2)}` : '$ ••••'}
+          {showBalance ? `$${totalBalanceUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$ ••••'}
         </Text>
         <Text style={styles.heroSubBalance}>
-          {showBalance ? `~ ${solBalance.toFixed(3)} SOL • Solana Mainnet` : '•••• SOL'}
+          {showBalance
+            ? `${solBalance.toFixed(3)} SOL • ${(walletAssets?.usdcBalance ?? 0).toFixed(2)} USDC${(walletAssets?.skrBalance ?? 0) > 0 ? ` • ${(walletAssets?.skrBalance ?? 0).toLocaleString()} SKR` : ''}`
+            : '••••'}
         </Text>
       </LinearGradient>
 
-      {/* ── 3 Action Buttons: Icon Card fills card, text underneath the card ── */}
+      {/* ── 3 Action Buttons: Borrow, Loans, Desks ── */}
       <View style={styles.actionRow}>
         <View style={styles.actionItem}>
           <TouchableOpacity
@@ -219,7 +243,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
             accessibilityRole="button"
             accessibilityLabel="Borrow funds"
           >
-            <Ionicons name="arrow-down-outline" size={30} color={colors.primary} />
+            <Ionicons name="arrow-down-outline" size={28} color={colors.primary} />
           </TouchableOpacity>
           <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Borrow</Text>
         </View>
@@ -233,11 +257,20 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
             }}
             activeOpacity={0.7}
             accessibilityRole="button"
-            accessibilityLabel="Repay loan"
+            accessibilityLabel="View my loans"
           >
-            <Ionicons name="arrow-up-outline" size={30} color={colors.primary} />
+            <View style={{ position: 'relative' }}>
+              <Ionicons name="receipt-outline" size={28} color={colors.primary} />
+              {activeOrders.length > 0 && (
+                <View style={styles.actionBadge}>
+                  <Text style={styles.actionBadgeText}>{activeOrders.length}</Text>
+                </View>
+              )}
+            </View>
           </TouchableOpacity>
-          <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Repay</Text>
+          <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>
+            {activeOrders.length > 0 ? `Loans (${activeOrders.length})` : 'Loans'}
+          </Text>
         </View>
 
         <View style={styles.actionItem}>
@@ -251,7 +284,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
             accessibilityRole="button"
             accessibilityLabel="Explore desks"
           >
-            <Ionicons name="storefront-outline" size={30} color={colors.primary} />
+            <Ionicons name="storefront-outline" size={28} color={colors.primary} />
           </TouchableOpacity>
           <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Desks</Text>
         </View>
@@ -609,6 +642,25 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 8,
     letterSpacing: 0.2,
+  },
+  actionBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -10,
+    backgroundColor: '#EF4444',
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  actionBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '900',
   },
   carouselOuter: {
     borderRadius: 20,

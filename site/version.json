@@ -1,0 +1,11 @@
+{
+  "minimumVersion": "1.0.0",
+  "minimumBuildNumber": 1,
+  "latestVersion": "1.0.0",
+  "forceUpdate": true,
+  "dappStoreUrl": "solanadappstore://details?id=com.clocklend.app",
+  "marketUrl": "market://details?id=com.clocklend.app",
+  "webUrl": "https://clocklend.kikhaus.com",
+  "title": "Update Required",
+  "message": "A newer version of ClockLend is available on the Solana dApp Store. Please update your app to continue using the protocol."
+}

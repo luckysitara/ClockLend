@@ -36,6 +36,7 @@ interface P2PExpressViewProps {
   pools: LendingPool[];
   userProfile: UserProfile;
   walletAssets?: WalletAssets;
+  userPubkey?: string;
   onBorrow: (
     borrowAmount: number,
     collateralUnits: number,
@@ -49,17 +50,20 @@ interface P2PExpressViewProps {
   // Desk explicitly chosen in the Markets screen. When set it is honored over
   // the lowest-APR auto-router; when null the router picks as before.
   preselectedPool?: LendingPool | null;
+  onSelectDesk?: (pool: LendingPool | null) => void;
 }
 
 export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
   pools,
   userProfile,
   walletAssets,
+  userPubkey,
   onBorrow,
   onOpenAssetsModal,
   isLoadingPools = false,
   initialAmount,
   preselectedPool = null,
+  onSelectDesk,
 }) => {
   const { colors, mode } = useTheme();
   // Use placeholder instead of hardcoded '50'
@@ -112,9 +116,31 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
     };
   }, []);
 
+  const isOwnDesk = (p: LendingPool | null | undefined): boolean => {
+    if (!p || !userPubkey || !p.authority) return false;
+    return p.authority.toLowerCase() === userPubkey.toLowerCase();
+  };
+
+  const [selectedDesk, setSelectedDesk] = useState<LendingPool | null>(
+    preselectedPool && !isOwnDesk(preselectedPool) ? preselectedPool : null
+  );
+  const [showDeskModal, setShowDeskModal] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (preselectedPool) {
+      if (!isOwnDesk(preselectedPool)) {
+        setSelectedDesk(preselectedPool);
+      } else {
+        setSelectedDesk(null);
+      }
+    }
+  }, [preselectedPool, userPubkey]);
+
   const numAmount = parseFloat(amountStr) || 0;
 
   const validPools = pools.filter((p) => {
+    // Defense: borrowers cannot borrow from their own lending desk
+    if (isOwnDesk(p)) return false;
     const n = (p.name || '').toLowerCase();
     return (
       !n.includes('seeker genesis') &&
@@ -133,11 +159,11 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
       : null;
   const routeCandidates =
     affordablePools.length > 0 ? affordablePools : fundedPools.length > 0 ? fundedPools : validPools;
-  // A desk chosen in the Markets screen wins outright — the router must not
-  // silently re-route the user to a different (lower-APR) desk. All terms
-  // below (LTV, APR, liquidity, interest) then derive from THIS desk, and
-  // amounts beyond its liquidity are blocked in handleOpenConfirm.
-  const bestPool = preselectedPool ?? lowestApr(routeCandidates);
+
+  const autoBestPool = lowestApr(routeCandidates);
+  // Manual selection overrides auto-route, but only if not the borrower's own desk
+  const bestPool = selectedDesk && !isOwnDesk(selectedDesk) ? selectedDesk : autoBestPool;
+  const isManualDesk = Boolean(selectedDesk && !isOwnDesk(selectedDesk));
 
   const solBalance = walletAssets?.solBalance || 0;
   const skrBalance = walletAssets?.skrBalance || 0;
@@ -183,6 +209,10 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
     }
     if (!bestPool) {
       Alert.alert('No Available Desk', 'No matching lending desk was found. Please check back later.');
+      return;
+    }
+    if (isOwnDesk(bestPool)) {
+      Alert.alert('Invalid Operation', 'You cannot borrow from your own lending desk. Please choose another desk.');
       return;
     }
     if (hasNoLiquidity || exceedsLiquidity) {
@@ -418,23 +448,105 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
           </View>
         </View>
 
+        {/* Section 3.5: Lending Desk Selection */}
+        <View style={styles.deskSection}>
+          <View style={styles.deskSectionHeader}>
+            <Text style={[styles.durationLabel, { color: colors.textSecondary }]}>LENDING DESK</Text>
+            <TouchableOpacity
+              onPress={() => {
+                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+                setShowDeskModal(true);
+              }}
+              style={styles.changeDeskBtn}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.changeDeskText, { color: colors.primary }]}>
+                {isManualDesk ? 'Change Desk' : 'Select Desk'}
+              </Text>
+              <Ionicons name="chevron-forward" size={13} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.deskSelectorCard,
+              {
+                backgroundColor: colors.cardAlt,
+                borderColor: isManualDesk ? colors.primary : colors.cardBorder,
+              },
+            ]}
+            onPress={() => {
+              try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+              setShowDeskModal(true);
+            }}
+            activeOpacity={0.8}
+          >
+            <View style={styles.deskSelectorLeft}>
+              <View
+                style={[
+                  styles.deskSelectorIconWrap,
+                  { backgroundColor: bestPool?.poolType === 'Circle' ? 'rgba(168, 85, 247, 0.15)' : colors.badgeBg },
+                ]}
+              >
+                <Ionicons
+                  name={bestPool?.poolType === 'Circle' ? 'people' : 'business'}
+                  size={18}
+                  color={bestPool?.poolType === 'Circle' ? '#c084fc' : colors.primary}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={styles.deskSelectorTitleRow}>
+                  <Text style={[styles.deskSelectorTitle, { color: colors.text }]} numberOfLines={1}>
+                    {bestPool ? bestPool.name : 'No Desk Available'}
+                  </Text>
+                  {isManualDesk ? (
+                    <View style={[styles.miniPill, { backgroundColor: colors.badgeBg }]}>
+                      <Text style={[styles.miniPillText, { color: colors.primaryLabel }]}>SELECTED</Text>
+                    </View>
+                  ) : bestPool ? (
+                    <View style={[styles.miniPill, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                      <Text style={[styles.miniPillText, { color: '#10B981' }]}>AUTO BEST</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text style={[styles.deskSelectorSub, { color: colors.textMuted }]} numberOfLines={1}>
+                  {bestPool
+                    ? `${(bestPool.interestRateBps / 100).toFixed(1)}% / 30d • ${(bestPool.maxLtvBps / 100).toFixed(0)}% Max LTV • $${bestPool.totalLiquidity.toLocaleString()} Avail`
+                    : 'No funded desk matches this loan'}
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+
         {/* Section 4: Loan Breakdown */}
         <View style={[styles.summaryPanel, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
           {bestPool && (
-            <View style={styles.summaryRow}>
+            <TouchableOpacity
+              style={styles.summaryRow}
+              onPress={() => {
+                try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+                setShowDeskModal(true);
+              }}
+              activeOpacity={0.7}
+            >
               <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>
-                {preselectedPool ? 'Selected Desk' : 'Desk'}
+                {isManualDesk ? 'Selected Desk' : 'Desk (Auto)'}
               </Text>
-              <Text
-                style={[
-                  styles.summaryValue,
-                  { color: preselectedPool ? colors.primaryLabel : colors.text, flex: 1, textAlign: 'right', marginLeft: 12 },
-                ]}
-                numberOfLines={1}
-              >
-                {bestPool.name} • {(bestPool.interestRateBps / 100).toFixed(1)}% / 30d
-              </Text>
-            </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'flex-end', gap: 4 }}>
+                <Text
+                  style={[
+                    styles.summaryValue,
+                    { color: isManualDesk ? colors.primaryLabel : colors.text, textAlign: 'right' },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {bestPool.name} • {(bestPool.interestRateBps / 100).toFixed(1)}% / 30d
+                </Text>
+                <Ionicons name="chevron-forward" size={12} color={colors.textMuted} />
+              </View>
+            </TouchableOpacity>
           )}
           <View style={styles.summaryRow}>
             <Text style={[styles.summaryLabel, { color: colors.textMuted }]}>Interest Fee</Text>
@@ -661,6 +773,155 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
             >
               <Text style={[styles.cancelActionText, { color: colors.textMuted }]}>Cancel</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Choose Lending Desk Modal / Bottom Sheet ── */}
+      <Modal
+        visible={showDeskModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowDeskModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowDeskModal(false)}
+          />
+          <View style={[styles.deskModalSheet, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <View style={styles.sheetHandle} />
+
+            <View style={styles.sheetHeader}>
+              <View>
+                <Text style={[styles.sheetTitle, { color: colors.text }]}>Choose Lending Desk</Text>
+                <Text style={[styles.sheetSubtitle, { color: colors.textMuted }]}>
+                  Select a desk or keep Auto-Route for lowest APR
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowDeskModal(false)}
+                style={styles.sheetCloseBtn}
+              >
+                <Ionicons name="close" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={styles.deskModalList}>
+              {/* Option 1: Auto (Lowest APR) */}
+              <TouchableOpacity
+                style={[
+                  styles.deskModalItem,
+                  {
+                    backgroundColor: !selectedDesk ? colors.cardAlt : 'transparent',
+                    borderColor: !selectedDesk ? colors.primary : colors.cardBorder,
+                  },
+                ]}
+                onPress={() => {
+                  try { Haptics.selectionAsync(); } catch {}
+                  setSelectedDesk(null);
+                  if (onSelectDesk) onSelectDesk(null);
+                  setShowDeskModal(false);
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.deskModalItemLeft}>
+                  <View style={[styles.deskSelectorIconWrap, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                    <Ionicons name="flash" size={18} color="#10B981" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={[styles.deskModalItemName, { color: colors.text }]}>Auto-Route (Best Rate)</Text>
+                      <View style={[styles.miniPill, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                        <Text style={[styles.miniPillText, { color: '#10B981' }]}>RECOMMENDED</Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.deskModalItemSub, { color: colors.textMuted }]}>
+                      {autoBestPool
+                        ? `Routes to ${autoBestPool.name} (${(autoBestPool.interestRateBps / 100).toFixed(1)}% / 30d)`
+                        : 'Automatically routes to lowest APR with sufficient liquidity'}
+                    </Text>
+                  </View>
+                </View>
+                {!selectedDesk && (
+                  <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
+                )}
+              </TouchableOpacity>
+
+              {/* List of eligible desks (excluding own desk) */}
+              {validPools.length === 0 ? (
+                <View style={styles.emptyDeskBox}>
+                  <Ionicons name="alert-circle-outline" size={26} color={colors.textMuted} />
+                  <Text style={[styles.emptyDeskText, { color: colors.textMuted }]}>
+                    No other lending desks are available.{'\n'}(Borrowing from your own desk is not permitted)
+                  </Text>
+                </View>
+              ) : (
+                validPools.map((pool) => {
+                  const isSelected = selectedDesk?.id === pool.id;
+                  const isFunded = pool.totalLiquidity > 0;
+
+                  return (
+                    <TouchableOpacity
+                      key={pool.id}
+                      style={[
+                        styles.deskModalItem,
+                        {
+                          backgroundColor: isSelected ? colors.cardAlt : 'transparent',
+                          borderColor: isSelected ? colors.primary : colors.cardBorder,
+                          opacity: isFunded ? 1 : 0.5,
+                        },
+                      ]}
+                      onPress={() => {
+                        if (!isFunded) {
+                          Alert.alert('Desk Has $0 Liquidity', 'This desk has no available liquidity to disburse.');
+                          return;
+                        }
+                        try { Haptics.selectionAsync(); } catch {}
+                        setSelectedDesk(pool);
+                        if (onSelectDesk) onSelectDesk(pool);
+                        setShowDeskModal(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.deskModalItemLeft}>
+                        <View
+                          style={[
+                            styles.deskSelectorIconWrap,
+                            { backgroundColor: pool.poolType === 'Circle' ? 'rgba(168, 85, 247, 0.15)' : colors.badgeBg },
+                          ]}
+                        >
+                          <Ionicons
+                            name={pool.poolType === 'Circle' ? 'people' : 'business'}
+                            size={18}
+                            color={pool.poolType === 'Circle' ? '#c084fc' : colors.primary}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={[styles.deskModalItemName, { color: colors.text }]} numberOfLines={1}>
+                              {pool.name}
+                            </Text>
+                            {pool.isVerifiedMerchant && (
+                              <View style={[styles.miniBadge, { backgroundColor: colors.badgeBg }]}>
+                                <Text style={[styles.miniBadgeText, { color: colors.primaryLabel }]}>VERIFIED</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={[styles.deskModalItemSub, { color: colors.textMuted }]}>
+                            {(pool.interestRateBps / 100).toFixed(1)}% / 30d • {(pool.maxLtvBps / 100).toFixed(0)}% Max LTV • ${pool.totalLiquidity.toLocaleString()} USDC Avail
+                          </Text>
+                        </View>
+                      </View>
+                      {isSelected && (
+                        <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1034,5 +1295,135 @@ const styles = StyleSheet.create({
   cancelActionText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  deskSection: {
+    marginTop: 18,
+  },
+  deskSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  changeDeskBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+  },
+  changeDeskText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  deskSelectorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  deskSelectorLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginRight: 8,
+  },
+  deskSelectorIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deskSelectorTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2,
+  },
+  deskSelectorTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  miniPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  miniPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  miniBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  miniBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  deskSelectorSub: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  deskModalSheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    padding: 22,
+    paddingBottom: 36,
+    maxHeight: SCREEN_HEIGHT * 0.75,
+  },
+  sheetSubtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  deskModalList: {
+    marginTop: 10,
+    maxHeight: 380,
+  },
+  deskModalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 10,
+  },
+  deskModalItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+    marginRight: 8,
+  },
+  deskModalItemName: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  deskModalItemSub: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  emptyDeskBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    gap: 10,
+  },
+  emptyDeskText: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    fontWeight: '500',
   },
 });

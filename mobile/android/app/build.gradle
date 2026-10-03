@@ -103,15 +103,15 @@ android {
         }
         release {
             if (project.hasProperty('MYAPP_RELEASE_STORE_FILE')) {
-                storeFile file(MYAPP_RELEASE_STORE_FILE)
-                storePassword MYAPP_RELEASE_STORE_PASSWORD
-                keyAlias MYAPP_RELEASE_KEY_ALIAS
-                keyPassword MYAPP_RELEASE_KEY_PASSWORD
+                storeFile file(MYAPP_RELEASE_STORE_FILE.trim())
+                storePassword MYAPP_RELEASE_STORE_PASSWORD.trim()
+                keyAlias MYAPP_RELEASE_KEY_ALIAS.trim()
+                keyPassword MYAPP_RELEASE_KEY_PASSWORD.trim()
             } else if (System.getenv('KEYSTORE_PATH') != null) {
-                storeFile file(System.getenv('KEYSTORE_PATH'))
-                storePassword System.getenv('KEYSTORE_PASSWORD')
-                keyAlias System.getenv('KEY_ALIAS')
-                keyPassword System.getenv('KEY_PASSWORD')
+                storeFile file(System.getenv('KEYSTORE_PATH').trim())
+                storePassword System.getenv('KEYSTORE_PASSWORD').trim()
+                keyAlias System.getenv('KEY_ALIAS').trim()
+                keyPassword System.getenv('KEY_PASSWORD').trim()
             }
             // M-01: Insecure fallback to debug.keystore eliminated.
             // Release builds will fail immediately if production keystore credentials are not provided.

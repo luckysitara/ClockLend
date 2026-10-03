@@ -27,6 +27,7 @@ import {
   setLockEnabled,
 } from '../services/securityService';
 import { SettingsView } from './SettingsModal';
+import { CommunityQuestsCard } from './CommunityQuestsCard';
 
 interface CreditProfileViewProps {
   userProfile: UserProfile;
@@ -42,6 +43,7 @@ interface CreditProfileViewProps {
   yieldVault?: SkrYieldVaultState;
   yieldPosition?: UserYieldPositionState;
   onClaimYield?: () => void;
+  onQuestClaimed?: (pointsAdded: number) => void;
 }
 
 export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
@@ -58,6 +60,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
   yieldVault,
   yieldPosition,
   onClaimYield,
+  onQuestClaimed,
 }) => {
   const { colors, mode } = useTheme();
   const [subView, setSubView] = useState<'PROFILE' | 'SETTINGS'>('PROFILE');
@@ -248,8 +251,20 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
               {currentDiscount >= 25 ? 'VIP (25% MAX OFF)' : currentDiscount >= 1 ? `Active (${currentDiscount.toFixed(1)}% OFF)` : 'Standard (0% OFF)'}
             </Text>
           </View>
+          <View style={styles.heroQuickItem}>
+            <Text style={[styles.heroQuickLabel, { color: colors.textMuted }]}>Reputation Score</Text>
+            <Text style={[styles.heroQuickValue, { color: colors.primary }]}>
+              {userProfile.reputationScore > 0 ? `${(userProfile.reputationScore / 100).toFixed(0)} pts` : '0 pts'}
+            </Text>
+          </View>
         </View>
       </View>
+
+      {/* ── Moonwalk Community Quests (Social / X Follow) ── */}
+      <CommunityQuestsCard
+        userPubkey={userProfile?.pubkey || ''}
+        onQuestClaimed={onQuestClaimed}
+      />
 
       {/* ── 2. SKR Staking Hub Card ── */}
       <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>

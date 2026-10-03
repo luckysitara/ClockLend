@@ -37,9 +37,12 @@ import { TransactionNoticeModal, TransactionNoticeData } from './src/components/
 import { LeaderboardModal } from './src/components/LeaderboardModal';
 import { JudgeBriefingModal } from './src/components/JudgeBriefingModal';
 import { SplashScreenView } from './src/components/SplashScreenView';
+import { ForceUpdateModal } from './src/components/ForceUpdateModal';
 import { SecurityLockScreen, LockScreenMode } from './src/components/SecurityLockScreen';
 import { SecurityLockdownView } from './src/components/SecurityLockdownView';
 import { isLockEnabled, checkDeviceIntegrity, DeviceIntegrityResult } from './src/services/securityService';
+import { checkAppVersion, VersionGateResult } from './src/services/versionGateService';
+import { getXQuestStatus, X_REPUTATION_BPS_REWARD } from './src/services/questService';
 import { syncLoanReminders, clearLoanReminders } from './src/services/loanReminders';
 import * as SecureStore from 'expo-secure-store';
 import {
@@ -131,6 +134,8 @@ function MainApp() {
   const [showLeaderboard, setShowLeaderboard] = useState<boolean>(false);
   const [showJudgeBriefing, setShowJudgeBriefing] = useState<boolean>(false);
   const [integrity, setIntegrity] = useState<DeviceIntegrityResult | null>(null);
+  const [versionGateResult, setVersionGateResult] = useState<VersionGateResult | null>(null);
+  const [questBonusBps, setQuestBonusBps] = useState<number>(0);
   // Suppresses the auto-relock that otherwise fires when the MWA wallet
   // authorization backgrounds and re-foregrounds the app right after unlock.
   const lastUnlockAtRef = useRef<number>(0);
@@ -172,10 +177,11 @@ function MainApp() {
     } catch {}
   };
 
-  // Auto-lock, hardware integrity check, and saved wallet session restoration on app launch
+  // Auto-lock, hardware integrity check, remote version gating, and saved wallet session restoration on app launch
   useEffect(() => {
     checkInitialLock();
     checkDeviceIntegrity().then((res) => setIntegrity(res));
+    checkAppVersion().then((res) => setVersionGateResult(res));
 
     // Restore saved wallet session so user doesn't have to reconnect every time
     getSavedSeekerSession().then((saved) => {
@@ -188,10 +194,22 @@ function MainApp() {
       if (nextState === 'active') {
         checkAppResumeLock();
         checkDeviceIntegrity().then((res) => setIntegrity(res));
+        checkAppVersion().then((res) => setVersionGateResult(res));
       }
     });
     return () => sub.remove();
   }, []);
+
+  // Fetch social quest status whenever wallet session changes
+  useEffect(() => {
+    if (session?.publicKey) {
+      getXQuestStatus(session.publicKey.toBase58()).then((status) => {
+        setQuestBonusBps(status.completed ? X_REPUTATION_BPS_REWARD : 0);
+      });
+    } else {
+      setQuestBonusBps(0);
+    }
+  }, [session?.publicKey]);
 
   const checkInitialLock = async () => {
     const enabled = await isLockEnabled();
@@ -556,6 +574,17 @@ function MainApp() {
     durationDays: number
   ) => {
     if (!session) return;
+
+    // Disallow borrowing from own desk
+    if (pool.authority.toLowerCase() === session.publicKey.toBase58().toLowerCase()) {
+      setTransactionNotice({
+        type: 'error',
+        title: 'Cannot Borrow From Own Desk',
+        subtitle: 'You are the authority of this lending desk. Borrowing from your own desk is not permitted.',
+        primaryBtnText: 'Dismiss',
+      });
+      return;
+    }
 
     // C-3: never sign a borrow the program will reject for lack of liquidity
     // (processor.rs:1348). The desk must cover the full principal.
@@ -1186,7 +1215,8 @@ function MainApp() {
         interestRateBps,
         maxLtvBps,
         minDays,
-        maxDays
+        maxDays,
+        initialLiquidity
       );
 
       const sig = await signAndSendSeekerTransaction(tx, session, selectedNetwork);
@@ -1198,10 +1228,13 @@ function MainApp() {
       setPools(await fetchLivePools(selectedNetwork, { force: true }));
       await refreshWalletAssets(session.publicKey, selectedNetwork);
 
+      const isFunded = initialLiquidity > 0;
       setTransactionNotice({
         type: 'borrow',
-        title: 'Lending Desk Initialized!',
-        subtitle: `"${name}" (${poolType}) is now live on Solana. Fund it from the Fund Desk screen before borrowers can draw.`,
+        title: isFunded ? 'Lending Desk Created & Funded!' : 'Lending Desk Initialized!',
+        subtitle: isFunded
+          ? `"${name}" (${poolType}) is now live on Solana with $${initialLiquidity.toFixed(2)} USDC available liquidity.`
+          : `"${name}" (${poolType}) is now live on Solana. Fund it from the Markets screen when you're ready.`,
         amount: `${aprPercent.toFixed(1)}% per 30d • ${maxLtvPercent.toFixed(0)}% Max LTV`,
         collateral: poolPDA.toBase58().slice(0, 8) + '...',
         txSignature: sig,
@@ -1635,6 +1668,11 @@ function MainApp() {
     return <SplashScreenView onFinish={() => setShowSplash(false)} />;
   }
 
+  // Mandatory App Version Gate (Solana Seeker dApp Store)
+  if (versionGateResult?.isMandatory) {
+    return <ForceUpdateModal visible={true} versionInfo={versionGateResult} />;
+  }
+
   // 2. Security Lock Screen (Biometrics & Custom PIN)
   if (isLocked) {
     return (
@@ -1690,17 +1728,22 @@ function MainApp() {
     poolsStatus === 'loading' ||
     offersStatus === 'loading';
 
-  const currentProfile: UserProfile = userProfile || {
-    pubkey: session.publicKey.toBase58(),
-    stakedSkr: 0,
-    lockedSkr: 0,
-    availableSkr: 0,
-    totalLoansCompleted: 0,
-    totalLoansDefaulted: 0,
-    reputationScore: 0,
-    tier: 'Standard',
-    aprDiscount: 0,
-  };
+  const currentProfile: UserProfile = userProfile
+    ? {
+        ...userProfile,
+        reputationScore: userProfile.reputationScore + questBonusBps,
+      }
+    : {
+        pubkey: session.publicKey.toBase58(),
+        stakedSkr: 0,
+        lockedSkr: 0,
+        availableSkr: 0,
+        totalLoansCompleted: 0,
+        totalLoansDefaulted: 0,
+        reputationScore: questBonusBps,
+        tier: 'Standard',
+        aprDiscount: 0,
+      };
 
   const handleSwitchAddress = async (newPubkey: PublicKey) => {
     const newSkr = await deriveSkrUsername(newPubkey);
@@ -1739,6 +1782,7 @@ function MainApp() {
             onNavigateDesks={() => setActiveTab('MARKET')}
             onOpenAssetsModal={() => setShowAssetsModal(true)}
             onOpenLeaderboard={() => setShowLeaderboard(true)}
+            onNavigateHub={() => setActiveTab('HUB')}
             onRefresh={retryProtocolData}
             isLoading={isProtocolLoading}
           />
@@ -1751,9 +1795,11 @@ function MainApp() {
             pools={pools}
             userProfile={currentProfile}
             walletAssets={walletAssets}
+            userPubkey={session?.publicKey?.toBase58()}
             onBorrow={handleBorrow}
             isLoadingPools={isLoadingPools}
             preselectedPool={selectedPool}
+            onSelectDesk={setSelectedPool}
             onOpenAssetsModal={() => setShowAssetsModal(true)}
           />
         )}
@@ -1826,6 +1872,10 @@ function MainApp() {
             yieldVault={skrYieldVault}
             yieldPosition={userYieldPosition}
             onClaimYield={handleClaimYield}
+            onQuestClaimed={(pts) => {
+              setQuestBonusBps(pts * 100);
+              showToast(`🎉 +${pts} Points added to your Profile!`);
+            }}
             onLockApp={() => {
               setLockScreenMode('unlock');
               setIsLocked(true);
@@ -1893,28 +1943,45 @@ function MainApp() {
           </Text>
         </TouchableOpacity>
 
-        {/* 3. Center Elevated Circular Button (Electric Cyan Logo Gradient) */}
-        <View style={styles.centerFabWrapper}>
-          <TouchableOpacity
-            style={styles.centerFab}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              setActiveTab('HUB');
-            }}
-            activeOpacity={0.85}
-            accessibilityRole="button"
-            accessibilityLabel="ClockLend Hub"
+        {/* 3. Loans */}
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setActiveTab('LOANS');
+          }}
+          activeOpacity={0.7}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'LOANS' }}
+          accessibilityLabel="Active Loans tab"
+        >
+          <View style={{ position: 'relative' }}>
+            <Ionicons
+              name={activeTab === 'LOANS' ? 'receipt' : 'receipt-outline'}
+              size={22}
+              color={activeTab === 'LOANS' ? colors.primary : colors.textSecondary}
+            />
+            {orders.length > 0 && (
+              <View
+                style={[
+                  styles.tabBadge,
+                  { backgroundColor: '#EF4444', top: -3, right: -12, minWidth: 16, height: 16 },
+                ]}
+              >
+                <Text style={styles.tabBadgeText}>{orders.length}</Text>
+              </View>
+            )}
+          </View>
+          <Text
+            style={[
+              styles.tabLabel,
+              { color: colors.textSecondary },
+              activeTab === 'LOANS' && { color: colors.primary, fontWeight: '800' },
+            ]}
           >
-            <LinearGradient
-              colors={mode === 'dark' ? ['#172554', '#1E40AF', '#2563EB'] : ['#1E3A8A', '#1D4ED8', '#2563EB']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.centerFabGradient}
-            >
-              <Ionicons name="grid" size={22} color="#FFFFFF" />
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
+            Loans
+          </Text>
+        </TouchableOpacity>
 
         {/* 4. Desks */}
         <TouchableOpacity
@@ -1999,6 +2066,12 @@ function MainApp() {
       <JudgeBriefingModal
         visible={showJudgeBriefing}
         onClose={handleJudgeBriefingClose}
+      />
+
+      {/* Remote Version Gating Modal (Solana Seeker dApp Store) */}
+      <ForceUpdateModal
+        visible={!!versionGateResult?.isMandatory}
+        versionInfo={versionGateResult}
       />
 
       {/* Floating In-App Toast Notification */}
