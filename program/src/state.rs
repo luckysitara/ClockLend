@@ -1,8 +1,5 @@
 use borsh::{BorshDeserialize, BorshSerialize};
-use solana_program::{
-    program_error::ProgramError,
-    pubkey::Pubkey,
-};
+use solana_program::{program_error::ProgramError, pubkey::Pubkey};
 
 pub const POOL_SEED: &[u8] = b"pool";
 pub const VAULT_SEED: &[u8] = b"vault";
@@ -14,8 +11,10 @@ pub const TREASURY_SEED: &[u8] = b"treasury";
 pub const ORACLE_SEED: &[u8] = b"oracle";
 pub const ADMIN_SEED: &[u8] = b"admin";
 pub const SKR_MINT: Pubkey = solana_program::pubkey!("SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3");
-pub const USDC_DEVNET_MINT: Pubkey = solana_program::pubkey!("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
-pub const USDC_MAINNET_MINT: Pubkey = solana_program::pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+pub const USDC_DEVNET_MINT: Pubkey =
+    solana_program::pubkey!("4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
+pub const USDC_MAINNET_MINT: Pubkey =
+    solana_program::pubkey!("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
 
 pub const SKR_YIELD_VAULT_SEED: &[u8] = b"skr_yield_vault";
 pub const SKR_YIELD_TOKEN_SEED: &[u8] = b"skr_yield_token";
@@ -123,11 +122,13 @@ pub struct LendingPool {
 
 impl LendingPool {
     pub const DISCRIMINATOR: [u8; 8] = DISCRIMINATOR_POOL;
-    pub const LEN: usize = 8 + 1 + 8 + 1 + 32 + 32 + 32 + 8 + 8 + 8 + 2 + 2 + 8 + 8 + 4 + 4 + 32 + 1 + 1; // 200 bytes
+    pub const LEN: usize =
+        8 + 1 + 8 + 1 + 32 + 32 + 32 + 8 + 8 + 8 + 2 + 2 + 8 + 8 + 4 + 4 + 32 + 1 + 1; // 200 bytes
 
     pub fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
         if src.len() >= Self::LEN && &src[0..8] == &Self::DISCRIMINATOR {
-            BorshDeserialize::try_from_slice(&src[..Self::LEN]).map_err(|_| ProgramError::InvalidAccountData)
+            BorshDeserialize::try_from_slice(&src[..Self::LEN])
+                .map_err(|_| ProgramError::InvalidAccountData)
         } else if src.len() == 182 && src[0] == 1 {
             // Legacy 182-byte LendingPool from devnet v1 deployment
             let is_initialized = src[0] == 1;
@@ -234,7 +235,8 @@ impl LoanOrder {
 
     pub fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
         if src.len() >= Self::LEN && &src[0..8] == &Self::DISCRIMINATOR {
-            BorshDeserialize::try_from_slice(&src[..Self::LEN]).map_err(|_| ProgramError::InvalidAccountData)
+            BorshDeserialize::try_from_slice(&src[..Self::LEN])
+                .map_err(|_| ProgramError::InvalidAccountData)
         } else {
             Err(ProgramError::InvalidAccountData)
         }
@@ -293,9 +295,11 @@ impl P2POffer {
 
     pub fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
         if src.len() >= Self::LEN && &src[0..8] == &Self::DISCRIMINATOR {
-            BorshDeserialize::try_from_slice(&src[..Self::LEN]).map_err(|_| ProgramError::InvalidAccountData)
+            BorshDeserialize::try_from_slice(&src[..Self::LEN])
+                .map_err(|_| ProgramError::InvalidAccountData)
         } else if src.len() >= 170 && &src[0..8] == &Self::DISCRIMINATOR {
-            let legacy = LegacyP2POffer::try_from_slice(&src[..170]).map_err(|_| ProgramError::InvalidAccountData)?;
+            let legacy = LegacyP2POffer::try_from_slice(&src[..170])
+                .map_err(|_| ProgramError::InvalidAccountData)?;
             Ok(Self {
                 discriminator: legacy.discriminator,
                 is_initialized: legacy.is_initialized,
@@ -340,7 +344,8 @@ impl P2POffer {
                 grace_period_expires: self.grace_period_expires,
                 status: self.status,
             };
-            let serialized = borsh::to_vec(&legacy).map_err(|_| ProgramError::InvalidAccountData)?;
+            let serialized =
+                borsh::to_vec(&legacy).map_err(|_| ProgramError::InvalidAccountData)?;
             dst[..serialized.len()].copy_from_slice(&serialized);
             Ok(())
         } else {
@@ -367,7 +372,8 @@ impl UserProfile {
 
     pub fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
         if src.len() >= Self::LEN && &src[0..8] == &Self::DISCRIMINATOR {
-            BorshDeserialize::try_from_slice(&src[..Self::LEN]).map_err(|_| ProgramError::InvalidAccountData)
+            BorshDeserialize::try_from_slice(&src[..Self::LEN])
+                .map_err(|_| ProgramError::InvalidAccountData)
         } else {
             Err(ProgramError::InvalidAccountData)
         }
@@ -389,9 +395,9 @@ pub struct PriceFeed {
     pub is_initialized: bool,
     pub mint: Pubkey,
     pub price_micro_usd: u64, // Price in micro-USD (6 decimals: 1_000_000 = $1.00)
-    pub decimals: u8,          // Token decimals (e.g. 9 for SOL, 6 for SKR, 6 for USDC)
-    pub last_updated_at: i64,  // Unix timestamp of last keeper update
-    pub authority: Pubkey,     // Oracle keeper or admin authority
+    pub decimals: u8,         // Token decimals (e.g. 9 for SOL, 6 for SKR, 6 for USDC)
+    pub last_updated_at: i64, // Unix timestamp of last keeper update
+    pub authority: Pubkey,    // Oracle keeper or admin authority
     pub max_staleness_seconds: i64,
 }
 
@@ -401,7 +407,8 @@ impl PriceFeed {
 
     pub fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
         if src.len() >= Self::LEN && &src[0..8] == &Self::DISCRIMINATOR {
-            BorshDeserialize::try_from_slice(&src[..Self::LEN]).map_err(|_| ProgramError::InvalidAccountData)
+            BorshDeserialize::try_from_slice(&src[..Self::LEN])
+                .map_err(|_| ProgramError::InvalidAccountData)
         } else {
             Err(ProgramError::InvalidAccountData)
         }
@@ -431,7 +438,8 @@ impl AdminConfig {
 
     pub fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
         if src.len() >= Self::LEN && &src[0..8] == &Self::DISCRIMINATOR {
-            BorshDeserialize::try_from_slice(&src[..Self::LEN]).map_err(|_| ProgramError::InvalidAccountData)
+            BorshDeserialize::try_from_slice(&src[..Self::LEN])
+                .map_err(|_| ProgramError::InvalidAccountData)
         } else {
             Err(ProgramError::InvalidAccountData)
         }
@@ -468,7 +476,8 @@ impl SkrYieldVault {
 
     pub fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
         if src.len() >= Self::LEN && &src[0..8] == &Self::DISCRIMINATOR {
-            BorshDeserialize::try_from_slice(&src[..Self::LEN]).map_err(|_| ProgramError::InvalidAccountData)
+            BorshDeserialize::try_from_slice(&src[..Self::LEN])
+                .map_err(|_| ProgramError::InvalidAccountData)
         } else {
             Err(ProgramError::InvalidAccountData)
         }
@@ -503,7 +512,8 @@ impl UserYieldPosition {
 
     pub fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
         if src.len() >= Self::LEN && &src[0..8] == &Self::DISCRIMINATOR {
-            BorshDeserialize::try_from_slice(&src[..Self::LEN]).map_err(|_| ProgramError::InvalidAccountData)
+            BorshDeserialize::try_from_slice(&src[..Self::LEN])
+                .map_err(|_| ProgramError::InvalidAccountData)
         } else {
             Err(ProgramError::InvalidAccountData)
         }
@@ -518,4 +528,3 @@ impl UserYieldPosition {
         Ok(())
     }
 }
-

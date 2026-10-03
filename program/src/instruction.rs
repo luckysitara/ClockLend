@@ -1,5 +1,5 @@
-use borsh::{BorshDeserialize, BorshSerialize};
 use crate::state::PoolType;
+use borsh::{BorshDeserialize, BorshSerialize};
 
 #[derive(BorshSerialize, BorshDeserialize, Debug, Clone, PartialEq)]
 pub enum ClockLendInstruction {
@@ -35,9 +35,7 @@ pub enum ClockLendInstruction {
     /// 2. `[writable]` Depositor Token Account
     /// 3. `[writable]` Vault PDA
     /// 4. `[]` Token Program
-    DepositLiquidity {
-        amount: u64,
-    },
+    DepositLiquidity { amount: u64 },
 
     /// 2. Stake SKR for reputation & bonding (unlocks 90% LTV & APR discounts)
     /// Accounts:
@@ -48,9 +46,7 @@ pub enum ClockLendInstruction {
     /// 4. `[writable]` SKR Escrow Account
     /// 5. `[]` System Program
     /// 6. `[]` Token Program
-    StakeSKR {
-        amount: u64,
-    },
+    StakeSKR { amount: u64 },
 
     /// 3. Borrow from pool (Express / Circle Vault) with atomic collateral lock
     /// Accounts:
@@ -137,9 +133,7 @@ pub enum ClockLendInstruction {
     /// 7. `[writable, optional]` UserProfile PDA (for credit score boost)
     /// 8. `[]` Token Program
     /// 9. `[]` Clock Sysvar
-    RepayLoan {
-        repay_amount: u64,
-    },
+    RepayLoan { repay_amount: u64 },
 
     /// 7. Trigger 24-Hour Social Grace Period
     /// Accounts:
@@ -193,9 +187,7 @@ pub enum ClockLendInstruction {
     /// 2. `[writable]` Vault PDA
     /// 3. `[writable]` Authority Token Account
     /// 4. `[]` Token Program
-    WithdrawLiquidity {
-        amount: u64,
-    },
+    WithdrawLiquidity { amount: u64 },
 
     /// 10. Cancel an unfunded P2P Pawn Offer & reclaim locked collateral + rent
     /// Accounts:
@@ -217,9 +209,7 @@ pub enum ClockLendInstruction {
     ///    (appending it syncs the user's yield position DOWN so a recycled
     ///    stake can never keep earning ghost shares)
     /// 6. `[writable, optional]` UserYieldPosition PDA `[b"skr_yield_user", user, vault.reward_mint]`
-    UnstakeSKR {
-        amount: u64,
-    },
+    UnstakeSKR { amount: u64 },
     /// 12. Set or update on-chain oracle price feed for an asset mint
     /// Accounts:
     /// 0. `[signer]` Authority (Oracle keeper or pool authority)
@@ -229,10 +219,7 @@ pub enum ClockLendInstruction {
     /// 4. `[optional]` Clock Sysvar
     /// 5. `[optional]` AdminConfig PDA `[b"admin"]` (required if initializing global feed)
     /// 6. `[optional]` LendingPool PDA (required if initializing pool-scoped feed)
-    SetPriceFeed {
-        price_micro_usd: u64,
-        decimals: u8,
-    },
+    SetPriceFeed { price_micro_usd: u64, decimals: u8 },
     /// 13. Initialize global protocol admin config (one-time deploy-time initialization).
     /// Also rotates the admin / oracle authority when called again.
     /// Accounts:
@@ -252,9 +239,7 @@ pub enum ClockLendInstruction {
     /// 4. `[writable, optional]` Treasury Token Account (if SPL token withdrawal)
     /// 5. `[optional]` Token Program (if SPL token withdrawal)
     /// 6. `[]` System Program
-    WithdrawTreasury {
-        amount: u64,
-    },
+    WithdrawTreasury { amount: u64 },
     /// 15. Initialize SKR Yield Vault (protocol fee dividend accumulator)
     /// Admin-gated: the caller must be AdminConfig.admin. Re-initialization
     /// is rejected. reward_mint is allowlisted to USDC (devnet/mainnet) or SKR.
@@ -278,9 +263,7 @@ pub enum ClockLendInstruction {
     /// 2. `[writable]` Depositor Reward Token Account
     /// 3. `[writable]` SkrYieldVault Token Account `[b"skr_yield_token", reward_mint]`
     /// 4. `[]` Token Program
-    DepositSkrYield {
-        amount: u64,
-    },
+    DepositSkrYield { amount: u64 },
     /// 17. Claim SKR Protocol Fee Dividends (1-hour stake cooldown)
     /// The stake is read from the SKR escrow token account (single source of
     /// truth). Payouts are blocked within MIN_STAKE_AGE_SECS of the last

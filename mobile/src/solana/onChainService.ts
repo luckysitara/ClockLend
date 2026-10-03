@@ -2703,10 +2703,11 @@ export async function buildStakeSkrTx(
   // skr_escrow PDAs itself (create_or_allocate_pda from the signer's wallet).
   // An extra transfer here would be a permanent, unrecoverable donation.
 
-  // Execute on-chain StakeSKR instruction. When the yield vault exists,
-  // append it + the user's position so the program registers the stake's
-  // yield shares IMMEDIATELY (round-10 critical fix) — a staker who never
-  // appends is invisible to the dividend denominator.
+  // Execute on-chain StakeSKR instruction. The yield vault + user position
+  // for EVERY allowlisted reward mint are REQUIRED sync accounts (H-2): the
+  // program no-ops on uninitialized vaults, so the derived PDAs are always
+  // appended — a stake that omits them is rejected on-chain and would
+  // otherwise freeze the dividend denominator.
   const stakeKeys: any[] = [
     { pubkey: user, isSigner: true, isWritable: true },
     { pubkey: profilePDA, isSigner: false, isWritable: true },
@@ -2716,14 +2717,10 @@ export async function buildStakeSkrTx(
     { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     { pubkey: SKR_MINT, isSigner: false, isWritable: false },
   ];
-  try {
-    const yieldVault = await fetchSkrYieldVault(network, USDC_MAINNET_MINT);
-    if (yieldVault?.initialized) {
-      stakeKeys.push({ pubkey: yieldVault.vaultPDA, isSigner: false, isWritable: true });
-      stakeKeys.push({ pubkey: getUserYieldPDA(user, new PublicKey(yieldVault.rewardMint)), isSigner: false, isWritable: true });
-    }
-  } catch (_e) {
-    // graceful: no share registration on this stake
+  // Mirrors the on-chain reward-mint allowlist (USDC mainnet, USDC devnet, SKR).
+  for (const rewardMint of [USDC_MAINNET_MINT, USDC_DEVNET_MINT, SKR_MINT]) {
+    stakeKeys.push({ pubkey: getSkrYieldVaultPDA(rewardMint), isSigner: false, isWritable: true });
+    stakeKeys.push({ pubkey: getUserYieldPDA(user, rewardMint), isSigner: false, isWritable: true });
   }
   tx.add(
     new TransactionInstruction({
@@ -2769,9 +2766,10 @@ export async function buildUnstakeSkrTx(
   data.writeUInt8(11, 0); // Instruction 11: UnstakeSKR
   writeU64LE(BigInt(Math.round(amountSkr * 1_000_000))).copy(data, 1);
 
-  // Execute on-chain UnstakeSKR instruction. When the yield vault exists,
-  // append it + the user's position so the program syncs the position DOWN —
-  // a recycled stake must never keep earning ghost shares.
+  // Execute on-chain UnstakeSKR instruction. The yield vault + user position
+  // for EVERY allowlisted reward mint are REQUIRED sync accounts (H-2) so the
+  // program always syncs the position DOWN — a recycled stake can never keep
+  // earning ghost shares, and omitting them is rejected on-chain.
   const keys: any[] = [
     { pubkey: user, isSigner: true, isWritable: true },
     { pubkey: profilePDA, isSigner: false, isWritable: true },
@@ -2779,14 +2777,10 @@ export async function buildUnstakeSkrTx(
     { pubkey: escrowPDA, isSigner: false, isWritable: true },
     { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
   ];
-  try {
-    const yieldVault = await fetchSkrYieldVault(network, USDC_MAINNET_MINT);
-    if (yieldVault?.initialized) {
-      keys.push({ pubkey: yieldVault.vaultPDA, isSigner: false, isWritable: true });
-      keys.push({ pubkey: getUserYieldPDA(user, new PublicKey(yieldVault.rewardMint)), isSigner: false, isWritable: true });
-    }
-  } catch (_e) {
-    // graceful: no position sync
+  // Mirrors the on-chain reward-mint allowlist (USDC mainnet, USDC devnet, SKR).
+  for (const rewardMint of [USDC_MAINNET_MINT, USDC_DEVNET_MINT, SKR_MINT]) {
+    keys.push({ pubkey: getSkrYieldVaultPDA(rewardMint), isSigner: false, isWritable: true });
+    keys.push({ pubkey: getUserYieldPDA(user, rewardMint), isSigner: false, isWritable: true });
   }
   tx.add(
     new TransactionInstruction({

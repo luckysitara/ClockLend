@@ -13,11 +13,10 @@ use clock_lend::{
     instruction::ClockLendInstruction,
     processor::process_instruction,
     state::{
-        AdminConfig, SkrYieldVault, UserYieldPosition,
-        ADMIN_SEED, DISCRIMINATOR_ADMIN, DISCRIMINATOR_SKR_YIELD,
-        DISCRIMINATOR_USER_YIELD, PROFILE_SEED, SKR_MINT,
-        SKR_YIELD_VAULT_SEED, SKR_YIELD_TOKEN_SEED, USER_YIELD_SEED,
-        USDC_DEVNET_MINT,
+        AdminConfig, SkrYieldVault, UserYieldPosition, ADMIN_SEED, DISCRIMINATOR_ADMIN,
+        DISCRIMINATOR_SKR_YIELD, DISCRIMINATOR_USER_YIELD, PROFILE_SEED, SKR_MINT,
+        SKR_YIELD_TOKEN_SEED, SKR_YIELD_VAULT_SEED, USDC_DEVNET_MINT, USDC_MAINNET_MINT,
+        USER_YIELD_SEED,
     },
 };
 use solana_program::{
@@ -75,27 +74,54 @@ fn add_admin(program_test: &mut ProgramTest, program_id: Pubkey, admin: Pubkey) 
     };
     let mut data = vec![0u8; AdminConfig::LEN];
     config.pack_into_slice(&mut data);
-    program_test.add_account(admin_pda, Account {
-        lamports: 10_000_000, data, owner: program_id, executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        admin_pda,
+        Account {
+            lamports: 10_000_000,
+            data,
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     admin_pda
 }
 
 /// Genesis-pack the user's SKR escrow token account (owner = escrow PDA).
-fn add_skr_escrow(program_test: &mut ProgramTest, program_id: Pubkey, user: Pubkey, staked: u64) -> Pubkey {
-    let (escrow_pda, _) = Pubkey::find_program_address(&[b"skr_escrow", user.as_ref()], &program_id);
-    program_test.add_account(escrow_pda, Account {
-        lamports: 10_000_000,
-        data: token_data(SKR_MINT, escrow_pda, staked),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+fn add_skr_escrow(
+    program_test: &mut ProgramTest,
+    program_id: Pubkey,
+    user: Pubkey,
+    staked: u64,
+) -> Pubkey {
+    let (escrow_pda, _) =
+        Pubkey::find_program_address(&[b"skr_escrow", user.as_ref()], &program_id);
+    program_test.add_account(
+        escrow_pda,
+        Account {
+            lamports: 10_000_000,
+            data: token_data(SKR_MINT, escrow_pda, staked),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     escrow_pda
 }
 
 /// Genesis-pack a pre-existing yield position (stake already synced).
-fn add_position(program_test: &mut ProgramTest, program_id: Pubkey, user: Pubkey, reward_mint: Pubkey,
-                staked: u64, last_interaction: i64) -> Pubkey {
-    let (pda, _) = Pubkey::find_program_address(&[USER_YIELD_SEED, user.as_ref(), reward_mint.as_ref()], &program_id);
+fn add_position(
+    program_test: &mut ProgramTest,
+    program_id: Pubkey,
+    user: Pubkey,
+    reward_mint: Pubkey,
+    staked: u64,
+    last_interaction: i64,
+) -> Pubkey {
+    let (pda, _) = Pubkey::find_program_address(
+        &[USER_YIELD_SEED, user.as_ref(), reward_mint.as_ref()],
+        &program_id,
+    );
     let pos = UserYieldPosition {
         discriminator: DISCRIMINATOR_USER_YIELD,
         is_initialized: true,
@@ -109,16 +135,29 @@ fn add_position(program_test: &mut ProgramTest, program_id: Pubkey, user: Pubkey
     };
     let mut data = vec![0u8; UserYieldPosition::LEN];
     pos.pack_into_slice(&mut data);
-    program_test.add_account(pda, Account {
-        lamports: 10_000_000, data, owner: program_id, executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        pda,
+        Account {
+            lamports: 10_000_000,
+            data,
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     pda
 }
 
 /// Genesis-pack a pre-initialized vault.
-fn add_vault(program_test: &mut ProgramTest, program_id: Pubkey, reward_mint: Pubkey,
-             authority: Pubkey, total_staked: u64) -> Pubkey {
-    let (pda, _) = Pubkey::find_program_address(&[SKR_YIELD_VAULT_SEED, reward_mint.as_ref()], &program_id);
+fn add_vault(
+    program_test: &mut ProgramTest,
+    program_id: Pubkey,
+    reward_mint: Pubkey,
+    authority: Pubkey,
+    total_staked: u64,
+) -> Pubkey {
+    let (pda, _) =
+        Pubkey::find_program_address(&[SKR_YIELD_VAULT_SEED, reward_mint.as_ref()], &program_id);
     let vault = SkrYieldVault {
         discriminator: DISCRIMINATOR_SKR_YIELD,
         is_initialized: true,
@@ -132,14 +171,27 @@ fn add_vault(program_test: &mut ProgramTest, program_id: Pubkey, reward_mint: Pu
     };
     let mut data = vec![0u8; SkrYieldVault::LEN];
     vault.pack_into_slice(&mut data);
-    program_test.add_account(pda, Account {
-        lamports: 10_000_000, data, owner: program_id, executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        pda,
+        Account {
+            lamports: 10_000_000,
+            data,
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     pda
 }
 
-fn vault_ix(program_id: Pubkey, authority: &Keypair, reward_mint: Pubkey, vault_pda: Pubkey,
-            token_pda: Pubkey, admin_pda: Pubkey) -> Instruction {
+fn vault_ix(
+    program_id: Pubkey,
+    authority: &Keypair,
+    reward_mint: Pubkey,
+    vault_pda: Pubkey,
+    token_pda: Pubkey,
+    admin_pda: Pubkey,
+) -> Instruction {
     Instruction {
         program_id,
         accounts: vec![
@@ -156,8 +208,33 @@ fn vault_ix(program_id: Pubkey, authority: &Keypair, reward_mint: Pubkey, vault_
     }
 }
 
-fn claim_ix(program_id: Pubkey, user: &Keypair, vault_pda: Pubkey, user_yield_pda: Pubkey,
-            vault_token_pda: Pubkey, user_reward_tok: Pubkey, escrow_pda: Pubkey) -> Instruction {
+// H-2 (2026-10-03): StakeSKR/UnstakeSKR REQUIRE the vault + position for
+// EVERY allowlisted reward mint. These fixtures run against a DEVNET-mint
+// vault (passed explicitly), so this helper supplies the remaining two pairs
+// (USDC mainnet + SKR) as empty no-op accounts.
+fn required_yield_extra(
+    program_id: &Pubkey,
+    mint: &Pubkey,
+    user: &Pubkey,
+    is_vault: bool,
+) -> Pubkey {
+    let (pda, _) = if is_vault {
+        Pubkey::find_program_address(&[SKR_YIELD_VAULT_SEED, mint.as_ref()], program_id)
+    } else {
+        Pubkey::find_program_address(&[USER_YIELD_SEED, user.as_ref(), mint.as_ref()], program_id)
+    };
+    pda
+}
+
+fn claim_ix(
+    program_id: Pubkey,
+    user: &Keypair,
+    vault_pda: Pubkey,
+    user_yield_pda: Pubkey,
+    vault_token_pda: Pubkey,
+    user_reward_tok: Pubkey,
+    escrow_pda: Pubkey,
+) -> Instruction {
     Instruction {
         program_id,
         accounts: vec![
@@ -174,8 +251,14 @@ fn claim_ix(program_id: Pubkey, user: &Keypair, vault_pda: Pubkey, user_yield_pd
     }
 }
 
-fn deposit_ix(program_id: Pubkey, depositor: &Keypair, vault_pda: Pubkey, depositor_tok: Pubkey,
-              vault_token_pda: Pubkey, amount: u64) -> Instruction {
+fn deposit_ix(
+    program_id: Pubkey,
+    depositor: &Keypair,
+    vault_pda: Pubkey,
+    depositor_tok: Pubkey,
+    vault_token_pda: Pubkey,
+    amount: u64,
+) -> Instruction {
     Instruction {
         program_id,
         accounts: vec![
@@ -191,8 +274,12 @@ fn deposit_ix(program_id: Pubkey, depositor: &Keypair, vault_pda: Pubkey, deposi
 
 /// Advance one slot (forcing a fresh blockhash) and submit — defeats the
 /// identical-signature memoization that made the old tests flaky.
-async fn submit(ctx: &mut ProgramTestContext, ixs: &[Instruction], signers: &[&Keypair],
-                payer: &Keypair) -> Result<(), BanksClientError> {
+async fn submit(
+    ctx: &mut ProgramTestContext,
+    ixs: &[Instruction],
+    signers: &[&Keypair],
+    payer: &Keypair,
+) -> Result<(), BanksClientError> {
     let clock: Clock = ctx.banks_client.get_sysvar().await.unwrap();
     ctx.warp_to_slot(clock.slot + 1).expect("warp");
     let bh = ctx.banks_client.get_latest_blockhash().await.unwrap();
@@ -202,7 +289,10 @@ async fn submit(ctx: &mut ProgramTestContext, ixs: &[Instruction], signers: &[&K
 
 fn expect_custom(res: &Result<(), BanksClientError>, code: u32, ctx: &str) {
     match res.as_ref().err() {
-        Some(BanksClientError::TransactionError(TransactionError::InstructionError(_, InstructionError::Custom(c)))) => {
+        Some(BanksClientError::TransactionError(TransactionError::InstructionError(
+            _,
+            InstructionError::Custom(c),
+        ))) => {
             assert_eq!(*c, code, "{ctx}: expected Custom({code}), got Custom({c})");
         }
         err => panic!("{ctx}: expected Custom({code}), got {err:?}"),
@@ -210,15 +300,40 @@ fn expect_custom(res: &Result<(), BanksClientError>, code: u32, ctx: &str) {
 }
 
 async fn read_vault(ctx: &mut ProgramTestContext, pda: Pubkey) -> SkrYieldVault {
-    SkrYieldVault::unpack_from_slice(&ctx.banks_client.get_account(pda).await.unwrap().unwrap().data).unwrap()
+    SkrYieldVault::unpack_from_slice(
+        &ctx.banks_client
+            .get_account(pda)
+            .await
+            .unwrap()
+            .unwrap()
+            .data,
+    )
+    .unwrap()
 }
 
 async fn read_position(ctx: &mut ProgramTestContext, pda: Pubkey) -> UserYieldPosition {
-    UserYieldPosition::unpack_from_slice(&ctx.banks_client.get_account(pda).await.unwrap().unwrap().data).unwrap()
+    UserYieldPosition::unpack_from_slice(
+        &ctx.banks_client
+            .get_account(pda)
+            .await
+            .unwrap()
+            .unwrap()
+            .data,
+    )
+    .unwrap()
 }
 
 async fn read_token_amount(ctx: &mut ProgramTestContext, pda: Pubkey) -> u64 {
-    spl_token::state::Account::unpack(&ctx.banks_client.get_account(pda).await.unwrap().unwrap().data).unwrap().amount
+    spl_token::state::Account::unpack(
+        &ctx.banks_client
+            .get_account(pda)
+            .await
+            .unwrap()
+            .unwrap()
+            .data,
+    )
+    .unwrap()
+    .amount
 }
 
 #[tokio::test]
@@ -227,11 +342,18 @@ async fn test_skr_yield_vault_initialization() {
     let authority = Keypair::new();
     let reward_mint = USDC_DEVNET_MINT;
 
-    let mut program_test = ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
-    program_test.add_account(reward_mint, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    let mut program_test =
+        ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
+    program_test.add_account(
+        reward_mint,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let admin_pda = add_admin(&mut program_test, program_id, authority.pubkey());
     let (yield_vault_pda, _) =
         Pubkey::find_program_address(&[SKR_YIELD_VAULT_SEED, reward_mint.as_ref()], &program_id);
@@ -240,19 +362,53 @@ async fn test_skr_yield_vault_initialization() {
 
     let mut ctx = program_test.start_with_context().await;
     let payer = ctx.payer.insecure_clone();
-    submit(&mut ctx, &[system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 1_000_000_000)], &[&payer], &payer).await.unwrap();
+    submit(
+        &mut ctx,
+        &[system_instruction::transfer(
+            &payer.pubkey(),
+            &authority.pubkey(),
+            1_000_000_000,
+        )],
+        &[&payer],
+        &payer,
+    )
+    .await
+    .unwrap();
 
     // 1. Non-admin caller is rejected.
     let intruder = Keypair::new();
-    let res = submit(&mut ctx,
-        &[vault_ix(program_id, &intruder, reward_mint, yield_vault_pda, vault_token_pda, admin_pda)],
-        &[&payer, &intruder], &payer).await;
+    let res = submit(
+        &mut ctx,
+        &[vault_ix(
+            program_id,
+            &intruder,
+            reward_mint,
+            yield_vault_pda,
+            vault_token_pda,
+            admin_pda,
+        )],
+        &[&payer, &intruder],
+        &payer,
+    )
+    .await;
     expect_custom(&res, ClockLendError::Unauthorized as u32, "non-admin init");
 
     // 2. Admin initializes.
-    submit(&mut ctx,
-        &[vault_ix(program_id, &authority, reward_mint, yield_vault_pda, vault_token_pda, admin_pda)],
-        &[&authority], &authority).await.unwrap();
+    submit(
+        &mut ctx,
+        &[vault_ix(
+            program_id,
+            &authority,
+            reward_mint,
+            yield_vault_pda,
+            vault_token_pda,
+            admin_pda,
+        )],
+        &[&authority],
+        &authority,
+    )
+    .await
+    .unwrap();
 
     let vault = read_vault(&mut ctx, yield_vault_pda).await;
     assert!(vault.is_initialized);
@@ -264,10 +420,25 @@ async fn test_skr_yield_vault_initialization() {
     assert_eq!(vault.unallocated_rewards, 0);
 
     // 3. C-2 regression: re-initialization is rejected.
-    let res = submit(&mut ctx,
-        &[vault_ix(program_id, &authority, reward_mint, yield_vault_pda, vault_token_pda, admin_pda)],
-        &[&authority], &authority).await;
-    expect_custom(&res, ClockLendError::PoolAlreadyInitialized as u32, "reinit");
+    let res = submit(
+        &mut ctx,
+        &[vault_ix(
+            program_id,
+            &authority,
+            reward_mint,
+            yield_vault_pda,
+            vault_token_pda,
+            admin_pda,
+        )],
+        &[&authority],
+        &authority,
+    )
+    .await;
+    expect_custom(
+        &res,
+        ClockLendError::PoolAlreadyInitialized as u32,
+        "reinit",
+    );
 }
 
 #[tokio::test]
@@ -277,89 +448,226 @@ async fn test_skr_yield_deposit_claim_and_cooldown() {
     let user = Keypair::new();
     let reward_mint = USDC_DEVNET_MINT;
 
-    let mut program_test = ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
-    program_test.add_account(reward_mint, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
-    program_test.add_account(SKR_MINT, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    let mut program_test =
+        ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
+    program_test.add_account(
+        reward_mint,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    program_test.add_account(
+        SKR_MINT,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let admin_pda = add_admin(&mut program_test, program_id, authority.pubkey());
     let (yield_vault_pda, _) =
         Pubkey::find_program_address(&[SKR_YIELD_VAULT_SEED, reward_mint.as_ref()], &program_id);
     let (vault_token_pda, _) =
         Pubkey::find_program_address(&[SKR_YIELD_TOKEN_SEED, reward_mint.as_ref()], &program_id);
-    let (user_yield_pda, _) =
-        Pubkey::find_program_address(&[USER_YIELD_SEED, user.pubkey().as_ref(), reward_mint.as_ref()], &program_id);
-    let escrow_pda = add_skr_escrow(&mut program_test, program_id, user.pubkey(), 100_000 * SKR_DECIMALS);
+    let (user_yield_pda, _) = Pubkey::find_program_address(
+        &[
+            USER_YIELD_SEED,
+            user.pubkey().as_ref(),
+            reward_mint.as_ref(),
+        ],
+        &program_id,
+    );
+    let escrow_pda = add_skr_escrow(
+        &mut program_test,
+        program_id,
+        user.pubkey(),
+        100_000 * SKR_DECIMALS,
+    );
 
     let depositor_token = Keypair::new();
-    program_test.add_account(depositor_token.pubkey(), Account {
-        lamports: 10_000_000,
-        data: token_data(reward_mint, authority.pubkey(), 1_000 * 1_000_000),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        depositor_token.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, authority.pubkey(), 1_000 * 1_000_000),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let user_reward_token = Keypair::new();
-    program_test.add_account(user_reward_token.pubkey(), Account {
-        lamports: 10_000_000,
-        data: token_data(reward_mint, user.pubkey(), 0),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        user_reward_token.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, user.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
 
     let mut ctx = program_test.start_with_context().await;
     let payer = ctx.payer.insecure_clone();
-    submit(&mut ctx, &[
-        system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 1_000_000_000),
-        system_instruction::transfer(&payer.pubkey(), &user.pubkey(), 1_000_000_000),
-    ], &[&payer], &payer).await.unwrap();
+    submit(
+        &mut ctx,
+        &[
+            system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 1_000_000_000),
+            system_instruction::transfer(&payer.pubkey(), &user.pubkey(), 1_000_000_000),
+        ],
+        &[&payer],
+        &payer,
+    )
+    .await
+    .unwrap();
 
     // 1. Init vault.
-    submit(&mut ctx,
-        &[vault_ix(program_id, &authority, reward_mint, yield_vault_pda, vault_token_pda, admin_pda)],
-        &[&authority], &authority).await.unwrap();
+    submit(
+        &mut ctx,
+        &[vault_ix(
+            program_id,
+            &authority,
+            reward_mint,
+            yield_vault_pda,
+            vault_token_pda,
+            admin_pda,
+        )],
+        &[&authority],
+        &authority,
+    )
+    .await
+    .unwrap();
 
     // 2. H-7 regression: deposit BEFORE any staker syncs -> parked.
     let first_deposit = 100 * 1_000_000;
-    submit(&mut ctx,
-        &[deposit_ix(program_id, &authority, yield_vault_pda, depositor_token.pubkey(), vault_token_pda, first_deposit)],
-        &[&authority], &authority).await.unwrap();
+    submit(
+        &mut ctx,
+        &[deposit_ix(
+            program_id,
+            &authority,
+            yield_vault_pda,
+            depositor_token.pubkey(),
+            vault_token_pda,
+            first_deposit,
+        )],
+        &[&authority],
+        &authority,
+    )
+    .await
+    .unwrap();
     let vault = read_vault(&mut ctx, yield_vault_pda).await;
-    assert_eq!(vault.unallocated_rewards, first_deposit, "pre-stake deposit must be parked");
+    assert_eq!(
+        vault.unallocated_rewards, first_deposit,
+        "pre-stake deposit must be parked"
+    );
     assert_eq!(vault.acc_reward_per_share, 0);
 
     // 3. H-3 regression: non-authority deposit is rejected.
-    let res = submit(&mut ctx,
-        &[deposit_ix(program_id, &user, yield_vault_pda, user_reward_token.pubkey(), vault_token_pda, 1_000_000)],
-        &[&payer, &user], &payer).await;
-    expect_custom(&res, ClockLendError::Unauthorized as u32, "non-authority deposit");
+    let res = submit(
+        &mut ctx,
+        &[deposit_ix(
+            program_id,
+            &user,
+            yield_vault_pda,
+            user_reward_token.pubkey(),
+            vault_token_pda,
+            1_000_000,
+        )],
+        &[&payer, &user],
+        &payer,
+    )
+    .await;
+    expect_custom(
+        &res,
+        ClockLendError::Unauthorized as u32,
+        "non-authority deposit",
+    );
 
     // 4. Fresh position sync: registers shares from the escrow balance.
-    submit(&mut ctx,
-        &[claim_ix(program_id, &user, yield_vault_pda, user_yield_pda, vault_token_pda, user_reward_token.pubkey(), escrow_pda)],
-        &[&user], &user).await.unwrap();
+    submit(
+        &mut ctx,
+        &[claim_ix(
+            program_id,
+            &user,
+            yield_vault_pda,
+            user_yield_pda,
+            vault_token_pda,
+            user_reward_token.pubkey(),
+            escrow_pda,
+        )],
+        &[&user],
+        &user,
+    )
+    .await
+    .unwrap();
     let vault = read_vault(&mut ctx, yield_vault_pda).await;
-    assert_eq!(vault.total_staked_skr, 100_000 * SKR_DECIMALS, "sync must register the escrow stake");
+    assert_eq!(
+        vault.total_staked_skr,
+        100_000 * SKR_DECIMALS,
+        "sync must register the escrow stake"
+    );
 
     // 5. Second deposit folds the unallocated backlog into acc.
     let second_deposit = 100 * 1_000_000;
-    submit(&mut ctx,
-        &[deposit_ix(program_id, &authority, yield_vault_pda, depositor_token.pubkey(), vault_token_pda, second_deposit)],
-        &[&authority], &authority).await.unwrap();
+    submit(
+        &mut ctx,
+        &[deposit_ix(
+            program_id,
+            &authority,
+            yield_vault_pda,
+            depositor_token.pubkey(),
+            vault_token_pda,
+            second_deposit,
+        )],
+        &[&authority],
+        &authority,
+    )
+    .await
+    .unwrap();
     let vault = read_vault(&mut ctx, yield_vault_pda).await;
     // Round 11: the backlog DRIPS — a quarter per accrue — so a JIT staker
     // cannot capture 100% of it with one dust-triggered fold.
-    assert_eq!(vault.unallocated_rewards, 75_000_000, "a quarter of the backlog must fold");
-    assert_eq!(vault.acc_reward_per_share, 1_250_000_000, "125 USDC (100 fresh + 25 dripped) over 100k SKR");
+    assert_eq!(
+        vault.unallocated_rewards, 75_000_000,
+        "a quarter of the backlog must fold"
+    );
+    assert_eq!(
+        vault.acc_reward_per_share, 1_250_000_000,
+        "125 USDC (100 fresh + 25 dripped) over 100k SKR"
+    );
 
     // 6. H-2 regression: the fresh stake is inside its 1h cooldown.
-    let res = submit(&mut ctx,
-        &[claim_ix(program_id, &user, yield_vault_pda, user_yield_pda, vault_token_pda, user_reward_token.pubkey(), escrow_pda)],
-        &[&user], &user).await;
-    expect_custom(&res, ClockLendError::YieldCooldown as u32, "claim inside cooldown");
+    let res = submit(
+        &mut ctx,
+        &[claim_ix(
+            program_id,
+            &user,
+            yield_vault_pda,
+            user_yield_pda,
+            vault_token_pda,
+            user_reward_token.pubkey(),
+            escrow_pda,
+        )],
+        &[&user],
+        &user,
+    )
+    .await;
+    expect_custom(
+        &res,
+        ClockLendError::YieldCooldown as u32,
+        "claim inside cooldown",
+    );
     // The rejected claim must not have moved anything.
-    assert_eq!(read_token_amount(&mut ctx, user_reward_token.pubkey()).await, 0);
+    assert_eq!(
+        read_token_amount(&mut ctx, user_reward_token.pubkey()).await,
+        0
+    );
 }
 
 #[tokio::test]
@@ -369,60 +677,140 @@ async fn test_skr_yield_claim_pays_after_cooldown_and_rearms() {
     let user = Keypair::new();
     let reward_mint = USDC_DEVNET_MINT;
 
-    let mut program_test = ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
-    program_test.add_account(reward_mint, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
-    program_test.add_account(SKR_MINT, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    let mut program_test =
+        ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
+    program_test.add_account(
+        reward_mint,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    program_test.add_account(
+        SKR_MINT,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     // Position pre-packed with an ANCIENT last_interaction (cooldown already
     // served) and its stake synced; vault pre-seeded with matching total.
-    let user_yield_pda = add_position(&mut program_test, program_id, user.pubkey(), reward_mint,
-        100_000 * SKR_DECIMALS, 1);
-    let yield_vault_pda = add_vault(&mut program_test, program_id, reward_mint, authority.pubkey(),
-        100_000 * SKR_DECIMALS);
+    let user_yield_pda = add_position(
+        &mut program_test,
+        program_id,
+        user.pubkey(),
+        reward_mint,
+        100_000 * SKR_DECIMALS,
+        1,
+    );
+    let yield_vault_pda = add_vault(
+        &mut program_test,
+        program_id,
+        reward_mint,
+        authority.pubkey(),
+        100_000 * SKR_DECIMALS,
+    );
     let (vault_token_pda, _) =
         Pubkey::find_program_address(&[SKR_YIELD_TOKEN_SEED, reward_mint.as_ref()], &program_id);
-    program_test.add_account(vault_token_pda, Account {
-        lamports: 10_000_000,
-        data: token_data(reward_mint, yield_vault_pda, 1_000 * 1_000_000),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
-    let escrow_pda = add_skr_escrow(&mut program_test, program_id, user.pubkey(), 100_000 * SKR_DECIMALS);
+    program_test.add_account(
+        vault_token_pda,
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, yield_vault_pda, 1_000 * 1_000_000),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    let escrow_pda = add_skr_escrow(
+        &mut program_test,
+        program_id,
+        user.pubkey(),
+        100_000 * SKR_DECIMALS,
+    );
     let depositor_token = Keypair::new();
-    program_test.add_account(depositor_token.pubkey(), Account {
-        lamports: 10_000_000,
-        data: token_data(reward_mint, authority.pubkey(), 1_000 * 1_000_000),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        depositor_token.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, authority.pubkey(), 1_000 * 1_000_000),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let user_reward_token = Keypair::new();
-    program_test.add_account(user_reward_token.pubkey(), Account {
-        lamports: 10_000_000,
-        data: token_data(reward_mint, user.pubkey(), 0),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        user_reward_token.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, user.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
 
     let mut ctx = program_test.start_with_context().await;
     let payer = ctx.payer.insecure_clone();
-    submit(&mut ctx, &[
-        system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 1_000_000_000),
-        system_instruction::transfer(&payer.pubkey(), &user.pubkey(), 1_000_000_000),
-    ], &[&payer], &payer).await.unwrap();
+    submit(
+        &mut ctx,
+        &[
+            system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 1_000_000_000),
+            system_instruction::transfer(&payer.pubkey(), &user.pubkey(), 1_000_000_000),
+        ],
+        &[&payer],
+        &payer,
+    )
+    .await
+    .unwrap();
 
     // Deposit $100 against 100k SKR -> acc = 1e9.
     let dep = 100 * 1_000_000;
-    submit(&mut ctx,
-        &[deposit_ix(program_id, &authority, yield_vault_pda, depositor_token.pubkey(), vault_token_pda, dep)],
-        &[&authority], &authority).await.unwrap();
+    submit(
+        &mut ctx,
+        &[deposit_ix(
+            program_id,
+            &authority,
+            yield_vault_pda,
+            depositor_token.pubkey(),
+            vault_token_pda,
+            dep,
+        )],
+        &[&authority],
+        &authority,
+    )
+    .await
+    .unwrap();
 
     // Claim (cooldown already served) pays the full $100.
-    submit(&mut ctx,
-        &[claim_ix(program_id, &user, yield_vault_pda, user_yield_pda, vault_token_pda, user_reward_token.pubkey(), escrow_pda)],
-        &[&user], &user).await.unwrap();
-    assert_eq!(read_token_amount(&mut ctx, user_reward_token.pubkey()).await, dep, "full dividend must be paid");
+    submit(
+        &mut ctx,
+        &[claim_ix(
+            program_id,
+            &user,
+            yield_vault_pda,
+            user_yield_pda,
+            vault_token_pda,
+            user_reward_token.pubkey(),
+            escrow_pda,
+        )],
+        &[&user],
+        &user,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        read_token_amount(&mut ctx, user_reward_token.pubkey()).await,
+        dep,
+        "full dividend must be paid"
+    );
     let pos = read_position(&mut ctx, user_yield_pda).await;
     assert_eq!(pos.total_claimed, dep);
     assert_eq!(pos.accrued_rewards, 0);
@@ -430,46 +818,101 @@ async fn test_skr_yield_claim_pays_after_cooldown_and_rearms() {
     assert_eq!(vault.pending_rewards, 0);
 
     // A second dividend accrues...
-    submit(&mut ctx,
-        &[deposit_ix(program_id, &authority, yield_vault_pda, depositor_token.pubkey(), vault_token_pda, dep)],
-        &[&authority], &authority).await.unwrap();
+    submit(
+        &mut ctx,
+        &[deposit_ix(
+            program_id,
+            &authority,
+            yield_vault_pda,
+            depositor_token.pubkey(),
+            vault_token_pda,
+            dep,
+        )],
+        &[&authority],
+        &authority,
+    )
+    .await
+    .unwrap();
     // ...but the payout re-armed the cooldown, so an immediate second claim is
     // rejected (this is what blocks the claim-in-slot-N+1 / unstake-in-N+2 snipe).
-    let res = submit(&mut ctx,
-        &[claim_ix(program_id, &user, yield_vault_pda, user_yield_pda, vault_token_pda, user_reward_token.pubkey(), escrow_pda)],
-        &[&user], &user).await;
-    expect_custom(&res, ClockLendError::YieldCooldown as u32, "claim re-arms the cooldown");
+    let res = submit(
+        &mut ctx,
+        &[claim_ix(
+            program_id,
+            &user,
+            yield_vault_pda,
+            user_yield_pda,
+            vault_token_pda,
+            user_reward_token.pubkey(),
+            escrow_pda,
+        )],
+        &[&user],
+        &user,
+    )
+    .await;
+    expect_custom(
+        &res,
+        ClockLendError::YieldCooldown as u32,
+        "claim re-arms the cooldown",
+    );
 }
 
 #[tokio::test]
-async fn test_skr_yield_claim_is_bounded_by_real_escrow() {
-    // C-1 regression: the claim path bounds accrual by the SKR escrow token
-    // account, so a position with a forged cached stake (or a stake that was
+async fn test_skr_yield_claim_rejects_desynced_position() {
+    // C-1 / H-2 regression: a position whose cached stake disagrees with the
+    // real SKR escrow (forged cached stake, or a pre-fix desync) must be
+    // REJECTED — the claim may not silently rebase it. The user must run a
+    // synced StakeSKR/UnstakeSKR first, which rebases the debt and re-arms
+    // the cooldown.
     // unstaked) cannot claim ghost shares, and total_staked_skr syncs DOWN.
     let program_id = Pubkey::new_unique();
     let authority = Keypair::new();
     let user = Keypair::new();
     let reward_mint = USDC_DEVNET_MINT;
 
-    let mut program_test = ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
-    program_test.add_account(reward_mint, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
-    program_test.add_account(SKR_MINT, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    let mut program_test =
+        ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
+    program_test.add_account(
+        reward_mint,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    program_test.add_account(
+        SKR_MINT,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let (yield_vault_pda, _) =
         Pubkey::find_program_address(&[SKR_YIELD_VAULT_SEED, reward_mint.as_ref()], &program_id);
     let (vault_token_pda, _) =
         Pubkey::find_program_address(&[SKR_YIELD_TOKEN_SEED, reward_mint.as_ref()], &program_id);
-    let escrow_pda = add_skr_escrow(&mut program_test, program_id, user.pubkey(), 100_000 * SKR_DECIMALS);
+    let escrow_pda = add_skr_escrow(
+        &mut program_test,
+        program_id,
+        user.pubkey(),
+        100_000 * SKR_DECIMALS,
+    );
 
     // Position FALSELY claims 1,000,000 SKR (pre-fix cached accounting),
     // ancient cooldown.
-    let user_yield_pda = add_position(&mut program_test, program_id, user.pubkey(), reward_mint,
-        1_000_000 * SKR_DECIMALS, 1);
+    let user_yield_pda = add_position(
+        &mut program_test,
+        program_id,
+        user.pubkey(),
+        reward_mint,
+        1_000_000 * SKR_DECIMALS,
+        1,
+    );
     // Vault pre-seeded with accrued dividend and the inflated total.
     let (seeded_vault_pda, _) =
         Pubkey::find_program_address(&[SKR_YIELD_VAULT_SEED, reward_mint.as_ref()], &program_id);
@@ -486,38 +929,87 @@ async fn test_skr_yield_claim_is_bounded_by_real_escrow() {
     };
     let mut vault_data = vec![0u8; SkrYieldVault::LEN];
     seeded.pack_into_slice(&mut vault_data);
-    program_test.add_account(seeded_vault_pda, Account {
-        lamports: 10_000_000, data: vault_data,
-        owner: program_id, executable: false, rent_epoch: 0,
-    });
-    program_test.add_account(vault_token_pda, Account {
-        lamports: 10_000_000,
-        data: token_data(reward_mint, seeded_vault_pda, 1_000_000 * 1_000_000),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        seeded_vault_pda,
+        Account {
+            lamports: 10_000_000,
+            data: vault_data,
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    program_test.add_account(
+        vault_token_pda,
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, seeded_vault_pda, 1_000_000 * 1_000_000),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let user_reward_token = Keypair::new();
-    program_test.add_account(user_reward_token.pubkey(), Account {
-        lamports: 10_000_000,
-        data: token_data(reward_mint, user.pubkey(), 0),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        user_reward_token.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, user.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
 
     let mut ctx = program_test.start_with_context().await;
     let payer = ctx.payer.insecure_clone();
-    submit(&mut ctx, &[system_instruction::transfer(&payer.pubkey(), &user.pubkey(), 1_000_000_000)], &[&payer], &payer).await.unwrap();
+    submit(
+        &mut ctx,
+        &[system_instruction::transfer(
+            &payer.pubkey(),
+            &user.pubkey(),
+            1_000_000_000,
+        )],
+        &[&payer],
+        &payer,
+    )
+    .await
+    .unwrap();
 
-    submit(&mut ctx,
-        &[claim_ix(program_id, &user, seeded_vault_pda, user_yield_pda, vault_token_pda, user_reward_token.pubkey(), escrow_pda)],
-        &[&user], &user).await.unwrap();
+    let res = submit(
+        &mut ctx,
+        &[claim_ix(
+            program_id,
+            &user,
+            seeded_vault_pda,
+            user_yield_pda,
+            vault_token_pda,
+            user_reward_token.pubkey(),
+            escrow_pda,
+        )],
+        &[&user],
+        &user,
+    )
+    .await;
+    expect_custom(
+        &res,
+        ClockLendError::YieldCooldown as u32,
+        "desynced position claim must be rejected",
+    );
 
-    // The claim must sync the position DOWN to the real escrow balance and
-    // down-adjust total_staked_skr — the forged 1M SKR cannot earn.
+    // Nothing was paid and nothing was silently rebased — the rejection is
+    // pre-mutation, so a synced stake/unstake can still repair the position.
+    assert_eq!(
+        read_token_amount(&mut ctx, user_reward_token.pubkey()).await,
+        0,
+        "no payout on a rejected claim"
+    );
     let pos = read_position(&mut ctx, user_yield_pda).await;
-    assert_eq!(pos.staked_skr, 100_000 * SKR_DECIMALS, "stake must sync to the real escrow balance");
-    let vault = read_vault(&mut ctx, seeded_vault_pda).await;
-    assert_eq!(vault.total_staked_skr, 100_000 * SKR_DECIMALS, "total shares must follow the real escrow");
-    // The payout is bounded by the REAL escrow share: 100k SKR * 1 USDC/SKR.
-    assert_eq!(read_token_amount(&mut ctx, user_reward_token.pubkey()).await, 100_000 * 1_000_000);
+    assert_eq!(
+        pos.staked_skr,
+        1_000_000 * SKR_DECIMALS,
+        "the forged cached stake is untouched by the reject"
+    );
 }
 
 #[tokio::test]
@@ -528,70 +1020,188 @@ async fn test_skr_yield_multi_user_proportional_dividend_payout() {
     let user_b = Keypair::new();
     let reward_mint = USDC_DEVNET_MINT;
 
-    let mut program_test = ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
-    program_test.add_account(reward_mint, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
-    program_test.add_account(SKR_MINT, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    let mut program_test =
+        ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
+    program_test.add_account(
+        reward_mint,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    program_test.add_account(
+        SKR_MINT,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     // Both positions pre-synced with ancient cooldowns; vault total matches.
-    let pos_a = add_position(&mut program_test, program_id, user_a.pubkey(), reward_mint, 300_000 * SKR_DECIMALS, 1);
-    let pos_b = add_position(&mut program_test, program_id, user_b.pubkey(), reward_mint, 100_000 * SKR_DECIMALS, 1);
-    let yield_vault_pda = add_vault(&mut program_test, program_id, reward_mint, authority.pubkey(), 400_000 * SKR_DECIMALS);
+    let pos_a = add_position(
+        &mut program_test,
+        program_id,
+        user_a.pubkey(),
+        reward_mint,
+        300_000 * SKR_DECIMALS,
+        1,
+    );
+    let pos_b = add_position(
+        &mut program_test,
+        program_id,
+        user_b.pubkey(),
+        reward_mint,
+        100_000 * SKR_DECIMALS,
+        1,
+    );
+    let yield_vault_pda = add_vault(
+        &mut program_test,
+        program_id,
+        reward_mint,
+        authority.pubkey(),
+        400_000 * SKR_DECIMALS,
+    );
     let (vault_token_pda, _) =
         Pubkey::find_program_address(&[SKR_YIELD_TOKEN_SEED, reward_mint.as_ref()], &program_id);
-    program_test.add_account(vault_token_pda, Account {
-        lamports: 10_000_000,
-        data: token_data(reward_mint, yield_vault_pda, 1_000 * 1_000_000),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
-    let escrow_a = add_skr_escrow(&mut program_test, program_id, user_a.pubkey(), 300_000 * SKR_DECIMALS);
-    let escrow_b = add_skr_escrow(&mut program_test, program_id, user_b.pubkey(), 100_000 * SKR_DECIMALS);
+    program_test.add_account(
+        vault_token_pda,
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, yield_vault_pda, 1_000 * 1_000_000),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    let escrow_a = add_skr_escrow(
+        &mut program_test,
+        program_id,
+        user_a.pubkey(),
+        300_000 * SKR_DECIMALS,
+    );
+    let escrow_b = add_skr_escrow(
+        &mut program_test,
+        program_id,
+        user_b.pubkey(),
+        100_000 * SKR_DECIMALS,
+    );
 
     let depositor_token = Keypair::new();
-    program_test.add_account(depositor_token.pubkey(), Account {
-        lamports: 10_000_000,
-        data: token_data(reward_mint, authority.pubkey(), 1_000 * 1_000_000),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        depositor_token.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, authority.pubkey(), 1_000 * 1_000_000),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let token_a = Keypair::new();
-    program_test.add_account(token_a.pubkey(), Account {
-        lamports: 10_000_000, data: token_data(reward_mint, user_a.pubkey(), 0),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        token_a.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, user_a.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let token_b = Keypair::new();
-    program_test.add_account(token_b.pubkey(), Account {
-        lamports: 10_000_000, data: token_data(reward_mint, user_b.pubkey(), 0),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        token_b.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, user_b.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
 
     let mut ctx = program_test.start_with_context().await;
     let payer = ctx.payer.insecure_clone();
-    submit(&mut ctx, &[
-        system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 1_000_000_000),
-        system_instruction::transfer(&payer.pubkey(), &user_a.pubkey(), 1_000_000_000),
-        system_instruction::transfer(&payer.pubkey(), &user_b.pubkey(), 1_000_000_000),
-    ], &[&payer], &payer).await.unwrap();
+    submit(
+        &mut ctx,
+        &[
+            system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 1_000_000_000),
+            system_instruction::transfer(&payer.pubkey(), &user_a.pubkey(), 1_000_000_000),
+            system_instruction::transfer(&payer.pubkey(), &user_b.pubkey(), 1_000_000_000),
+        ],
+        &[&payer],
+        &payer,
+    )
+    .await
+    .unwrap();
 
     // Deposit $400 against 400k SKR -> acc = 1e9.
     let dep_amount = 400 * 1_000_000;
-    submit(&mut ctx,
-        &[deposit_ix(program_id, &authority, yield_vault_pda, depositor_token.pubkey(), vault_token_pda, dep_amount)],
-        &[&authority], &authority).await.unwrap();
+    submit(
+        &mut ctx,
+        &[deposit_ix(
+            program_id,
+            &authority,
+            yield_vault_pda,
+            depositor_token.pubkey(),
+            vault_token_pda,
+            dep_amount,
+        )],
+        &[&authority],
+        &authority,
+    )
+    .await
+    .unwrap();
 
     // A claims 75% = $300, B claims 25% = $100.
-    submit(&mut ctx,
-        &[claim_ix(program_id, &user_a, yield_vault_pda, pos_a, vault_token_pda, token_a.pubkey(), escrow_a)],
-        &[&user_a], &user_a).await.unwrap();
-    assert_eq!(read_token_amount(&mut ctx, token_a.pubkey()).await, 300 * 1_000_000, "A must receive exactly $300");
+    submit(
+        &mut ctx,
+        &[claim_ix(
+            program_id,
+            &user_a,
+            yield_vault_pda,
+            pos_a,
+            vault_token_pda,
+            token_a.pubkey(),
+            escrow_a,
+        )],
+        &[&user_a],
+        &user_a,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        read_token_amount(&mut ctx, token_a.pubkey()).await,
+        300 * 1_000_000,
+        "A must receive exactly $300"
+    );
 
-    submit(&mut ctx,
-        &[claim_ix(program_id, &user_b, yield_vault_pda, pos_b, vault_token_pda, token_b.pubkey(), escrow_b)],
-        &[&user_b], &user_b).await.unwrap();
-    assert_eq!(read_token_amount(&mut ctx, token_b.pubkey()).await, 100 * 1_000_000, "B must receive exactly $100");
+    submit(
+        &mut ctx,
+        &[claim_ix(
+            program_id,
+            &user_b,
+            yield_vault_pda,
+            pos_b,
+            vault_token_pda,
+            token_b.pubkey(),
+            escrow_b,
+        )],
+        &[&user_b],
+        &user_b,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        read_token_amount(&mut ctx, token_b.pubkey()).await,
+        100 * 1_000_000,
+        "B must receive exactly $100"
+    );
 
     let vault = read_vault(&mut ctx, yield_vault_pda).await;
     assert_eq!(vault.pending_rewards, 0);
@@ -605,15 +1215,28 @@ async fn test_stake_skr_registers_yield_shares_immediately() {
     let attacker = Keypair::new();
     let reward_mint = USDC_DEVNET_MINT;
 
-    let mut program_test = ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
-    program_test.add_account(reward_mint, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
-    program_test.add_account(SKR_MINT, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    let mut program_test =
+        ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
+    program_test.add_account(
+        reward_mint,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    program_test.add_account(
+        SKR_MINT,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
 
     let admin_pda = add_admin(&mut program_test, program_id, authority.pubkey());
     let (yield_vault_pda, _) =
@@ -622,52 +1245,119 @@ async fn test_stake_skr_registers_yield_shares_immediately() {
         Pubkey::find_program_address(&[SKR_YIELD_TOKEN_SEED, reward_mint.as_ref()], &program_id);
 
     let honest_skr = Keypair::new();
-    program_test.add_account(honest_skr.pubkey(), Account {
-        lamports: 10_000_000, data: token_data(SKR_MINT, honest_user.pubkey(), 100_000 * SKR_DECIMALS),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        honest_skr.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(SKR_MINT, honest_user.pubkey(), 100_000 * SKR_DECIMALS),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let attacker_skr = Keypair::new();
-    program_test.add_account(attacker_skr.pubkey(), Account {
-        lamports: 10_000_000, data: token_data(SKR_MINT, attacker.pubkey(), 1 * SKR_DECIMALS),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        attacker_skr.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(SKR_MINT, attacker.pubkey(), 1 * SKR_DECIMALS),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
 
     let depositor_token = Keypair::new();
-    program_test.add_account(depositor_token.pubkey(), Account {
-        lamports: 10_000_000, data: token_data(reward_mint, authority.pubkey(), 1_000 * 1_000_000),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        depositor_token.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, authority.pubkey(), 1_000 * 1_000_000),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let honest_reward = Keypair::new();
-    program_test.add_account(honest_reward.pubkey(), Account {
-        lamports: 10_000_000, data: token_data(reward_mint, honest_user.pubkey(), 0),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        honest_reward.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, honest_user.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let attacker_reward = Keypair::new();
-    program_test.add_account(attacker_reward.pubkey(), Account {
-        lamports: 10_000_000, data: token_data(reward_mint, attacker.pubkey(), 0),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        attacker_reward.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, attacker.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
 
     let mut ctx = program_test.start_with_context().await;
     let payer = ctx.payer.insecure_clone();
-    submit(&mut ctx, &[
-        system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 1_000_000_000),
-        system_instruction::transfer(&payer.pubkey(), &honest_user.pubkey(), 1_000_000_000),
-        system_instruction::transfer(&payer.pubkey(), &attacker.pubkey(), 1_000_000_000),
-    ], &[&payer], &payer).await.unwrap();
+    submit(
+        &mut ctx,
+        &[
+            system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 1_000_000_000),
+            system_instruction::transfer(&payer.pubkey(), &honest_user.pubkey(), 1_000_000_000),
+            system_instruction::transfer(&payer.pubkey(), &attacker.pubkey(), 1_000_000_000),
+        ],
+        &[&payer],
+        &payer,
+    )
+    .await
+    .unwrap();
 
     // Init yield vault
-    submit(&mut ctx,
-        &[vault_ix(program_id, &authority, reward_mint, yield_vault_pda, vault_token_pda, admin_pda)],
-        &[&authority], &authority).await.unwrap();
+    submit(
+        &mut ctx,
+        &[vault_ix(
+            program_id,
+            &authority,
+            reward_mint,
+            yield_vault_pda,
+            vault_token_pda,
+            admin_pda,
+        )],
+        &[&authority],
+        &authority,
+    )
+    .await
+    .unwrap();
 
-    let (honest_profile, _) = Pubkey::find_program_address(&[PROFILE_SEED, honest_user.pubkey().as_ref()], &program_id);
-    let (honest_escrow, _) = Pubkey::find_program_address(&[b"skr_escrow", honest_user.pubkey().as_ref()], &program_id);
-    let (honest_yield_pos, _) = Pubkey::find_program_address(&[USER_YIELD_SEED, honest_user.pubkey().as_ref(), reward_mint.as_ref()], &program_id);
+    let (honest_profile, _) =
+        Pubkey::find_program_address(&[PROFILE_SEED, honest_user.pubkey().as_ref()], &program_id);
+    let (honest_escrow, _) =
+        Pubkey::find_program_address(&[b"skr_escrow", honest_user.pubkey().as_ref()], &program_id);
+    let (honest_yield_pos, _) = Pubkey::find_program_address(
+        &[
+            USER_YIELD_SEED,
+            honest_user.pubkey().as_ref(),
+            reward_mint.as_ref(),
+        ],
+        &program_id,
+    );
 
-    let (attacker_profile, _) = Pubkey::find_program_address(&[PROFILE_SEED, attacker.pubkey().as_ref()], &program_id);
-    let (attacker_escrow, _) = Pubkey::find_program_address(&[b"skr_escrow", attacker.pubkey().as_ref()], &program_id);
-    let (attacker_yield_pos, _) = Pubkey::find_program_address(&[USER_YIELD_SEED, attacker.pubkey().as_ref(), reward_mint.as_ref()], &program_id);
+    let (attacker_profile, _) =
+        Pubkey::find_program_address(&[PROFILE_SEED, attacker.pubkey().as_ref()], &program_id);
+    let (attacker_escrow, _) =
+        Pubkey::find_program_address(&[b"skr_escrow", attacker.pubkey().as_ref()], &program_id);
+    let (attacker_yield_pos, _) = Pubkey::find_program_address(
+        &[
+            USER_YIELD_SEED,
+            attacker.pubkey().as_ref(),
+            reward_mint.as_ref(),
+        ],
+        &program_id,
+    );
 
     // 1. Honest user stakes 100,000 SKR with yield vault & position accounts appended
     let honest_stake_ix = Instruction {
@@ -682,16 +1372,50 @@ async fn test_stake_skr_registers_yield_shares_immediately() {
             AccountMeta::new_readonly(SKR_MINT, false),
             AccountMeta::new(yield_vault_pda, false),
             AccountMeta::new(honest_yield_pos, false),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &USDC_MAINNET_MINT, &honest_user.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(
+                    &program_id,
+                    &USDC_MAINNET_MINT,
+                    &honest_user.pubkey(),
+                    false,
+                ),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &honest_user.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &honest_user.pubkey(), false),
+                false,
+            ),
         ],
-        data: borsh::to_vec(&ClockLendInstruction::StakeSKR { amount: 100_000 * SKR_DECIMALS }).unwrap(),
+        data: borsh::to_vec(&ClockLendInstruction::StakeSKR {
+            amount: 100_000 * SKR_DECIMALS,
+        })
+        .unwrap(),
     };
-    submit(&mut ctx, &[honest_stake_ix], &[&honest_user], &honest_user).await.unwrap();
+    submit(&mut ctx, &[honest_stake_ix], &[&honest_user], &honest_user)
+        .await
+        .unwrap();
 
     // Verify honest user position and vault total_staked_skr registered IMMEDIATELY
     let vault_after_honest = read_vault(&mut ctx, yield_vault_pda).await;
-    assert_eq!(vault_after_honest.total_staked_skr, 100_000 * SKR_DECIMALS, "Vault must immediately register 100k SKR");
+    assert_eq!(
+        vault_after_honest.total_staked_skr,
+        100_000 * SKR_DECIMALS,
+        "Vault must immediately register 100k SKR"
+    );
     let pos_honest = read_position(&mut ctx, honest_yield_pos).await;
-    assert_eq!(pos_honest.staked_skr, 100_000 * SKR_DECIMALS, "Honest position must have 100k SKR staked without claiming");
+    assert_eq!(
+        pos_honest.staked_skr,
+        100_000 * SKR_DECIMALS,
+        "Honest position must have 100k SKR staked without claiming"
+    );
 
     // 2. Attacker stakes 1 SKR
     let attacker_stake_ix = Instruction {
@@ -706,19 +1430,56 @@ async fn test_stake_skr_registers_yield_shares_immediately() {
             AccountMeta::new_readonly(SKR_MINT, false),
             AccountMeta::new(yield_vault_pda, false),
             AccountMeta::new(attacker_yield_pos, false),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &USDC_MAINNET_MINT, &attacker.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &USDC_MAINNET_MINT, &attacker.pubkey(), false),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &attacker.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &attacker.pubkey(), false),
+                false,
+            ),
         ],
-        data: borsh::to_vec(&ClockLendInstruction::StakeSKR { amount: 1 * SKR_DECIMALS }).unwrap(),
+        data: borsh::to_vec(&ClockLendInstruction::StakeSKR {
+            amount: 1 * SKR_DECIMALS,
+        })
+        .unwrap(),
     };
-    submit(&mut ctx, &[attacker_stake_ix], &[&attacker], &attacker).await.unwrap();
+    submit(&mut ctx, &[attacker_stake_ix], &[&attacker], &attacker)
+        .await
+        .unwrap();
 
     let vault_after_attacker = read_vault(&mut ctx, yield_vault_pda).await;
-    assert_eq!(vault_after_attacker.total_staked_skr, 100_001 * SKR_DECIMALS, "Vault total must be 100,001 SKR");
+    assert_eq!(
+        vault_after_attacker.total_staked_skr,
+        100_001 * SKR_DECIMALS,
+        "Vault total must be 100,001 SKR"
+    );
 
     // 3. Deposit $100 USDC dividend into the yield vault
     let deposit_amount = 100 * 1_000_000;
-    submit(&mut ctx,
-        &[deposit_ix(program_id, &authority, yield_vault_pda, depositor_token.pubkey(), vault_token_pda, deposit_amount)],
-        &[&authority], &authority).await.unwrap();
+    submit(
+        &mut ctx,
+        &[deposit_ix(
+            program_id,
+            &authority,
+            yield_vault_pda,
+            depositor_token.pubkey(),
+            vault_token_pda,
+            deposit_amount,
+        )],
+        &[&authority],
+        &authority,
+    )
+    .await
+    .unwrap();
 
     // Warp clock past cooldown (MIN_STAKE_AGE_SECS = 3600)
     let clock: Clock = ctx.banks_client.get_sysvar().await.unwrap();
@@ -728,22 +1489,56 @@ async fn test_stake_skr_registers_yield_shares_immediately() {
     });
 
     // 4. Attacker attempts to steal 100% of the dividend by claiming
-    submit(&mut ctx,
-        &[claim_ix(program_id, &attacker, yield_vault_pda, attacker_yield_pos, vault_token_pda, attacker_reward.pubkey(), attacker_escrow)],
-        &[&attacker], &attacker).await.unwrap();
+    submit(
+        &mut ctx,
+        &[claim_ix(
+            program_id,
+            &attacker,
+            yield_vault_pda,
+            attacker_yield_pos,
+            vault_token_pda,
+            attacker_reward.pubkey(),
+            attacker_escrow,
+        )],
+        &[&attacker],
+        &attacker,
+    )
+    .await
+    .unwrap();
 
     let attacker_received = read_token_amount(&mut ctx, attacker_reward.pubkey()).await;
     // Attacker owns 1 / 100,001 of total stake: ~999 micro-USDC ($0.000999), NOT 100,000,000 micro-USDC ($100)!
-    assert!(attacker_received < 10_000, "Attacker must NOT steal dividend! Received {} micro-USDC", attacker_received);
+    assert!(
+        attacker_received < 10_000,
+        "Attacker must NOT steal dividend! Received {} micro-USDC",
+        attacker_received
+    );
 
     // 5. Honest staker claims their rightful share
-    submit(&mut ctx,
-        &[claim_ix(program_id, &honest_user, yield_vault_pda, honest_yield_pos, vault_token_pda, honest_reward.pubkey(), honest_escrow)],
-        &[&honest_user], &honest_user).await.unwrap();
+    submit(
+        &mut ctx,
+        &[claim_ix(
+            program_id,
+            &honest_user,
+            yield_vault_pda,
+            honest_yield_pos,
+            vault_token_pda,
+            honest_reward.pubkey(),
+            honest_escrow,
+        )],
+        &[&honest_user],
+        &honest_user,
+    )
+    .await
+    .unwrap();
 
     let honest_received = read_token_amount(&mut ctx, honest_reward.pubkey()).await;
     // Honest staker receives ~99.999 USDC (99_999_000 micro-USDC)
-    assert!(honest_received > 99_990_000, "Honest staker must receive >= $99.99! Received {} micro-USDC", honest_received);
+    assert!(
+        honest_received > 99_990_000,
+        "Honest staker must receive >= $99.99! Received {} micro-USDC",
+        honest_received
+    );
 }
 
 #[tokio::test]
@@ -753,15 +1548,28 @@ async fn test_unstake_sync_slot_collision_and_clamping() {
     let user = Keypair::new();
     let reward_mint = USDC_DEVNET_MINT;
 
-    let mut program_test = ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
-    program_test.add_account(reward_mint, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
-    program_test.add_account(SKR_MINT, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    let mut program_test =
+        ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
+    program_test.add_account(
+        reward_mint,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    program_test.add_account(
+        SKR_MINT,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
 
     let admin_pda = add_admin(&mut program_test, program_id, authority.pubkey());
     let (yield_vault_pda, _) =
@@ -770,26 +1578,60 @@ async fn test_unstake_sync_slot_collision_and_clamping() {
         Pubkey::find_program_address(&[SKR_YIELD_TOKEN_SEED, reward_mint.as_ref()], &program_id);
 
     let user_skr = Keypair::new();
-    program_test.add_account(user_skr.pubkey(), Account {
-        lamports: 10_000_000, data: token_data(SKR_MINT, user.pubkey(), 1_000 * SKR_DECIMALS),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        user_skr.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(SKR_MINT, user.pubkey(), 1_000 * SKR_DECIMALS),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
 
     let mut ctx = program_test.start_with_context().await;
     let payer = ctx.payer.insecure_clone();
-    submit(&mut ctx, &[
-        system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 1_000_000_000),
-        system_instruction::transfer(&payer.pubkey(), &user.pubkey(), 1_000_000_000),
-    ], &[&payer], &payer).await.unwrap();
+    submit(
+        &mut ctx,
+        &[
+            system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 1_000_000_000),
+            system_instruction::transfer(&payer.pubkey(), &user.pubkey(), 1_000_000_000),
+        ],
+        &[&payer],
+        &payer,
+    )
+    .await
+    .unwrap();
 
     // Init yield vault
-    submit(&mut ctx,
-        &[vault_ix(program_id, &authority, reward_mint, yield_vault_pda, vault_token_pda, admin_pda)],
-        &[&authority], &authority).await.unwrap();
+    submit(
+        &mut ctx,
+        &[vault_ix(
+            program_id,
+            &authority,
+            reward_mint,
+            yield_vault_pda,
+            vault_token_pda,
+            admin_pda,
+        )],
+        &[&authority],
+        &authority,
+    )
+    .await
+    .unwrap();
 
-    let (profile_pda, _) = Pubkey::find_program_address(&[PROFILE_SEED, user.pubkey().as_ref()], &program_id);
-    let (escrow_pda, _) = Pubkey::find_program_address(&[b"skr_escrow", user.pubkey().as_ref()], &program_id);
-    let (user_yield_pos, _) = Pubkey::find_program_address(&[USER_YIELD_SEED, user.pubkey().as_ref(), reward_mint.as_ref()], &program_id);
+    let (profile_pda, _) =
+        Pubkey::find_program_address(&[PROFILE_SEED, user.pubkey().as_ref()], &program_id);
+    let (escrow_pda, _) =
+        Pubkey::find_program_address(&[b"skr_escrow", user.pubkey().as_ref()], &program_id);
+    let (user_yield_pos, _) = Pubkey::find_program_address(
+        &[
+            USER_YIELD_SEED,
+            user.pubkey().as_ref(),
+            reward_mint.as_ref(),
+        ],
+        &program_id,
+    );
 
     // Stake 1,000 SKR
     let stake_ix = Instruction {
@@ -804,10 +1646,31 @@ async fn test_unstake_sync_slot_collision_and_clamping() {
             AccountMeta::new_readonly(SKR_MINT, false),
             AccountMeta::new(yield_vault_pda, false),
             AccountMeta::new(user_yield_pos, false),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &USDC_MAINNET_MINT, &user.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &USDC_MAINNET_MINT, &user.pubkey(), false),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &user.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &user.pubkey(), false),
+                false,
+            ),
         ],
-        data: borsh::to_vec(&ClockLendInstruction::StakeSKR { amount: 1_000 * SKR_DECIMALS }).unwrap(),
+        data: borsh::to_vec(&ClockLendInstruction::StakeSKR {
+            amount: 1_000 * SKR_DECIMALS,
+        })
+        .unwrap(),
     };
-    submit(&mut ctx, &[stake_ix], &[&user], &user).await.unwrap();
+    submit(&mut ctx, &[stake_ix], &[&user], &user)
+        .await
+        .unwrap();
 
     // Unstake 200 SKR with the client's exact account structure (no pool, vault at index 5, position at index 6)
     // High-3: this previously collided with optional-pool slot and crashed on LendingPool::unpack
@@ -821,16 +1684,45 @@ async fn test_unstake_sync_slot_collision_and_clamping() {
             AccountMeta::new_readonly(spl_token::id(), false),
             AccountMeta::new(yield_vault_pda, false),
             AccountMeta::new(user_yield_pos, false),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &USDC_MAINNET_MINT, &user.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &USDC_MAINNET_MINT, &user.pubkey(), false),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &user.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &user.pubkey(), false),
+                false,
+            ),
         ],
-        data: borsh::to_vec(&ClockLendInstruction::UnstakeSKR { amount: 200 * SKR_DECIMALS }).unwrap(),
+        data: borsh::to_vec(&ClockLendInstruction::UnstakeSKR {
+            amount: 200 * SKR_DECIMALS,
+        })
+        .unwrap(),
     };
-    submit(&mut ctx, &[unstake_ix], &[&user], &user).await.unwrap();
+    submit(&mut ctx, &[unstake_ix], &[&user], &user)
+        .await
+        .unwrap();
 
     // Verify unstake succeeded without slot collision revert
     let pos_after = read_position(&mut ctx, user_yield_pos).await;
-    assert_eq!(pos_after.staked_skr, 800 * SKR_DECIMALS, "Position stake must be 800 SKR");
+    assert_eq!(
+        pos_after.staked_skr,
+        800 * SKR_DECIMALS,
+        "Position stake must be 800 SKR"
+    );
     let vault_after = read_vault(&mut ctx, yield_vault_pda).await;
-    assert_eq!(vault_after.total_staked_skr, 800 * SKR_DECIMALS, "Vault total must be 800 SKR");
+    assert_eq!(
+        vault_after.total_staked_skr,
+        800 * SKR_DECIMALS,
+        "Vault total must be 800 SKR"
+    );
 }
 
 #[tokio::test]
@@ -840,17 +1732,30 @@ async fn test_admin_rotation_updates_yield_vault_authority() {
     let new_admin = Keypair::new();
     let reward_mint = USDC_DEVNET_MINT;
 
-    let mut program_test = ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
-    program_test.add_account(reward_mint, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    let mut program_test =
+        ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
+    program_test.add_account(
+        reward_mint,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let admin_pda = add_admin(&mut program_test, program_id, old_admin.pubkey());
     let (yield_vault_pda, _) =
         Pubkey::find_program_address(&[SKR_YIELD_VAULT_SEED, reward_mint.as_ref()], &program_id);
     let (vault_token_pda, _) =
         Pubkey::find_program_address(&[SKR_YIELD_TOKEN_SEED, reward_mint.as_ref()], &program_id);
-    add_vault(&mut program_test, program_id, reward_mint, old_admin.pubkey(), 0);
+    add_vault(
+        &mut program_test,
+        program_id,
+        reward_mint,
+        old_admin.pubkey(),
+        0,
+    );
 
     let (program_data_pda, _) = Pubkey::find_program_address(
         &[program_id.as_ref()],
@@ -860,27 +1765,52 @@ async fn test_admin_rotation_updates_yield_vault_authority() {
     prog_data[0..4].copy_from_slice(&3u32.to_le_bytes());
     prog_data[12] = 1;
     prog_data[13..45].copy_from_slice(old_admin.pubkey().as_ref());
-    program_test.add_account(program_data_pda, Account {
-        lamports: 10_000_000, data: prog_data,
-        owner: solana_program::bpf_loader_upgradeable::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        program_data_pda,
+        Account {
+            lamports: 10_000_000,
+            data: prog_data,
+            owner: solana_program::bpf_loader_upgradeable::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
 
     let depositor_token = Keypair::new();
-    program_test.add_account(depositor_token.pubkey(), Account {
-        lamports: 10_000_000, data: token_data(reward_mint, new_admin.pubkey(), 1_000 * 1_000_000),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
-    program_test.add_account(vault_token_pda, Account {
-        lamports: 10_000_000, data: token_data(reward_mint, yield_vault_pda, 0),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        depositor_token.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, new_admin.pubkey(), 1_000 * 1_000_000),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    program_test.add_account(
+        vault_token_pda,
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, yield_vault_pda, 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
 
     let mut ctx = program_test.start_with_context().await;
     let payer = ctx.payer.insecure_clone();
-    submit(&mut ctx, &[
-        system_instruction::transfer(&payer.pubkey(), &old_admin.pubkey(), 1_000_000_000),
-        system_instruction::transfer(&payer.pubkey(), &new_admin.pubkey(), 1_000_000_000),
-    ], &[&payer], &payer).await.unwrap();
+    submit(
+        &mut ctx,
+        &[
+            system_instruction::transfer(&payer.pubkey(), &old_admin.pubkey(), 1_000_000_000),
+            system_instruction::transfer(&payer.pubkey(), &new_admin.pubkey(), 1_000_000_000),
+        ],
+        &[&payer],
+        &payer,
+    )
+    .await
+    .unwrap();
 
     // Rotate admin to new_admin and pass yield_vault_pda in accounts
     let rotate_ix = Instruction {
@@ -896,21 +1826,38 @@ async fn test_admin_rotation_updates_yield_vault_authority() {
         ],
         data: borsh::to_vec(&ClockLendInstruction::InitializeAdmin).unwrap(),
     };
-    submit(&mut ctx, &[rotate_ix], &[&old_admin], &old_admin).await.unwrap();
+    submit(&mut ctx, &[rotate_ix], &[&old_admin], &old_admin)
+        .await
+        .unwrap();
 
     // Verify vault authority rotated to new_admin
     let vault = read_vault(&mut ctx, yield_vault_pda).await;
-    assert_eq!(vault.authority, new_admin.pubkey(), "Vault authority must be rotated to new_admin");
+    assert_eq!(
+        vault.authority,
+        new_admin.pubkey(),
+        "Vault authority must be rotated to new_admin"
+    );
 
     // New admin can now successfully deposit rewards
-    submit(&mut ctx,
-        &[deposit_ix(program_id, &new_admin, yield_vault_pda, depositor_token.pubkey(), vault_token_pda, 50 * 1_000_000)],
-        &[&new_admin], &new_admin).await.unwrap();
+    submit(
+        &mut ctx,
+        &[deposit_ix(
+            program_id,
+            &new_admin,
+            yield_vault_pda,
+            depositor_token.pubkey(),
+            vault_token_pda,
+            50 * 1_000_000,
+        )],
+        &[&new_admin],
+        &new_admin,
+    )
+    .await
+    .unwrap();
 
     let vault_after_deposit = read_vault(&mut ctx, yield_vault_pda).await;
     assert_eq!(vault_after_deposit.pending_rewards, 50 * 1_000_000);
 }
-
 
 #[tokio::test]
 async fn test_skr_yield_fast_cycle_forfeits_harvest() {
@@ -921,64 +1868,149 @@ async fn test_skr_yield_fast_cycle_forfeits_harvest() {
     let user = Keypair::new();
     let reward_mint = USDC_DEVNET_MINT;
 
-    let mut program_test = ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
-    program_test.add_account(reward_mint, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
-    program_test.add_account(SKR_MINT, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    let mut program_test =
+        ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
+    program_test.add_account(
+        reward_mint,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    program_test.add_account(
+        SKR_MINT,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let admin_pda = add_admin(&mut program_test, program_id, authority.pubkey());
     let (yield_vault_pda, _) =
         Pubkey::find_program_address(&[SKR_YIELD_VAULT_SEED, reward_mint.as_ref()], &program_id);
     let (vault_token_pda, _) =
         Pubkey::find_program_address(&[SKR_YIELD_TOKEN_SEED, reward_mint.as_ref()], &program_id);
-    let (user_yield_pda, _) =
-        Pubkey::find_program_address(&[USER_YIELD_SEED, user.pubkey().as_ref(), reward_mint.as_ref()], &program_id);
-    let escrow_pda = add_skr_escrow(&mut program_test, program_id, user.pubkey(), 100_000 * SKR_DECIMALS);
+    let (user_yield_pda, _) = Pubkey::find_program_address(
+        &[
+            USER_YIELD_SEED,
+            user.pubkey().as_ref(),
+            reward_mint.as_ref(),
+        ],
+        &program_id,
+    );
+    let escrow_pda = add_skr_escrow(
+        &mut program_test,
+        program_id,
+        user.pubkey(),
+        100_000 * SKR_DECIMALS,
+    );
 
     let depositor_token = Keypair::new();
-    program_test.add_account(depositor_token.pubkey(), Account {
-        lamports: 10_000_000,
-        data: token_data(reward_mint, authority.pubkey(), 1_000 * 1_000_000),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        depositor_token.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, authority.pubkey(), 1_000 * 1_000_000),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let user_reward_token = Keypair::new();
-    program_test.add_account(user_reward_token.pubkey(), Account {
-        lamports: 10_000_000,
-        data: token_data(reward_mint, user.pubkey(), 0),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        user_reward_token.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, user.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let user_skr_ata = Keypair::new();
-    program_test.add_account(user_skr_ata.pubkey(), Account {
-        lamports: 10_000_000,
-        data: token_data(SKR_MINT, user.pubkey(), 1_000_000 * SKR_DECIMALS),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
-    let (profile_pda, _) =
-        Pubkey::find_program_address(&[clock_lend::state::PROFILE_SEED, user.pubkey().as_ref()], &program_id);
+    program_test.add_account(
+        user_skr_ata.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(SKR_MINT, user.pubkey(), 1_000_000 * SKR_DECIMALS),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    let (profile_pda, _) = Pubkey::find_program_address(
+        &[clock_lend::state::PROFILE_SEED, user.pubkey().as_ref()],
+        &program_id,
+    );
 
     let mut ctx = program_test.start_with_context().await;
     let payer = ctx.payer.insecure_clone();
-    submit(&mut ctx, &[
-        system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 1_000_000_000),
-        system_instruction::transfer(&payer.pubkey(), &user.pubkey(), 1_000_000_000),
-    ], &[&payer], &payer).await.unwrap();
+    submit(
+        &mut ctx,
+        &[
+            system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 1_000_000_000),
+            system_instruction::transfer(&payer.pubkey(), &user.pubkey(), 1_000_000_000),
+        ],
+        &[&payer],
+        &payer,
+    )
+    .await
+    .unwrap();
 
-    submit(&mut ctx,
-        &[vault_ix(program_id, &authority, reward_mint, yield_vault_pda, vault_token_pda, admin_pda)],
-        &[&authority], &authority).await.unwrap();
+    submit(
+        &mut ctx,
+        &[vault_ix(
+            program_id,
+            &authority,
+            reward_mint,
+            yield_vault_pda,
+            vault_token_pda,
+            admin_pda,
+        )],
+        &[&authority],
+        &authority,
+    )
+    .await
+    .unwrap();
 
     // Fresh stake sync (registers shares; timer = now).
-    submit(&mut ctx,
-        &[claim_ix(program_id, &user, yield_vault_pda, user_yield_pda, vault_token_pda, user_reward_token.pubkey(), escrow_pda)],
-        &[&user], &user).await.unwrap();
+    submit(
+        &mut ctx,
+        &[claim_ix(
+            program_id,
+            &user,
+            yield_vault_pda,
+            user_yield_pda,
+            vault_token_pda,
+            user_reward_token.pubkey(),
+            escrow_pda,
+        )],
+        &[&user],
+        &user,
+    )
+    .await
+    .unwrap();
     // Dividend lands (acc moves).
-    submit(&mut ctx,
-        &[deposit_ix(program_id, &authority, yield_vault_pda, depositor_token.pubkey(), vault_token_pda, 100 * 1_000_000)],
-        &[&authority], &authority).await.unwrap();
+    submit(
+        &mut ctx,
+        &[deposit_ix(
+            program_id,
+            &authority,
+            yield_vault_pda,
+            depositor_token.pubkey(),
+            vault_token_pda,
+            100 * 1_000_000,
+        )],
+        &[&authority],
+        &authority,
+    )
+    .await
+    .unwrap();
 
     // Stake MORE within the cooldown window, with the vault+position appended:
     // the stake-site harvest runs while the stake has been held < MIN_STAKE_AGE
@@ -994,23 +2026,68 @@ async fn test_skr_yield_fast_cycle_forfeits_harvest() {
             AccountMeta::new_readonly(spl_token::id(), false),
             AccountMeta::new(yield_vault_pda, false),
             AccountMeta::new(user_yield_pda, false),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &USDC_MAINNET_MINT, &user.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &USDC_MAINNET_MINT, &user.pubkey(), false),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &user.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &user.pubkey(), false),
+                false,
+            ),
         ],
-        data: borsh::to_vec(&ClockLendInstruction::StakeSKR { amount: 1_000 * SKR_DECIMALS }).unwrap(),
+        data: borsh::to_vec(&ClockLendInstruction::StakeSKR {
+            amount: 1_000 * SKR_DECIMALS,
+        })
+        .unwrap(),
     };
-    submit(&mut ctx, &[stake_ix], &[&user], &user).await.unwrap();
+    submit(&mut ctx, &[stake_ix], &[&user], &user)
+        .await
+        .unwrap();
 
     // The stake registered the extra shares, but the interim dividend on the
     // pre-stake balance was FORFEITED (held < 1h) — nothing banked.
     let pos_after = read_position(&mut ctx, user_yield_pda).await;
-    assert_eq!(pos_after.accrued_rewards, 0, "no interim accrual may be banked under MIN_STAKE_AGE");
-    assert_eq!(pos_after.staked_skr, 101_000 * SKR_DECIMALS, "the new stake must register");
+    assert_eq!(
+        pos_after.accrued_rewards, 0,
+        "no interim accrual may be banked under MIN_STAKE_AGE"
+    );
+    assert_eq!(
+        pos_after.staked_skr,
+        101_000 * SKR_DECIMALS,
+        "the new stake must register"
+    );
 
     // A claim right after is a no-op (nothing was banked to claim; the
     // cooldown gates payouts only) — the snipe's dividend is gone for good.
-    submit(&mut ctx,
-        &[claim_ix(program_id, &user, yield_vault_pda, user_yield_pda, vault_token_pda, user_reward_token.pubkey(), escrow_pda)],
-        &[&user], &user).await.unwrap();
-    assert_eq!(read_token_amount(&mut ctx, user_reward_token.pubkey()).await, 0, "the fast cycle must collect nothing");
+    submit(
+        &mut ctx,
+        &[claim_ix(
+            program_id,
+            &user,
+            yield_vault_pda,
+            user_yield_pda,
+            vault_token_pda,
+            user_reward_token.pubkey(),
+            escrow_pda,
+        )],
+        &[&user],
+        &user,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        read_token_amount(&mut ctx, user_reward_token.pubkey()).await,
+        0,
+        "the fast cycle must collect nothing"
+    );
 }
 
 #[tokio::test]
@@ -1022,11 +2099,18 @@ async fn test_skr_yield_unused_rescue_authority_only() {
     let intruder = Keypair::new();
     let reward_mint = USDC_DEVNET_MINT;
 
-    let mut program_test = ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
-    program_test.add_account(reward_mint, Account {
-        lamports: 10_000_000, data: create_mint_data(6),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    let mut program_test =
+        ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
+    program_test.add_account(
+        reward_mint,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let (yield_vault_pda, _) =
         Pubkey::find_program_address(&[SKR_YIELD_VAULT_SEED, reward_mint.as_ref()], &program_id);
     let (vault_token_pda, _) =
@@ -1045,25 +2129,52 @@ async fn test_skr_yield_unused_rescue_authority_only() {
     };
     let mut vd = vec![0u8; SkrYieldVault::LEN];
     seeded.pack_into_slice(&mut vd);
-    program_test.add_account(yield_vault_pda, Account {
-        lamports: 10_000_000, data: vd, owner: program_id, executable: false, rent_epoch: 0,
-    });
-    program_test.add_account(vault_token_pda, Account {
-        lamports: 10_000_000,
-        data: token_data(reward_mint, yield_vault_pda, 100_000_000),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        yield_vault_pda,
+        Account {
+            lamports: 10_000_000,
+            data: vd,
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    program_test.add_account(
+        vault_token_pda,
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, yield_vault_pda, 100_000_000),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
     let auth_tok = Keypair::new();
-    program_test.add_account(auth_tok.pubkey(), Account {
-        lamports: 10_000_000,
-        data: token_data(reward_mint, authority.pubkey(), 0),
-        owner: spl_token::id(), executable: false, rent_epoch: 0,
-    });
+    program_test.add_account(
+        auth_tok.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, authority.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
 
     let mut ctx = program_test.start_with_context().await;
     let payer = ctx.payer.insecure_clone();
-    submit(&mut ctx, &[system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 1_000_000_000)],
-        &[&payer], &payer).await.unwrap();
+    submit(
+        &mut ctx,
+        &[system_instruction::transfer(
+            &payer.pubkey(),
+            &authority.pubkey(),
+            1_000_000_000,
+        )],
+        &[&payer],
+        &payer,
+    )
+    .await
+    .unwrap();
 
     let rescue_ix = |signer: &Keypair, dest: Pubkey| Instruction {
         program_id,
@@ -1078,13 +2189,38 @@ async fn test_skr_yield_unused_rescue_authority_only() {
     };
 
     // Non-authority is rejected.
-    let res = submit(&mut ctx, &[rescue_ix(&intruder, auth_tok.pubkey())], &[&payer, &intruder], &payer).await;
-    expect_custom(&res, ClockLendError::Unauthorized as u32, "non-authority rescue");
+    let res = submit(
+        &mut ctx,
+        &[rescue_ix(&intruder, auth_tok.pubkey())],
+        &[&payer, &intruder],
+        &payer,
+    )
+    .await;
+    expect_custom(
+        &res,
+        ClockLendError::Unauthorized as u32,
+        "non-authority rescue",
+    );
 
     // Authority recovers exactly balance - pending = 40 USDC.
-    submit(&mut ctx, &[rescue_ix(&authority, auth_tok.pubkey())], &[&authority], &authority).await.unwrap();
-    assert_eq!(read_token_amount(&mut ctx, auth_tok.pubkey()).await, 40_000_000, "rescue must recover the excess only");
-    assert_eq!(read_token_amount(&mut ctx, vault_token_pda).await, 60_000_000, "pending must remain untouched");
+    submit(
+        &mut ctx,
+        &[rescue_ix(&authority, auth_tok.pubkey())],
+        &[&authority],
+        &authority,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        read_token_amount(&mut ctx, auth_tok.pubkey()).await,
+        40_000_000,
+        "rescue must recover the excess only"
+    );
+    assert_eq!(
+        read_token_amount(&mut ctx, vault_token_pda).await,
+        60_000_000,
+        "pending must remain untouched"
+    );
 }
 
 #[test]
@@ -1097,30 +2233,367 @@ fn test_wire_tags_are_pinned() {
     use clock_lend::state::PoolType;
     let name = [0u8; 32];
     let cases: Vec<(u8, Vec<u8>)> = vec![
-        (0, borsh::to_vec(&I::InitializePool { pool_id: 0, pool_type: PoolType::Individual, interest_rate_bps: 0, max_ltv_bps: 0, min_duration: 0, max_duration: 0, name, is_oracle_free: false }).unwrap()),
-        (1, borsh::to_vec(&I::DepositLiquidity { amount: 0 }).unwrap()),
+        (
+            0,
+            borsh::to_vec(&I::InitializePool {
+                pool_id: 0,
+                pool_type: PoolType::Individual,
+                interest_rate_bps: 0,
+                max_ltv_bps: 0,
+                min_duration: 0,
+                max_duration: 0,
+                name,
+                is_oracle_free: false,
+            })
+            .unwrap(),
+        ),
+        (
+            1,
+            borsh::to_vec(&I::DepositLiquidity { amount: 0 }).unwrap(),
+        ),
         (2, borsh::to_vec(&I::StakeSKR { amount: 0 }).unwrap()),
-        (3, borsh::to_vec(&I::BorrowFromPool { loan_id: 0, borrow_amount: 0, collateral_amount: 0, duration_seconds: 0 }).unwrap()),
-        (4, borsh::to_vec(&I::CreateP2POffer { offer_id: 0, requested_amount: 0, collateral_amount: 0, interest_offered: 0, duration_seconds: 0 }).unwrap()),
+        (
+            3,
+            borsh::to_vec(&I::BorrowFromPool {
+                loan_id: 0,
+                borrow_amount: 0,
+                collateral_amount: 0,
+                duration_seconds: 0,
+            })
+            .unwrap(),
+        ),
+        (
+            4,
+            borsh::to_vec(&I::CreateP2POffer {
+                offer_id: 0,
+                requested_amount: 0,
+                collateral_amount: 0,
+                interest_offered: 0,
+                duration_seconds: 0,
+            })
+            .unwrap(),
+        ),
         (5, borsh::to_vec(&I::FundP2POffer).unwrap()),
         (6, borsh::to_vec(&I::RepayLoan { repay_amount: 0 }).unwrap()),
         (7, borsh::to_vec(&I::TriggerGracePeriod).unwrap()),
         (8, borsh::to_vec(&I::ClaimDefault).unwrap()),
-        (9, borsh::to_vec(&I::WithdrawLiquidity { amount: 0 }).unwrap()),
+        (
+            9,
+            borsh::to_vec(&I::WithdrawLiquidity { amount: 0 }).unwrap(),
+        ),
         (10, borsh::to_vec(&I::CancelP2POffer).unwrap()),
         (11, borsh::to_vec(&I::UnstakeSKR { amount: 0 }).unwrap()),
-        (12, borsh::to_vec(&I::SetPriceFeed { price_micro_usd: 0, decimals: 0 }).unwrap()),
+        (
+            12,
+            borsh::to_vec(&I::SetPriceFeed {
+                price_micro_usd: 0,
+                decimals: 0,
+            })
+            .unwrap(),
+        ),
         (13, borsh::to_vec(&I::InitializeAdmin).unwrap()),
-        (14, borsh::to_vec(&I::WithdrawTreasury { amount: 0 }).unwrap()),
+        (
+            14,
+            borsh::to_vec(&I::WithdrawTreasury { amount: 0 }).unwrap(),
+        ),
         (15, borsh::to_vec(&I::InitializeSkrYieldVault).unwrap()),
-        (16, borsh::to_vec(&I::DepositSkrYield { amount: 0 }).unwrap()),
+        (
+            16,
+            borsh::to_vec(&I::DepositSkrYield { amount: 0 }).unwrap(),
+        ),
         (17, borsh::to_vec(&I::ClaimSkrYield).unwrap()),
         (18, borsh::to_vec(&I::WithdrawUnusedYield).unwrap()),
     ];
     for (tag, bytes) in cases {
-        assert_eq!(bytes[0], tag, "wire tag for variant must equal {tag}; got {}", bytes[0]);
+        assert_eq!(
+            bytes[0], tag,
+            "wire tag for variant must equal {tag}; got {}",
+            bytes[0]
+        );
     }
     // Cross-check: the claim tag must match the mobile client's raw byte.
-    assert_eq!(borsh::to_vec(&I::ClaimSkrYield).unwrap(), vec![17u8], "ClaimSkrYield MUST stay at tag 17 (mobile client contract)");
-    assert_eq!(borsh::to_vec(&I::WithdrawUnusedYield).unwrap(), vec![18u8], "WithdrawUnusedYield MUST stay at tag 18 (appended last)");
+    assert_eq!(
+        borsh::to_vec(&I::ClaimSkrYield).unwrap(),
+        vec![17u8],
+        "ClaimSkrYield MUST stay at tag 17 (mobile client contract)"
+    );
+    assert_eq!(
+        borsh::to_vec(&I::WithdrawUnusedYield).unwrap(),
+        vec![18u8],
+        "WithdrawUnusedYield MUST stay at tag 18 (appended last)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// AUDIT POC (2026-10-03) — remove before merge if not wanted.
+//
+// The yield-position sync in StakeSKR/UnstakeSKR is CALLER-OPTIONAL: the vault
+// and position accounts are only scanned if the caller appends them. A user who
+// simply omits them
+//   * keeps `total_staked_skr` inflated after unstaking (phantom shares in the
+//     denominator of every later `acc_reward_per_share` fold), and
+//   * keeps `position.staked_skr` / `reward_debt` / `last_interaction_time`
+//     stale, so MIN_STAKE_AGE_SECS never re-arms and a re-stake + claim in the
+//     very next slot is paid dividends that accrued while the user was unstaked.
+#[tokio::test]
+async fn poc_ghost_shares_survive_optional_sync_accounts() {
+    let program_id = Pubkey::new_unique();
+    let authority = Keypair::new();
+    let attacker = Keypair::new();
+    let reward_mint = USDC_DEVNET_MINT;
+    let stake_amount: u64 = 100_000 * SKR_DECIMALS;
+    let div: u64 = 100 * 1_000_000; // $100 dividend, 6dp
+
+    let mut program_test =
+        ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
+    program_test.add_account(
+        reward_mint,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    program_test.add_account(
+        SKR_MINT,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    let admin_pda = add_admin(&mut program_test, program_id, authority.pubkey());
+    let (yield_vault_pda, _) =
+        Pubkey::find_program_address(&[SKR_YIELD_VAULT_SEED, reward_mint.as_ref()], &program_id);
+    let (vault_token_pda, _) =
+        Pubkey::find_program_address(&[SKR_YIELD_TOKEN_SEED, reward_mint.as_ref()], &program_id);
+
+    let attacker_skr = Keypair::new();
+    program_test.add_account(
+        attacker_skr.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(SKR_MINT, attacker.pubkey(), stake_amount),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    let depositor_token = Keypair::new();
+    program_test.add_account(
+        depositor_token.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, authority.pubkey(), 1_000 * 1_000_000),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    let attacker_reward = Keypair::new();
+    program_test.add_account(
+        attacker_reward.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, attacker.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    let mut ctx = program_test.start_with_context().await;
+    let payer = ctx.payer.insecure_clone();
+    submit(
+        &mut ctx,
+        &[
+            system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 2_000_000_000),
+            system_instruction::transfer(&payer.pubkey(), &attacker.pubkey(), 2_000_000_000),
+        ],
+        &[&payer],
+        &payer,
+    )
+    .await
+    .unwrap();
+
+    let (profile, _) =
+        Pubkey::find_program_address(&[PROFILE_SEED, attacker.pubkey().as_ref()], &program_id);
+    let (escrow, _) =
+        Pubkey::find_program_address(&[b"skr_escrow", attacker.pubkey().as_ref()], &program_id);
+    let (pos, _) = Pubkey::find_program_address(
+        &[
+            USER_YIELD_SEED,
+            attacker.pubkey().as_ref(),
+            reward_mint.as_ref(),
+        ],
+        &program_id,
+    );
+
+    submit(
+        &mut ctx,
+        &[vault_ix(
+            program_id,
+            &authority,
+            reward_mint,
+            yield_vault_pda,
+            vault_token_pda,
+            admin_pda,
+        )],
+        &[&authority],
+        &authority,
+    )
+    .await
+    .unwrap();
+
+    let stake_ix = |with_sync: bool| {
+        let mut accounts = vec![
+            AccountMeta::new(attacker.pubkey(), true),
+            AccountMeta::new(profile, false),
+            AccountMeta::new(attacker_skr.pubkey(), false),
+            AccountMeta::new(escrow, false),
+            AccountMeta::new_readonly(solana_program::system_program::id(), false),
+            AccountMeta::new_readonly(spl_token::id(), false),
+            AccountMeta::new_readonly(SKR_MINT, false),
+            // H-2: required for every allowlisted mint; mainnet + SKR pairs
+            // are empty no-ops in this devnet fixture.
+            AccountMeta::new(
+                required_yield_extra(&program_id, &USDC_MAINNET_MINT, &attacker.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &USDC_MAINNET_MINT, &attacker.pubkey(), false),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &attacker.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &attacker.pubkey(), false),
+                false,
+            ),
+        ];
+        if with_sync {
+            accounts.push(AccountMeta::new(yield_vault_pda, false));
+            accounts.push(AccountMeta::new(pos, false));
+        }
+        Instruction {
+            program_id,
+            accounts,
+            data: borsh::to_vec(&ClockLendInstruction::StakeSKR {
+                amount: stake_amount,
+            })
+            .unwrap(),
+        }
+    };
+    let unstake_ix = |with_sync: bool| {
+        let mut accounts = vec![
+            AccountMeta::new(attacker.pubkey(), true),
+            AccountMeta::new(profile, false),
+            AccountMeta::new(attacker_skr.pubkey(), false),
+            AccountMeta::new(escrow, false),
+            AccountMeta::new_readonly(spl_token::id(), false),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &USDC_MAINNET_MINT, &attacker.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &USDC_MAINNET_MINT, &attacker.pubkey(), false),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &attacker.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &attacker.pubkey(), false),
+                false,
+            ),
+        ];
+        if with_sync {
+            accounts.push(AccountMeta::new(yield_vault_pda, false));
+            accounts.push(AccountMeta::new(pos, false));
+        }
+        Instruction {
+            program_id,
+            accounts,
+            data: borsh::to_vec(&ClockLendInstruction::UnstakeSKR {
+                amount: stake_amount,
+            })
+            .unwrap(),
+        }
+    };
+
+    // 1. Honest stake WITH the sync accounts: position + denominator registered.
+    submit(&mut ctx, &[stake_ix(true)], &[&attacker], &attacker)
+        .await
+        .unwrap();
+    assert_eq!(
+        read_vault(&mut ctx, yield_vault_pda).await.total_staked_skr,
+        stake_amount
+    );
+    assert_eq!(read_position(&mut ctx, pos).await.staked_skr, stake_amount);
+
+    // 2. Age the stake past MIN_STAKE_AGE_SECS.
+    let clock: Clock = ctx.banks_client.get_sysvar().await.unwrap();
+    ctx.set_sysvar(&Clock {
+        unix_timestamp: clock.unix_timestamp + 3601,
+        ..clock
+    });
+
+    // 3. First dividend accrues to the (still real) stake.
+    submit(
+        &mut ctx,
+        &[deposit_ix(
+            program_id,
+            &authority,
+            yield_vault_pda,
+            depositor_token.pubkey(),
+            vault_token_pda,
+            div,
+        )],
+        &[&authority],
+        &authority,
+    )
+    .await
+    .unwrap();
+
+    // 4. H-2 regression: the bypass is BLOCKED. Unstaking without the vault +
+    // position accounts is rejected outright — the phantom-shares/cooldown
+    // freeze this POC previously exploited can no longer be set up.
+    let res = submit(&mut ctx, &[unstake_ix(false)], &[&attacker], &attacker).await;
+    expect_custom(
+        &res,
+        ClockLendError::InvalidInstruction as u32,
+        "unstake without the required yield accounts must be rejected",
+    );
+    assert_eq!(
+        read_token_amount(&mut ctx, escrow).await,
+        stake_amount,
+        "escrow untouched: the bypassing unstake never executed"
+    );
+    assert_eq!(
+        read_vault(&mut ctx, yield_vault_pda).await.total_staked_skr,
+        stake_amount,
+        "denominator unchanged"
+    );
+
+    // 5. The honest unstake (with sync accounts) removes the shares.
+    submit(&mut ctx, &[unstake_ix(true)], &[&attacker], &attacker)
+        .await
+        .unwrap();
+    assert_eq!(
+        read_position(&mut ctx, pos).await.staked_skr,
+        0,
+        "position synced to 0 on a proper unstake"
+    );
+    assert_eq!(
+        read_vault(&mut ctx, yield_vault_pda).await.total_staked_skr,
+        0,
+        "phantom shares removed from the denominator"
+    );
 }

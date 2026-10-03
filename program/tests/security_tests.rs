@@ -32,10 +32,8 @@ fn test_security_pda_seeds_tamper_resistance() {
 
     // Tampered authority
     let attacker = Pubkey::new_unique();
-    let (fake_pda, _) = Pubkey::find_program_address(
-        &[POOL_SEED, attacker.as_ref(), &pool_id_bytes],
-        &program_id,
-    );
+    let (fake_pda, _) =
+        Pubkey::find_program_address(&[POOL_SEED, attacker.as_ref(), &pool_id_bytes], &program_id);
     assert_ne!(valid_pool_pda, fake_pda);
 
     // Tampered vault PDA
@@ -86,16 +84,15 @@ fn test_security_default_takes_no_skr() {
 #[test]
 fn test_security_interest_calculation() {
     let borrow_amount: u64 = 100_000_000; // 100 USDC (6 decimals)
-    let interest_rate_bps: u16 = 800;     // 8.0% APR
+    let interest_rate_bps: u16 = 800; // 8.0% APR
     let duration_seconds: i64 = 86400 * 7; // 7 days
 
     // The program prorates against its 30-day INTEREST_PERIOD_SECS
     // (2,592,000 s) — not a calendar year — so a 7-day loan at 8% APR owes
     // 100 * 0.08 * (7/30) = ~1.8667 USDC = 1,866,666 units.
-    let interest_due = ((borrow_amount as u128)
-        * (interest_rate_bps as u128)
-        * (duration_seconds as u128)
-        / (10000u128 * 2_592_000u128)) as u64;
+    let interest_due =
+        ((borrow_amount as u128) * (interest_rate_bps as u128) * (duration_seconds as u128)
+            / (10000u128 * 2_592_000u128)) as u64;
 
     assert_eq!(interest_due, 1_866_666);
 }
@@ -216,7 +213,9 @@ fn test_security_rent_refund_invariant() {
     let mut loan_account_lamports: u64 = rent_lamports;
 
     // Repayment execution refunds rent:
-    borrower_lamports = borrower_lamports.checked_add(loan_account_lamports).unwrap();
+    borrower_lamports = borrower_lamports
+        .checked_add(loan_account_lamports)
+        .unwrap();
     loan_account_lamports = 0;
 
     assert_eq!(borrower_lamports, 5_001_962_240);
@@ -358,7 +357,8 @@ fn test_security_ltv_cross_mint_normalization() {
     let max_ltv_bps: u16 = 8000; // 80%
 
     // Normalized collateral value in USDC micro-units:
-    let collateral_value_usdc = (sol_collateral_lamports as u128 * sol_price_usdc_micro) / 1_000_000_000u128;
+    let collateral_value_usdc =
+        (sol_collateral_lamports as u128 * sol_price_usdc_micro) / 1_000_000_000u128;
     assert_eq!(collateral_value_usdc, 150_000_000); // exactly $150 USDC
 
     // At 80% LTV, max borrow is $120 USDC (120_000_000 micro-units)
@@ -395,7 +395,10 @@ fn test_security_f08_escrow_shortfall_reverts() {
     // Shortfall check
     assert!(actual_escrow_lamports < required_amount);
     let is_shortfall = actual_escrow_lamports < required_amount;
-    assert!(is_shortfall, "Escrow balance shortfall must trigger InsufficientCollateral error!");
+    assert!(
+        is_shortfall,
+        "Escrow balance shortfall must trigger InsufficientCollateral error!"
+    );
 }
 
 #[test]
@@ -418,7 +421,10 @@ fn test_security_f10_total_liquidity_accounting_matches_vault_credit() {
     let mut total_liquidity = initial_vault;
     total_liquidity = total_liquidity.saturating_add(lender_repay);
 
-    assert_eq!(total_liquidity, new_vault, "total_liquidity must exactly equal vault balance!");
+    assert_eq!(
+        total_liquidity, new_vault,
+        "total_liquidity must exactly equal vault balance!"
+    );
     assert_eq!(lender_repay + treasury_received, principal + interest_due);
 }
 
@@ -447,8 +453,8 @@ fn test_security_dynamic_oracle_valuation_and_staleness() {
     let oracle_price_micro_usd: u64 = 50_000; // $0.05 / SKR
     let skr_decimals: u8 = 6;
 
-    let dynamic_value = (skr_amount as u128 * oracle_price_micro_usd as u128)
-        / 10u128.pow(skr_decimals as u32);
+    let dynamic_value =
+        (skr_amount as u128 * oracle_price_micro_usd as u128) / 10u128.pow(skr_decimals as u32);
     assert_eq!(dynamic_value, 50_000_000); // exactly $50.00 USDC
 
     // At 80% LTV, max borrow increases proportionally to $40 USDC
@@ -464,5 +470,3 @@ fn test_security_dynamic_oracle_valuation_and_staleness() {
     assert!(fresh_time.saturating_sub(feed_timestamp) <= 86400);
     assert!(stale_time.saturating_sub(feed_timestamp) > 86400);
 }
-
-

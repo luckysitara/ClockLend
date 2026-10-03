@@ -353,16 +353,20 @@ async fn regression_fee_split_routes_full_fee_when_yield_leg_cannot_pay() {
 
     // --- Borrow #1: caller appends the (uninitialized) yield-vault PDAs ------
     let bh1 = bc.get_latest_blockhash().await.unwrap();
-    send(&mut bc, mk_borrow(1, true), &[&payer, &borrower], &payer, bh1)
-        .await
-        .expect("borrow with yield accounts");
+    send(
+        &mut bc,
+        mk_borrow(1, true),
+        &[&payer, &borrower],
+        &payer,
+        bh1,
+    )
+    .await
+    .expect("borrow with yield accounts");
 
     let vault_after = token_amount(&mut bc, vault).await;
     let treasury_after = token_amount(&mut bc, treasury_tok).await;
-    let pool_state = LendingPool::unpack_from_slice(
-        &bc.get_account(pool).await.unwrap().unwrap().data,
-    )
-    .unwrap();
+    let pool_state =
+        LendingPool::unpack_from_slice(&bc.get_account(pool).await.unwrap().unwrap().data).unwrap();
 
     let fee = borrow_amount * 25 / 10_000; // 0.25% for SOL collateral
     println!(
@@ -390,15 +394,19 @@ async fn regression_fee_split_routes_full_fee_when_yield_leg_cannot_pay() {
     let vault_b2 = token_amount(&mut bc, vault).await;
     let treasury_b2 = token_amount(&mut bc, treasury_tok).await;
     let bh2 = bc.get_latest_blockhash().await.unwrap();
-    send(&mut bc, mk_borrow(2, false), &[&payer, &borrower], &payer, bh2)
-        .await
-        .expect("borrow without yield accounts");
+    send(
+        &mut bc,
+        mk_borrow(2, false),
+        &[&payer, &borrower],
+        &payer,
+        bh2,
+    )
+    .await
+    .expect("borrow without yield accounts");
     let vault_a2 = token_amount(&mut bc, vault).await;
     let treasury_a2 = token_amount(&mut bc, treasury_tok).await;
-    let pool_state2 = LendingPool::unpack_from_slice(
-        &bc.get_account(pool).await.unwrap().unwrap().data,
-    )
-    .unwrap();
+    let pool_state2 =
+        LendingPool::unpack_from_slice(&bc.get_account(pool).await.unwrap().unwrap().data).unwrap();
     println!(
         "REG-1 borrow#2 (no yield PDAs):         fee={fee} treasury_received={} vault_delta={} surplus={}",
         treasury_a2 - treasury_b2,
@@ -411,7 +419,9 @@ async fn regression_fee_split_routes_full_fee_when_yield_leg_cannot_pay() {
         "control: the full fee reaches the treasury when the yield leg is absent"
     );
     assert_eq!(vault_a2 - pool_state2.total_liquidity, 0);
-    println!("REG-1 PASS: appending two empty PDAs no longer halves protocol revenue or strands funds.");
+    println!(
+        "REG-1 PASS: appending two empty PDAs no longer halves protocol revenue or strands funds."
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -450,48 +460,98 @@ async fn regression_oracle_free_never_prices_above_baseline() {
     let mut pt = ProgramTest::new("clock_lend", pid, processor!(process_instruction));
     pt.add_account(
         usdc,
-        Account { lamports: 100_000_000_000, data: mint_data(6), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+        Account {
+            lamports: 100_000_000_000,
+            data: mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
     );
     pt.add_account(
         skr,
-        Account { lamports: 100_000_000_000, data: mint_data(6), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+        Account {
+            lamports: 100_000_000_000,
+            data: mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
     );
     pt.add_account(
         skr_oracle,
-        Account { lamports: 100_000_000_000, data: feed, owner: pid, executable: false, rent_epoch: 0 },
+        Account {
+            lamports: 100_000_000_000,
+            data: feed,
+            owner: pid,
+            executable: false,
+            rent_epoch: 0,
+        },
     );
     let treasury_tok = Pubkey::new_unique();
     pt.add_account(
         treasury_tok,
-        Account { lamports: 100_000_000_000, data: tok(usdc, treasury_pda, 0), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+        Account {
+            lamports: 100_000_000_000,
+            data: tok(usdc, treasury_pda, 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
     );
     let authority_usdc = Pubkey::new_unique();
     pt.add_account(
         authority_usdc,
-        Account { lamports: 100_000_000_000, data: tok(usdc, authority.pubkey(), 1_000 * USDC), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+        Account {
+            lamports: 100_000_000_000,
+            data: tok(usdc, authority.pubkey(), 1_000 * USDC),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
     );
     let borrower_usdc = Pubkey::new_unique();
     pt.add_account(
         borrower_usdc,
-        Account { lamports: 100_000_000_000, data: tok(usdc, borrower.pubkey(), 0), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+        Account {
+            lamports: 100_000_000_000,
+            data: tok(usdc, borrower.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
     );
     let borrower_skr = Pubkey::new_unique();
     pt.add_account(
         borrower_skr,
-        Account { lamports: 100_000_000_000, data: tok(skr, borrower.pubkey(), 10_000 * USDC), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+        Account {
+            lamports: 100_000_000_000,
+            data: tok(skr, borrower.pubkey(), 10_000 * USDC),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
     );
 
     let (mut bc, payer, bh) = pt.start().await;
     send(
         &mut bc,
         system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 30_000_000_000),
-        &[&payer], &payer, bh,
-    ).await.unwrap();
+        &[&payer],
+        &payer,
+        bh,
+    )
+    .await
+    .unwrap();
     send(
         &mut bc,
         system_instruction::transfer(&payer.pubkey(), &borrower.pubkey(), 30_000_000_000),
-        &[&payer], &payer, bh,
-    ).await.unwrap();
+        &[&payer],
+        &payer,
+        bh,
+    )
+    .await
+    .unwrap();
 
     let init_ix = Instruction {
         program_id: pid,
@@ -505,12 +565,20 @@ async fn regression_oracle_free_never_prices_above_baseline() {
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
         data: borsh::to_vec(&ClockLendInstruction::InitializePool {
-            pool_id: 1, pool_type: PoolType::Individual, interest_rate_bps: 800,
-            max_ltv_bps: 3000, min_duration: 86_400, max_duration: 86_400 * 30,
-            name: [9u8; 32], is_oracle_free: true,
-        }).unwrap(),
+            pool_id: 1,
+            pool_type: PoolType::Individual,
+            interest_rate_bps: 800,
+            max_ltv_bps: 3000,
+            min_duration: 86_400,
+            max_duration: 86_400 * 30,
+            name: [9u8; 32],
+            is_oracle_free: true,
+        })
+        .unwrap(),
     };
-    send(&mut bc, init_ix, &[&payer, &authority], &payer, bh).await.expect("init pool");
+    send(&mut bc, init_ix, &[&payer, &authority], &payer, bh)
+        .await
+        .expect("init pool");
     let dep_ix = Instruction {
         program_id: pid,
         accounts: vec![
@@ -520,13 +588,25 @@ async fn regression_oracle_free_never_prices_above_baseline() {
             AccountMeta::new(vault, false),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
-        data: borsh::to_vec(&ClockLendInstruction::DepositLiquidity { amount: 1_000 * USDC }).unwrap(),
+        data: borsh::to_vec(&ClockLendInstruction::DepositLiquidity {
+            amount: 1_000 * USDC,
+        })
+        .unwrap(),
     };
-    send(&mut bc, dep_ix, &[&payer, &authority], &payer, bh).await.expect("deposit");
+    send(&mut bc, dep_ix, &[&payer, &authority], &payer, bh)
+        .await
+        .expect("deposit");
 
     let mk_borrow = |loan_id: u64, borrow_amount: u64, pass_oracle: bool| {
         let (loan, _) = Pubkey::find_program_address(
-            &[LOAN_SEED, pool.as_ref(), borrower.pubkey().as_ref(), &loan_id.to_le_bytes()], &pid);
+            &[
+                LOAN_SEED,
+                pool.as_ref(),
+                borrower.pubkey().as_ref(),
+                &loan_id.to_le_bytes(),
+            ],
+            &pid,
+        );
         let (escrow, _) = Pubkey::find_program_address(&[ESCROW_SEED, loan.as_ref()], &pid);
         let (profile, _) =
             Pubkey::find_program_address(&[PROFILE_SEED, borrower.pubkey().as_ref()], &pid);
@@ -555,25 +635,50 @@ async fn regression_oracle_free_never_prices_above_baseline() {
                 borrow_amount,
                 collateral_amount: 1_000 * USDC, // 1000 SKR
                 duration_seconds: 86_400 * 7,
-            }).unwrap(),
+            })
+            .unwrap(),
         }
     };
 
     // 1000 SKR at the LIVE price ($0.002) = $2 -> 30% LTV = $0.60 max.
     let bh1 = bc.get_latest_blockhash().await.unwrap();
-    let honest = send(&mut bc, mk_borrow(1, 600_000, true), &[&payer, &borrower], &payer, bh1).await;
+    let honest = send(
+        &mut bc,
+        mk_borrow(1, 600_000, true),
+        &[&payer, &borrower],
+        &payer,
+        bh1,
+    )
+    .await;
     println!("REG-3a honest LTV borrow ($0.60) with live feed  -> {honest:?}");
     assert!(honest.is_ok(), "the honest-sized borrow should succeed");
 
     let bh2 = bc.get_latest_blockhash().await.unwrap();
-    let over = send(&mut bc, mk_borrow(2, 6_000_000, true), &[&payer, &borrower], &payer, bh2).await;
+    let over = send(
+        &mut bc,
+        mk_borrow(2, 6_000_000, true),
+        &[&payer, &borrower],
+        &payer,
+        bh2,
+    )
+    .await;
     println!("REG-3a 10x-sized borrow ($6.00) WITH live feed   -> {over:?}");
-    assert!(over.is_err(), "the live feed (below baseline) must cap the 10x borrow");
+    assert!(
+        over.is_err(),
+        "the live feed (below baseline) must cap the 10x borrow"
+    );
 
     // Omitting the feed prices collateral at the hardcoded baseline — the
     // oracle-free policy the pool authority explicitly chose (30% cap).
     let bh3 = bc.get_latest_blockhash().await.unwrap();
-    let baseline = send(&mut bc, mk_borrow(3, 6_000_000, false), &[&payer, &borrower], &payer, bh3).await;
+    let baseline = send(
+        &mut bc,
+        mk_borrow(3, 6_000_000, false),
+        &[&payer, &borrower],
+        &payer,
+        bh3,
+    )
+    .await;
     println!("REG-3a 10x-sized borrow ($6.00) WITHOUT feed     -> {baseline:?}");
     assert!(
         baseline.is_ok(),
@@ -620,48 +725,98 @@ async fn regression_oracle_free_live_above_baseline_is_capped() {
     let mut pt = ProgramTest::new("clock_lend", pid, processor!(process_instruction));
     pt.add_account(
         usdc,
-        Account { lamports: 100_000_000_000, data: mint_data(6), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+        Account {
+            lamports: 100_000_000_000,
+            data: mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
     );
     pt.add_account(
         skr,
-        Account { lamports: 100_000_000_000, data: mint_data(6), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+        Account {
+            lamports: 100_000_000_000,
+            data: mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
     );
     pt.add_account(
         skr_oracle,
-        Account { lamports: 100_000_000_000, data: feed, owner: pid, executable: false, rent_epoch: 0 },
+        Account {
+            lamports: 100_000_000_000,
+            data: feed,
+            owner: pid,
+            executable: false,
+            rent_epoch: 0,
+        },
     );
     let treasury_tok = Pubkey::new_unique();
     pt.add_account(
         treasury_tok,
-        Account { lamports: 100_000_000_000, data: tok(usdc, treasury_pda, 0), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+        Account {
+            lamports: 100_000_000_000,
+            data: tok(usdc, treasury_pda, 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
     );
     let authority_usdc = Pubkey::new_unique();
     pt.add_account(
         authority_usdc,
-        Account { lamports: 100_000_000_000, data: tok(usdc, authority.pubkey(), 1_000 * USDC), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+        Account {
+            lamports: 100_000_000_000,
+            data: tok(usdc, authority.pubkey(), 1_000 * USDC),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
     );
     let borrower_usdc = Pubkey::new_unique();
     pt.add_account(
         borrower_usdc,
-        Account { lamports: 100_000_000_000, data: tok(usdc, borrower.pubkey(), 0), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+        Account {
+            lamports: 100_000_000_000,
+            data: tok(usdc, borrower.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
     );
     let borrower_skr = Pubkey::new_unique();
     pt.add_account(
         borrower_skr,
-        Account { lamports: 100_000_000_000, data: tok(skr, borrower.pubkey(), 10_000 * USDC), owner: spl_token::id(), executable: false, rent_epoch: 0 },
+        Account {
+            lamports: 100_000_000_000,
+            data: tok(skr, borrower.pubkey(), 10_000 * USDC),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
     );
 
     let (mut bc, payer, bh) = pt.start().await;
     send(
         &mut bc,
         system_instruction::transfer(&payer.pubkey(), &authority.pubkey(), 30_000_000_000),
-        &[&payer], &payer, bh,
-    ).await.unwrap();
+        &[&payer],
+        &payer,
+        bh,
+    )
+    .await
+    .unwrap();
     send(
         &mut bc,
         system_instruction::transfer(&payer.pubkey(), &borrower.pubkey(), 30_000_000_000),
-        &[&payer], &payer, bh,
-    ).await.unwrap();
+        &[&payer],
+        &payer,
+        bh,
+    )
+    .await
+    .unwrap();
 
     let init_ix = Instruction {
         program_id: pid,
@@ -675,12 +830,20 @@ async fn regression_oracle_free_live_above_baseline_is_capped() {
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
         data: borsh::to_vec(&ClockLendInstruction::InitializePool {
-            pool_id: 1, pool_type: PoolType::Individual, interest_rate_bps: 800,
-            max_ltv_bps: 3000, min_duration: 86_400, max_duration: 86_400 * 30,
-            name: [9u8; 32], is_oracle_free: true,
-        }).unwrap(),
+            pool_id: 1,
+            pool_type: PoolType::Individual,
+            interest_rate_bps: 800,
+            max_ltv_bps: 3000,
+            min_duration: 86_400,
+            max_duration: 86_400 * 30,
+            name: [9u8; 32],
+            is_oracle_free: true,
+        })
+        .unwrap(),
     };
-    send(&mut bc, init_ix, &[&payer, &authority], &payer, bh).await.expect("init pool");
+    send(&mut bc, init_ix, &[&payer, &authority], &payer, bh)
+        .await
+        .expect("init pool");
     let dep_ix = Instruction {
         program_id: pid,
         accounts: vec![
@@ -690,13 +853,25 @@ async fn regression_oracle_free_live_above_baseline_is_capped() {
             AccountMeta::new(vault, false),
             AccountMeta::new_readonly(spl_token::id(), false),
         ],
-        data: borsh::to_vec(&ClockLendInstruction::DepositLiquidity { amount: 1_000 * USDC }).unwrap(),
+        data: borsh::to_vec(&ClockLendInstruction::DepositLiquidity {
+            amount: 1_000 * USDC,
+        })
+        .unwrap(),
     };
-    send(&mut bc, dep_ix, &[&payer, &authority], &payer, bh).await.expect("deposit");
+    send(&mut bc, dep_ix, &[&payer, &authority], &payer, bh)
+        .await
+        .expect("deposit");
 
     let mk_borrow = |loan_id: u64, borrow_amount: u64, pass_oracle: bool| {
         let (loan, _) = Pubkey::find_program_address(
-            &[LOAN_SEED, pool.as_ref(), borrower.pubkey().as_ref(), &loan_id.to_le_bytes()], &pid);
+            &[
+                LOAN_SEED,
+                pool.as_ref(),
+                borrower.pubkey().as_ref(),
+                &loan_id.to_le_bytes(),
+            ],
+            &pid,
+        );
         let (escrow, _) = Pubkey::find_program_address(&[ESCROW_SEED, loan.as_ref()], &pid);
         let (profile, _) =
             Pubkey::find_program_address(&[PROFILE_SEED, borrower.pubkey().as_ref()], &pid);
@@ -725,7 +900,8 @@ async fn regression_oracle_free_live_above_baseline_is_capped() {
                 borrow_amount,
                 collateral_amount: 1_000 * USDC, // 1000 SKR
                 duration_seconds: 86_400 * 7,
-            }).unwrap(),
+            })
+            .unwrap(),
         }
     };
 
@@ -733,12 +909,29 @@ async fn regression_oracle_free_live_above_baseline_is_capped() {
     // $0.10 would value the same collateral at $100 -> $30 borrowable before
     // the fix. min(baseline, live) must cap the borrower at $6 regardless.
     let bh1 = bc.get_latest_blockhash().await.unwrap();
-    let at_cap = send(&mut bc, mk_borrow(1, 6_000_000, true), &[&payer, &borrower], &payer, bh1).await;
+    let at_cap = send(
+        &mut bc,
+        mk_borrow(1, 6_000_000, true),
+        &[&payer, &borrower],
+        &payer,
+        bh1,
+    )
+    .await;
     println!("REG-3b $6.00 borrow (baseline cap) WITH hot feed -> {at_cap:?}");
-    assert!(at_cap.is_ok(), "borrowing at the baseline cap with a live feed should succeed");
+    assert!(
+        at_cap.is_ok(),
+        "borrowing at the baseline cap with a live feed should succeed"
+    );
 
     let bh2 = bc.get_latest_blockhash().await.unwrap();
-    let inflated = send(&mut bc, mk_borrow(2, 30_000_000, true), &[&payer, &borrower], &payer, bh2).await;
+    let inflated = send(
+        &mut bc,
+        mk_borrow(2, 30_000_000, true),
+        &[&payer, &borrower],
+        &payer,
+        bh2,
+    )
+    .await;
     println!("REG-3b $30.00 borrow (5x) WITH hot feed       -> {inflated:?}");
     assert!(
         inflated.is_err(),
@@ -758,12 +951,18 @@ async fn regression_p2p_offer_defaults_to_mainnet_usdc() {
     let creator = Keypair::new();
     let skr_mint_acc = clock_lend::state::SKR_MINT;
     let (offer, _) = Pubkey::find_program_address(
-        &[clock_lend::state::P2P_SEED, creator.pubkey().as_ref(), &1u64.to_le_bytes()],
+        &[
+            clock_lend::state::P2P_SEED,
+            creator.pubkey().as_ref(),
+            &1u64.to_le_bytes(),
+        ],
         &pid,
     );
     let (escrow, _) = Pubkey::find_program_address(&[ESCROW_SEED, offer.as_ref()], &pid);
-    let (oracle, _) =
-        Pubkey::find_program_address(&[clock_lend::state::ORACLE_SEED, skr_mint_acc.as_ref()], &pid);
+    let (oracle, _) = Pubkey::find_program_address(
+        &[clock_lend::state::ORACLE_SEED, skr_mint_acc.as_ref()],
+        &pid,
+    );
     let (treasury_pda, _) = Pubkey::find_program_address(&[TREASURY_SEED], &pid);
 
     // Oracle feed authored by the deployer/admin (value irrelevant for POC-2).
@@ -938,7 +1137,10 @@ async fn regression_p2p_offer_defaults_to_mainnet_usdc() {
     };
     let r = send(&mut bc, fund_ix, &[&payer, &funder], &payer, bh).await;
     println!("REG-2 fund with mainnet USDC -> {r:?}");
-    assert!(r.is_ok(), "the mainnet-defaulted offer must be fundable with mainnet USDC");
+    assert!(
+        r.is_ok(),
+        "the mainnet-defaulted offer must be fundable with mainnet USDC"
+    );
     println!("REG-2 PASS: no-mint P2P offers bind to mainnet USDC and can be funded.");
 }
 
@@ -953,17 +1155,27 @@ async fn regression_p2p_offer_is_capped_at_shared_max_ltv() {
     let creator = Keypair::new();
     let skr_mint_acc = clock_lend::state::SKR_MINT;
     let (offer_75, _) = Pubkey::find_program_address(
-        &[clock_lend::state::P2P_SEED, creator.pubkey().as_ref(), &1u64.to_le_bytes()],
+        &[
+            clock_lend::state::P2P_SEED,
+            creator.pubkey().as_ref(),
+            &1u64.to_le_bytes(),
+        ],
         &pid,
     );
     let (escrow_75, _) = Pubkey::find_program_address(&[ESCROW_SEED, offer_75.as_ref()], &pid);
     let (offer_70, _) = Pubkey::find_program_address(
-        &[clock_lend::state::P2P_SEED, creator.pubkey().as_ref(), &2u64.to_le_bytes()],
+        &[
+            clock_lend::state::P2P_SEED,
+            creator.pubkey().as_ref(),
+            &2u64.to_le_bytes(),
+        ],
         &pid,
     );
     let (escrow_70, _) = Pubkey::find_program_address(&[ESCROW_SEED, offer_70.as_ref()], &pid);
-    let (oracle, _) =
-        Pubkey::find_program_address(&[clock_lend::state::ORACLE_SEED, skr_mint_acc.as_ref()], &pid);
+    let (oracle, _) = Pubkey::find_program_address(
+        &[clock_lend::state::ORACLE_SEED, skr_mint_acc.as_ref()],
+        &pid,
+    );
 
     // Admin feed: 1000 SKR = 1_000 * USDC base units at $0.02 => $20 of
     // collateral value, so 14 USDC is exactly 70% and 15 USDC is 75%.
@@ -1084,7 +1296,11 @@ async fn regression_p2p_offer_is_capped_at_shared_max_ltv() {
         &bc.get_account(offer_70).await.unwrap().unwrap().data,
     )
     .unwrap();
-    assert_eq!(offer_state.requested_amount, 14 * USDC, "the 70% offer must be recorded");
+    assert_eq!(
+        offer_state.requested_amount,
+        14 * USDC,
+        "the 70% offer must be recorded"
+    );
     assert_eq!(offer_state.collateral_amount, 1_000 * USDC);
     assert_eq!(
         token_amount(&mut bc, escrow_70).await,

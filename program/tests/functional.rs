@@ -2,7 +2,8 @@ use borsh::BorshDeserialize;
 use clock_lend::{
     instruction::ClockLendInstruction,
     state::{
-        AdminConfig, LendingPool, LoanOrder, LoanStatus, OfferStatus, P2POffer, PoolType, PriceFeed, UserProfile,
+        AdminConfig, LendingPool, LoanOrder, LoanStatus, OfferStatus, P2POffer, PoolType,
+        PriceFeed, UserProfile,
     },
 };
 use solana_program::pubkey::Pubkey;
@@ -275,9 +276,7 @@ fn test_set_price_feed_instruction_serialization() {
 }
 #[test]
 fn test_withdraw_treasury_instruction_serialization() {
-    let ix = ClockLendInstruction::WithdrawTreasury {
-        amount: 1_000_000,
-    };
+    let ix = ClockLendInstruction::WithdrawTreasury { amount: 1_000_000 };
     let serialized = borsh::to_vec(&ix).expect("Serialization failed");
     let deserialized =
         ClockLendInstruction::try_from_slice(&serialized).expect("Deserialization failed");
@@ -371,7 +370,10 @@ fn test_account_kind_is_discriminator_only_not_length() {
     // discriminator, not the length.
     let mut pool_shaped = vec![0u8; 182];
     pool_shaped[0..8].copy_from_slice(b"CLK_POOL");
-    assert_eq!(AccountKind::from_slice(&pool_shaped), AccountKind::LendingPool);
+    assert_eq!(
+        AccountKind::from_slice(&pool_shaped),
+        AccountKind::LendingPool
+    );
 
     // A current-layout pool account (200 bytes) still classifies as a pool.
     let pool = LendingPool {
@@ -402,7 +404,10 @@ fn test_account_kind_is_discriminator_only_not_length() {
     // Shorter than a discriminator is always Unknown — including a truncated
     // prefix of a valid discriminator.
     assert_eq!(AccountKind::from_slice(&[]), AccountKind::Unknown);
-    assert_eq!(AccountKind::from_slice(&b"CLK_POO"[..]), AccountKind::Unknown);
+    assert_eq!(
+        AccountKind::from_slice(&b"CLK_POO"[..]),
+        AccountKind::Unknown
+    );
 
     // Every discriminator maps to its own kind (no collisions).
     let cases: [(&[u8; 8], AccountKind); 8] = [
