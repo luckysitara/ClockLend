@@ -1,7 +1,7 @@
 {
-  "minimumVersion": "1.0.0",
-  "minimumBuildNumber": 1,
-  "latestVersion": "1.0.0",
+  "minimumVersion": "2.0.0",
+  "minimumBuildNumber": 2,
+  "latestVersion": "2.0.0",
   "forceUpdate": true,
   "dappStoreUrl": "solanadappstore://details?id=com.clocklend.app",
   "marketUrl": "market://details?id=com.clocklend.app",
