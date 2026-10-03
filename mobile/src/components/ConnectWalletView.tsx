@@ -8,8 +8,9 @@ import {
   Alert,
   Image,
   Animated,
-  Dimensions,
   Linking,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -17,7 +18,6 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
 import { connectSeekerWallet, SeekerSession } from '../solana/seekerWallet';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const LOGO_IMG = require('../../assets/logo.png');
 
 interface ConnectWalletViewProps {
@@ -58,6 +58,9 @@ const ONBOARDING_SLIDES: OnboardingSlide[] = [
 
 export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnected }) => {
   const { colors, mode, toggleTheme } = useTheme();
+  // Per-render window height (rotation / small screens): the showcase card
+  // keeps a responsive minimum instead of a module-level snapshot.
+  const { height } = useWindowDimensions();
   const [isConnecting, setIsConnecting] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
 
@@ -124,7 +127,11 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
   const slide = ONBOARDING_SLIDES[activeSlide];
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <ScrollView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      contentContainerStyle={styles.containerContent}
+      showsVerticalScrollIndicator={false}
+    >
       {/* ── Top Utility Row ── */}
       <View style={styles.topBar}>
         <View style={[styles.networkBadge, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
@@ -157,7 +164,12 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
 
       {/* ── Centered Bigger Showcase Card (Occupies 45-50% of Screen) ── */}
       <View style={styles.centerSection}>
-        <View style={[styles.cardWrapper, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <View
+          style={[
+            styles.cardWrapper,
+            { backgroundColor: colors.card, borderColor: colors.cardBorder, minHeight: Math.max(220, height * 0.36) },
+          ]}
+        >
           <Animated.View
             style={[
               styles.cardInner,
@@ -257,13 +269,16 @@ export const ConnectWalletView: React.FC<ConnectWalletViewProps> = ({ onConnecte
           </Text>
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  containerContent: {
+    flexGrow: 1,
     paddingHorizontal: 20,
     paddingBottom: 24,
     justifyContent: 'space-between',
@@ -316,7 +331,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   cardWrapper: {
-    minHeight: Math.round(SCREEN_HEIGHT * 0.40),
     borderRadius: 24,
     borderWidth: 1,
     paddingVertical: 20,

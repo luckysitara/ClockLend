@@ -16,6 +16,7 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
   Animated,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -191,6 +192,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
   onRetry,
 }) => {
   const { colors } = useTheme();
+  const { width } = useWindowDimensions();
   const userUsdcBalance = walletAssets?.usdcBalance ?? 0;
   const [subTab, setSubTab] = useState<'POOLS' | 'PAWNS'>('POOLS');
   const [deskFilter, setDeskFilter] = useState<'ALL' | 'VERIFIED' | 'CIRCLES' | 'MY_DESKS'>('ALL');
@@ -338,7 +340,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
           <Text style={[styles.screenTitle, { color: colors.text }]}>Markets</Text>
         </View>
         <TouchableOpacity
-          style={[styles.createBtn, { backgroundColor: colors.primary }]}
+          style={[styles.createBtn, { backgroundColor: colors.primary }, width < 400 && { paddingHorizontal: 10 }]}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             if (subTab === 'POOLS') setCreatePoolModal(true);
@@ -372,7 +374,9 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                 styles.segmentText,
                 { color: colors.textSecondary },
                 subTab === 'POOLS' && { color: colors.text, fontWeight: '800' },
+                width < 400 && { fontSize: 12 },
               ]}
+              numberOfLines={1}
             >
               Lending Desks ({validPools.length})
             </Text>
@@ -394,7 +398,9 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                 styles.segmentText,
                 { color: colors.textSecondary },
                 subTab === 'PAWNS' && { color: colors.text, fontWeight: '800' },
+                width < 400 && { fontSize: 12 },
               ]}
+              numberOfLines={1}
             >
               P2P Pawns ({offers.length})
             </Text>
@@ -419,11 +425,16 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
         {/* ── Market Hero Card ── */}
         <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           <View style={styles.heroRow}>
-            <View>
+            <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={[styles.heroLabel, { color: colors.textMuted }]}>
                 {subTab === 'POOLS' ? 'Total Mainnet Liquidity' : 'Active Pawn Listings'}
               </Text>
-              <Text style={[styles.heroVal, { color: colors.text }]}>
+              <Text
+                style={[styles.heroVal, { color: colors.text }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.7}
+              >
                 {subTab === 'POOLS'
                   ? `$${totalPoolLiquidity.toLocaleString()} USDC`
                   : `${offers.length} Escrow Offers`}
@@ -531,9 +542,15 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                             color={pool.poolType === 'Circle' ? '#c084fc' : colors.primary}
                           />
                         </View>
-                        <View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
                           <View style={styles.deskNameRow}>
-                            <Text style={[styles.deskName, { color: colors.text }]}>{pool.name}</Text>
+                            <Text
+                              style={[styles.deskName, { color: colors.text }]}
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                            >
+                              {pool.name}
+                            </Text>
                             {pool.isVerifiedMerchant && (
                               <View style={[styles.miniBadge, { backgroundColor: colors.badgeBg }]}>
                                 <Text style={[styles.miniBadgeText, { color: colors.primaryLabel }]}>VERIFIED</Text>
@@ -555,14 +572,20 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                         <Text style={[styles.deskApr, { color: colors.primaryLabel }]}>
                           {(pool.interestRateBps / 100).toFixed(1)}%
                         </Text>
-                        <Text style={[styles.deskAprLabel, { color: colors.textMuted }]}>per 30 days</Text>
+                        <Text style={[styles.deskAprLabel, { color: colors.textMuted }]} numberOfLines={1}>
+                          per 30 days
+                        </Text>
                       </View>
                     </View>
 
                     <View style={[styles.deskFooter, { borderTopColor: colors.cardBorder }]}>
                       <View style={styles.liquidityInfo}>
                         <Text style={[styles.liqLabel, { color: colors.textMuted }]}>Available Liquidity</Text>
-                        <Text style={[styles.liqVal, { color: colors.text }]}>
+                        <Text
+                          style={[styles.liqVal, { color: colors.text }]}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
                           ${pool.totalLiquidity.toLocaleString()} USDC
                         </Text>
                       </View>
@@ -734,8 +757,14 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                         <View style={[styles.deskGlyph, { backgroundColor: colors.badgeBg }]}>
                           <Ionicons name="cube-outline" size={18} color={colors.primary} />
                         </View>
-                        <View>
-                          <Text style={[styles.deskName, { color: colors.text }]}>{offer.collateralName}</Text>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text
+                            style={[styles.deskName, { color: colors.text }]}
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                          >
+                            {offer.collateralName}
+                          </Text>
                           <Text style={[styles.deskTerms, { color: colors.textMuted }]}>
                             {offer.durationDays}d term • ${offer.requestedAmount} USDC Loan
                           </Text>
@@ -752,7 +781,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
 
                     {/* Timeline status note if funded or in grace */}
                     {(isFunded || isInGrace) && (
-                      <View style={{ marginHorizontal: 16, marginTop: 4, marginBottom: 8, padding: 8, borderRadius: 8, backgroundColor: isInGrace ? 'rgba(239, 68, 68, 0.1)' : colors.cardAlt }}>
+                      <View style={{ marginTop: 4, marginBottom: 8, padding: 8, borderRadius: 8, backgroundColor: isInGrace ? 'rgba(239, 68, 68, 0.1)' : colors.cardAlt }}>
                         <Text style={{ fontSize: 11, fontWeight: '700', color: isInGrace ? colors.danger : isPastDue ? colors.warning : colors.textSecondary }}>
                           {isInGrace
                             ? isGraceExpired
@@ -857,12 +886,21 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
             <View style={styles.modalDismissArea} />
           </TouchableWithoutFeedback>
 
-          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          <View
+            style={[
+              styles.modalCard,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+              width < 400 && { padding: 16 },
+            ]}
+          >
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Create Lending Desk</Text>
+              <Text style={[styles.modalTitle, { color: colors.text }]} numberOfLines={1}>
+                Create Lending Desk
+              </Text>
               <TouchableOpacity
                 onPress={() => setCreatePoolModal(false)}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={{ flexShrink: 0, marginLeft: 8 }}
               >
                 <Ionicons name="close" size={22} color={colors.textMuted} />
               </TouchableOpacity>
@@ -884,7 +922,7 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
 
               <View style={styles.inputSplitRow}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.inputLabel, { color: colors.textMuted }]}>RATE PER 30 DAYS (MAX 10%)</Text>
+                  <Text style={[styles.inputLabel, { color: colors.textMuted }]}>RATE / 30D (MAX 10%)</Text>
                   <TextInput
                     style={[styles.modalInput, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, color: colors.text }]}
                     value={deskApr}
@@ -943,7 +981,11 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                   onPress={() => setDeskLiquidity(userUsdcBalance > 0 ? userUsdcBalance.toString() : '0')}
                   activeOpacity={0.7}
                 >
-                  <Text style={{ fontSize: 11, color: colors.primaryLabel, fontWeight: '700' }}>
+                  <Text
+                    style={{ fontSize: 11, color: colors.primaryLabel, fontWeight: '700', flexShrink: 1 }}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
                     Balance: ${userUsdcBalance.toFixed(2)} (Max)
                   </Text>
                 </TouchableOpacity>
@@ -1003,12 +1045,21 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
             <View style={styles.modalDismissArea} />
           </TouchableWithoutFeedback>
 
-          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          <View
+            style={[
+              styles.modalCard,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+              width < 400 && { padding: 16 },
+            ]}
+          >
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>List P2P Pawn</Text>
+              <Text style={[styles.modalTitle, { color: colors.text }]} numberOfLines={1}>
+                List P2P Pawn
+              </Text>
               <TouchableOpacity
                 onPress={() => setPawnModal(false)}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={{ flexShrink: 0, marginLeft: 8 }}
               >
                 <Ionicons name="close" size={22} color={colors.textMuted} />
               </TouchableOpacity>
@@ -1113,12 +1164,21 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
               <View style={styles.modalDismissArea} />
             </TouchableWithoutFeedback>
 
-            <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <View
+              style={[
+                styles.modalCard,
+                { backgroundColor: colors.card, borderColor: colors.cardBorder },
+                width < 400 && { padding: 16 },
+              ]}
+            >
               <View style={styles.modalHeader}>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>Deposit into {fundModal.name}</Text>
+                <Text style={[styles.modalTitle, { color: colors.text }]} numberOfLines={1}>
+                  Deposit into {fundModal.name}
+                </Text>
                 <TouchableOpacity
                   onPress={() => setFundModal(null)}
                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  style={{ flexShrink: 0, marginLeft: 8 }}
                 >
                   <Ionicons name="close" size={22} color={colors.textMuted} />
                 </TouchableOpacity>
@@ -1130,7 +1190,11 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                   onPress={() => setFundAmount(userUsdcBalance > 0 ? userUsdcBalance.toString() : '0')}
                   activeOpacity={0.7}
                 >
-                  <Text style={{ fontSize: 11, color: colors.primaryLabel, fontWeight: '700' }}>
+                  <Text
+                    style={{ fontSize: 11, color: colors.primaryLabel, fontWeight: '700', flexShrink: 1 }}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
                     Balance: ${userUsdcBalance.toFixed(2)} (Max)
                   </Text>
                 </TouchableOpacity>
@@ -1190,12 +1254,21 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
               <View style={styles.modalDismissArea} />
             </TouchableWithoutFeedback>
 
-            <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+            <View
+              style={[
+                styles.modalCard,
+                { backgroundColor: colors.card, borderColor: colors.cardBorder },
+                width < 400 && { padding: 16 },
+              ]}
+            >
               <View style={styles.modalHeader}>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>Withdraw from {withdrawModal.name}</Text>
+                <Text style={[styles.modalTitle, { color: colors.text }]} numberOfLines={1}>
+                  Withdraw from {withdrawModal.name}
+                </Text>
                 <TouchableOpacity
                   onPress={() => setWithdrawModal(null)}
                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  style={{ flexShrink: 0, marginLeft: 8 }}
                 >
                   <Ionicons name="close" size={22} color={colors.textMuted} />
                 </TouchableOpacity>
@@ -1207,7 +1280,11 @@ export const MerchantDesksView: React.FC<MerchantDesksViewProps> = ({
                   onPress={() => setWithdrawAmount(withdrawModal.totalLiquidity.toString())}
                   activeOpacity={0.7}
                 >
-                  <Text style={{ fontSize: 11, color: colors.primaryLabel, fontWeight: '700' }}>
+                  <Text
+                    style={{ fontSize: 11, color: colors.primaryLabel, fontWeight: '700', flexShrink: 1 }}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
                     Available: ${withdrawModal.totalLiquidity.toFixed(2)} (Max)
                   </Text>
                 </TouchableOpacity>
@@ -1302,6 +1379,7 @@ const styles = StyleSheet.create({
   segmentText: {
     fontSize: 13,
     fontWeight: '600',
+    flexShrink: 1,
   },
   createBtn: {
     flexDirection: 'row',
@@ -1338,11 +1416,13 @@ const styles = StyleSheet.create({
   heroVal: {
     fontSize: 22,
     fontWeight: '800',
+    flexShrink: 1,
   },
   statPill: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 10,
+    flexShrink: 0,
   },
   statPillText: {
     fontSize: 12,
@@ -1419,10 +1499,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexWrap: 'wrap',
   },
   deskName: {
     fontSize: 15,
     fontWeight: '700',
+    flexShrink: 1,
   },
   miniBadge: {
     paddingHorizontal: 6,
@@ -1430,7 +1512,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   miniBadgeText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
   },
   deskTerms: {
@@ -1439,6 +1521,7 @@ const styles = StyleSheet.create({
   },
   deskRight: {
     alignItems: 'flex-end',
+    flexShrink: 0,
   },
   deskApr: {
     fontSize: 17,
@@ -1452,11 +1535,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingTop: 12,
     marginTop: 12,
   },
-  liquidityInfo: {},
+  liquidityInfo: {
+    flexShrink: 1,
+  },
   liqLabel: {
     fontSize: 11,
     fontWeight: '500',
@@ -1465,14 +1551,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     marginTop: 1,
+    flexShrink: 1,
   },
   actionBtnRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexWrap: 'wrap',
   },
   fundSmallBtn: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 9,
     borderWidth: 1,
@@ -1538,6 +1626,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: '800',
+    flexShrink: 1,
   },
   inputLabel: {
     fontSize: 11,
@@ -1545,6 +1634,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 6,
     marginTop: 10,
+    minHeight: 26,
   },
   modalInput: {
     height: 48,

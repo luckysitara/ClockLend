@@ -11,6 +11,7 @@ import {
   Linking,
   Image,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -70,6 +71,10 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
   onRetry,
 }) => {
   const { colors } = useTheme();
+  // Small phones (360-400dp): tighten paddings and title sizes so nothing
+  // gets clipped inside the loan cards.
+  const { width } = useWindowDimensions();
+  const isCompact = width < 400;
 
   const [orderTab, setOrderTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
   const [roleFilter, setRoleFilter] = useState<'ALL' | 'BORROWS' | 'DESK_LOANS'>('ALL');
@@ -153,7 +158,7 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, isCompact && styles.contentCompact]}
       showsVerticalScrollIndicator={false}
       refreshControl={
         onRetry ? (
@@ -170,7 +175,13 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
       <View style={styles.topHeaderRow}>
         <View style={styles.brandRow}>
           <Image source={require('../../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Loans</Text>
+          <Text
+            style={[styles.headerTitle, { color: colors.text }, isCompact && styles.headerTitleCompact]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            Loans
+          </Text>
         </View>
         {activeOrders.length > 0 && (
           <View style={[styles.activeBadge, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
@@ -263,7 +274,13 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
 
       {/* Loading state — only when there is nothing to show yet. */}
       {listState === 'loading' && (
-        <View style={[styles.stateBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <View
+          style={[
+            styles.stateBox,
+            { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            isCompact && styles.stateBoxCompact,
+          ]}
+        >
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.stateLabel, { color: colors.textMuted }]}>READING ON-CHAIN LOANS</Text>
           <Text style={[styles.stateBody, { color: colors.textSecondary }]}>
@@ -274,7 +291,13 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
 
       {/* Error state */}
       {listState === 'error' && (
-        <View style={[styles.stateBox, { backgroundColor: colors.card, borderColor: colors.danger }]}>
+        <View
+          style={[
+            styles.stateBox,
+            { backgroundColor: colors.card, borderColor: colors.danger },
+            isCompact && styles.stateBoxCompact,
+          ]}
+        >
           <Text style={styles.emptyIcon}>⚠️</Text>
           <Text style={[styles.stateLabel, { color: colors.danger }]}>LOANS NOT READ</Text>
           <Text style={[styles.emptyTitle, { color: colors.text }]}>Could Not Load Your Loans</Text>
@@ -335,7 +358,13 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
       {/* ── Tab Content 1: ACTIVE LOANS ── */}
       {orderTab === 'ACTIVE' && (
         displayedOrders.length === 0 && listState === 'empty' ? (
-          <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          <View
+            style={[
+              styles.emptyBox,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+              isCompact && styles.emptyBoxCompact,
+            ]}
+          >
             <Text style={styles.emptyIcon}>⏳</Text>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>No Active On-Chain Loans</Text>
             <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
@@ -369,11 +398,18 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                   { backgroundColor: colors.card, borderColor: colors.cardBorder },
                   inGrace && { borderColor: colors.warning, backgroundColor: 'rgba(245, 158, 11, 0.05)' },
                   isOverdue && { borderColor: colors.danger, backgroundColor: 'rgba(239, 68, 68, 0.05)' },
+                  isCompact && styles.cardCompact,
                 ]}
               >
                 <View style={styles.cardHeader}>
                   <View style={styles.cardHeaderLeft}>
-                    <Text style={[styles.poolName, { color: colors.text }]}>{order.poolName}</Text>
+                    <Text
+                      style={[styles.poolName, { color: colors.text }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {order.poolName}
+                    </Text>
                     <Text style={[styles.orderId, { color: colors.textMuted }]}>
                       Order #{order.id} {order.isLender ? '• Desk Loan' : ''}
                     </Text>
@@ -398,6 +434,8 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                           ? { color: colors.danger }
                           : { color: colors.primaryLabel },
                       ]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
                     >
                       {inGrace
                         ? isGraceExpired
@@ -441,15 +479,36 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                 <View style={[styles.metricsStrip, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder }]}>
                   <View style={styles.metricColumn}>
                     <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Principal</Text>
-                    <Text style={[styles.metricVal, { color: colors.text }]}>${order.principalAmount} USDC</Text>
+                    <Text
+                      style={[styles.metricVal, { color: colors.text }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.7}
+                    >
+                      ${order.principalAmount.toFixed(2)} USDC
+                    </Text>
                   </View>
                   <View style={styles.metricColumn}>
                     <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Interest</Text>
-                    <Text style={[styles.metricVal, { color: colors.text }]}>+${order.interestDue} USDC</Text>
+                    <Text
+                      style={[styles.metricVal, { color: colors.text }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.7}
+                    >
+                      +${order.interestDue} USDC
+                    </Text>
                   </View>
                   <View style={styles.metricColumn}>
                     <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Collateral</Text>
-                    <Text style={[styles.metricVal, { color: colors.primaryLabel }]}>{order.collateralName}</Text>
+                    <Text
+                      style={[styles.metricVal, { color: colors.primaryLabel }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.7}
+                    >
+                      {order.collateralName}
+                    </Text>
                   </View>
                 </View>
 
@@ -500,13 +559,22 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                       }}
                       activeOpacity={0.85}
                     >
-                      <Text style={[styles.repayBtnText, { color: colors.primaryText }]}>
+                      <Text
+                        style={[styles.repayBtnText, { color: colors.primaryText }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.7}
+                      >
                         Repay ${totalDue} USDC
                       </Text>
                     </TouchableOpacity>
                   ) : (
                     <View style={[styles.lenderBadgeBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-                      <Text style={[styles.lenderBadgeText, { color: colors.primaryLabel }]}>
+                      <Text
+                        style={[styles.lenderBadgeText, { color: colors.primaryLabel }]}
+                        numberOfLines={1}
+                        ellipsizeMode="tail"
+                      >
                         💼 Desk Disbursed • Borrower: {order.borrower.slice(0, 4)}...{order.borrower.slice(-4)}
                       </Text>
                     </View>
@@ -532,26 +600,35 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                       }}
                       activeOpacity={0.85}
                     >
-                      <Text style={styles.rescueBtnText}>🚨 TARDIS Rescue</Text>
-                    </TouchableOpacity>
-                  ))}
-
-                  {/* Claim Default if grace expired and caller is lender */}
-                  {inGrace && isGraceExpired && onClaimDefault && (order.isLender || !order.isLender) && (
-                    <TouchableOpacity
-                      style={[styles.claimDefaultBtn, { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: colors.danger }]}
-                      onPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-                        onClaimDefault(order);
-                      }}
-                      activeOpacity={0.85}
-                    >
-                      <Text style={[styles.claimDefaultBtnText, { color: colors.danger }]}>
-                        Claim Default & Liquidate
+                      <Text
+                        style={styles.rescueBtnText}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.7}
+                      >
+                        🚨 TARDIS Rescue
                       </Text>
                     </TouchableOpacity>
-                  )}
+                  ))}
                 </View>
+
+                {/* Claim Default if grace expired and caller is lender — kept on
+                    its own full-width row so it can never squeeze the repay or
+                    rescue buttons off small screens. */}
+                {inGrace && isGraceExpired && onClaimDefault && (order.isLender || !order.isLender) && (
+                  <TouchableOpacity
+                    style={[styles.claimDefaultBtn, { backgroundColor: 'rgba(239, 68, 68, 0.15)', borderColor: colors.danger }]}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                      onClaimDefault(order);
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.claimDefaultBtnText, { color: colors.danger }]}>
+                      Claim Default & Liquidate
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
             );
           })
@@ -561,7 +638,13 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
       {/* ── Tab Content 2: LOAN HISTORY (Settled / Repaid / Defaulted) ── */}
       {orderTab === 'HISTORY' && (
         displayedOrders.length === 0 ? (
-          <View style={[styles.emptyBox, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          <View
+            style={[
+              styles.emptyBox,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+              isCompact && styles.emptyBoxCompact,
+            ]}
+          >
             <Text style={styles.emptyIcon}>📜</Text>
             <Text style={[styles.emptyTitle, { color: colors.text }]}>No Closed Loans Yet</Text>
             <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
@@ -574,11 +657,21 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
             return (
               <View
                 key={order.id}
-                style={[styles.card, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+                style={[
+                  styles.card,
+                  { backgroundColor: colors.card, borderColor: colors.cardBorder },
+                  isCompact && styles.cardCompact,
+                ]}
               >
                 <View style={styles.cardHeader}>
                   <View style={styles.cardHeaderLeft}>
-                    <Text style={[styles.poolName, { color: colors.text }]}>{order.poolName}</Text>
+                    <Text
+                      style={[styles.poolName, { color: colors.text }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {order.poolName}
+                    </Text>
                     <Text style={[styles.orderId, { color: colors.textMuted }]}>
                       Order #{order.id} {order.isLender ? '• Desk Loan' : ''}
                     </Text>
@@ -597,6 +690,8 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                         styles.badgeText,
                         { color: isRepaid ? '#10B981' : colors.danger },
                       ]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
                     >
                       {isRepaid ? '✓ REPAID' : '✕ DEFAULTED'}
                     </Text>
@@ -606,15 +701,34 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
                 <View style={[styles.metricsStrip, { backgroundColor: colors.inputBg, borderColor: colors.cardBorder, marginTop: 12 }]}>
                   <View style={styles.metricColumn}>
                     <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Principal</Text>
-                    <Text style={[styles.metricVal, { color: colors.text }]}>${order.principalAmount.toFixed(2)} USDC</Text>
+                    <Text
+                      style={[styles.metricVal, { color: colors.text }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.7}
+                    >
+                      ${order.principalAmount.toFixed(2)} USDC
+                    </Text>
                   </View>
                   <View style={styles.metricColumn}>
                     <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Interest</Text>
-                    <Text style={[styles.metricVal, { color: colors.text }]}>+${order.interestDue.toFixed(2)} USDC</Text>
+                    <Text
+                      style={[styles.metricVal, { color: colors.text }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.7}
+                    >
+                      +${order.interestDue.toFixed(2)} USDC
+                    </Text>
                   </View>
                   <View style={styles.metricColumn}>
                     <Text style={[styles.metricKicker, { color: colors.textMuted }]}>Collateral</Text>
-                    <Text style={[styles.metricVal, { color: isRepaid ? '#10B981' : colors.danger }]}>
+                    <Text
+                      style={[styles.metricVal, { color: isRepaid ? '#10B981' : colors.danger }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.7}
+                    >
                       {order.collateralName} ({isRepaid ? 'Returned' : 'Liquidated'})
                     </Text>
                   </View>
@@ -650,6 +764,10 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 40,
   },
+  contentCompact: {
+    padding: 14,
+    paddingBottom: 40,
+  },
   topHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -671,17 +789,23 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '800',
     letterSpacing: -0.5,
+    flexShrink: 1,
+  },
+  headerTitleCompact: {
+    fontSize: 20,
   },
   activeBadge: {
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8,
     borderWidth: 1,
+    flexShrink: 0,
   },
   activeBadgeText: {
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
+    flexShrink: 1,
   },
   emptyBox: {
     padding: 36,
@@ -689,6 +813,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     marginTop: 30,
+  },
+  emptyBoxCompact: {
+    padding: 24,
   },
   // Loading / error cards share the empty box's metrics so the three states
   // occupy the same place on screen.
@@ -700,6 +827,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 30,
     gap: 10,
+  },
+  stateBoxCompact: {
+    paddingHorizontal: 20,
   },
   stateLabel: {
     fontSize: 11,
@@ -779,6 +909,9 @@ const styles = StyleSheet.create({
     padding: 18,
     marginBottom: 16,
   },
+  cardCompact: {
+    padding: 14,
+  },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -802,10 +935,12 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 8,
     borderWidth: 1,
+    flexShrink: 0,
   },
   badgeText: {
     fontSize: 10,
     fontWeight: '800',
+    flexShrink: 1,
   },
   metricsStrip: {
     flexDirection: 'row',
@@ -826,8 +961,9 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   metricVal: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
+    flexShrink: 1,
   },
   evidenceLine: {
     flexDirection: 'row',
@@ -880,6 +1016,7 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   repayBtn: {
@@ -890,7 +1027,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   repayBtnText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
   },
   graceBtn: {
@@ -906,7 +1043,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   rescueBtn: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 10,
     height: 48,
     borderRadius: 14,
     justifyContent: 'center',
@@ -1075,6 +1212,7 @@ const styles = StyleSheet.create({
   },
   filterChipRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginTop: 10,
   },

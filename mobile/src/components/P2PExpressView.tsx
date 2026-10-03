@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   Image,
   Modal,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -28,7 +28,6 @@ import {
   isAssetPriceUsable,
 } from '../solana/onChainService';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SOL_LOGO = require('../../assets/tokens/sol.png');
 const SKR_LOGO = require('../../assets/tokens/skr.png');
 
@@ -66,6 +65,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
   onSelectDesk,
 }) => {
   const { colors, mode } = useTheme();
+  const { width, height } = useWindowDimensions();
   // Use placeholder instead of hardcoded '50'
   const [amountStr, setAmountStr] = useState<string>(initialAmount ?? '');
   const [collateralType, setCollateralType] = useState<'SKR' | 'SOL'>('SKR');
@@ -328,13 +328,29 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
       </View>
 
       {/* ── Main Card ── */}
-      <View style={[styles.mainCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+      <View
+        style={[
+          styles.mainCard,
+          { backgroundColor: colors.card, borderColor: colors.cardBorder },
+          width < 400 && { padding: 14 },
+        ]}
+      >
         {/* Section 1: Borrow Amount */}
-        <View style={[styles.inputBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
+        <View
+          style={[
+            styles.inputBox,
+            { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder },
+            width < 400 && { paddingHorizontal: 12 },
+          ]}
+        >
           <View style={styles.inputHeaderRow}>
             <Text style={[styles.inputHeaderLabel, { color: colors.textSecondary }]}>BORROW AMOUNT</Text>
             {poolLiquidity > 0 && (
-              <Text style={[styles.poolAvailText, { color: colors.textMuted }]}>
+              <Text
+                style={[styles.poolAvailText, { color: colors.textMuted }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
                 Avail: ${poolLiquidity.toLocaleString()} USDC
               </Text>
             )}
@@ -342,7 +358,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
 
           <View style={styles.inputRow}>
             <TextInput
-              style={[styles.numberInput, { color: colors.text }]}
+              style={[styles.numberInput, { color: colors.text }, width < 400 && { fontSize: 24 }]}
               value={amountStr}
               onChangeText={(val) => {
                 const sanitized = val.replace(/[^0-9.]/g, '').replace(/(\..*?)\..*/g, '$1');
@@ -360,7 +376,13 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
         </View>
 
         {/* Section 2: Collateral in Escrow */}
-        <View style={[styles.inputBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder, marginTop: 20 }]}>
+        <View
+          style={[
+            styles.inputBox,
+            { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder, marginTop: 20 },
+            width < 400 && { paddingHorizontal: 12 },
+          ]}
+        >
           <View style={styles.inputHeaderRow}>
             <Text style={[styles.inputHeaderLabel, { color: colors.textSecondary }]}>COLLATERAL IN ESCROW</Text>
             <TouchableOpacity
@@ -372,7 +394,11 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
               }}
               activeOpacity={0.7}
             >
-              <Text style={[styles.balanceText, { color: colors.textMuted }]}>
+              <Text
+                style={[styles.balanceText, { color: colors.textMuted }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
                 Bal: {userBalance.toFixed(isDecimal ? 2 : 0)} {collateralType}{' '}
                 <Text style={{ color: colors.primaryLabel, fontWeight: '800' }}>MAX</Text>
               </Text>
@@ -384,6 +410,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
               style={[
                 styles.collateralAmountText,
                 { color: requiredCollateralUnits > 0 ? colors.text : colors.textMuted },
+                width < 400 && { fontSize: 22 },
               ]}
             >
               {requiredCollateralUnits > 0
@@ -509,7 +536,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
                     </View>
                   ) : null}
                 </View>
-                <Text style={[styles.deskSelectorSub, { color: colors.textMuted }]} numberOfLines={1}>
+                <Text style={[styles.deskSelectorSub, { color: colors.textMuted }]} numberOfLines={2}>
                   {bestPool
                     ? `${(bestPool.interestRateBps / 100).toFixed(1)}% / 30d • ${(bestPool.maxLtvBps / 100).toFixed(0)}% Max LTV • $${bestPool.totalLiquidity.toLocaleString()} Avail`
                     : 'No funded desk matches this loan'}
@@ -541,6 +568,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
                     { color: isManualDesk ? colors.primaryLabel : colors.text, textAlign: 'right' },
                   ]}
                   numberOfLines={1}
+                  ellipsizeMode="tail"
                 >
                   {bestPool.name} • {(bestPool.interestRateBps / 100).toFixed(1)}% / 30d
                 </Text>
@@ -616,13 +644,19 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
         animationType="fade"
         onRequestClose={() => setShowCollateralModal(false)}
       >
-        <View style={styles.dropdownModalOverlay}>
+        <View style={[styles.dropdownModalOverlay, width < 400 && { padding: 16 }]}>
           <TouchableOpacity
             style={StyleSheet.absoluteFill}
             activeOpacity={1}
             onPress={() => setShowCollateralModal(false)}
           />
-          <View style={[styles.dropdownModalContent, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          <View
+            style={[
+              styles.dropdownModalContent,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+              width < 400 && { padding: 16 },
+            ]}
+          >
             <View style={styles.dropdownModalHeader}>
               <Text style={[styles.dropdownModalTitle, { color: colors.text }]}>Select Collateral Asset</Text>
               <TouchableOpacity onPress={() => setShowCollateralModal(false)}>
@@ -709,7 +743,11 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
             <View style={[styles.confirmCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
               <View style={styles.confirmRow}>
                 <Text style={[styles.confirmLabel, { color: colors.textMuted }]}>Disbursed to Wallet</Text>
-                <Text style={[styles.confirmValueBold, { color: colors.primaryLabel }]}>
+                <Text
+                  style={[styles.confirmValueBold, { color: colors.primaryLabel }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
                   ${numAmount.toFixed(2)} USDC
                 </Text>
               </View>
@@ -718,7 +756,11 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
 
               <View style={styles.confirmRow}>
                 <Text style={[styles.confirmLabel, { color: colors.textMuted }]}>Collateral Escrowed</Text>
-                <Text style={[styles.confirmValue, { color: colors.text }]}>
+                <Text
+                  style={[styles.confirmValue, { color: colors.text }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
                   {requiredCollateralUnits.toFixed(3)} {collateralType}
                 </Text>
               </View>
@@ -727,7 +769,11 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
 
               <View style={styles.confirmRow}>
                 <Text style={[styles.confirmLabel, { color: colors.textMuted }]}>Term & Due Date</Text>
-                <Text style={[styles.confirmValue, { color: colors.text }]}>
+                <Text
+                  style={[styles.confirmValue, { color: colors.text }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
                   {durationDays} Days (+24h Grace)
                 </Text>
               </View>
@@ -736,7 +782,11 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
 
               <View style={styles.confirmRow}>
                 <Text style={[styles.confirmLabel, { color: colors.textMuted }]}>Total to Repay</Text>
-                <Text style={[styles.confirmValue, { color: colors.text }]}>
+                <Text
+                  style={[styles.confirmValue, { color: colors.text }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
                   ${(numAmount + estInterest).toFixed(2)} USDC
                 </Text>
               </View>
@@ -790,7 +840,13 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
             activeOpacity={1}
             onPress={() => setShowDeskModal(false)}
           />
-          <View style={[styles.deskModalSheet, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          <View
+            style={[
+              styles.deskModalSheet,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+              { maxHeight: height * 0.75 },
+            ]}
+          >
             <View style={styles.sheetHandle} />
 
             <View style={styles.sheetHeader}>
@@ -900,7 +956,11 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
                         </View>
                         <View style={{ flex: 1 }}>
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={[styles.deskModalItemName, { color: colors.text }]} numberOfLines={1}>
+                            <Text
+                              style={[styles.deskModalItemName, { color: colors.text }]}
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                            >
                               {pool.name}
                             </Text>
                             {pool.isVerifiedMerchant && (
@@ -996,10 +1056,12 @@ const styles = StyleSheet.create({
   poolAvailText: {
     fontSize: 11,
     fontWeight: '600',
+    flexShrink: 1,
   },
   balanceText: {
     fontSize: 11,
     fontWeight: '600',
+    flexShrink: 1,
   },
   inputRow: {
     flexDirection: 'row',
@@ -1099,6 +1161,7 @@ const styles = StyleSheet.create({
   summaryValue: {
     fontSize: 12,
     fontWeight: '700',
+    flexShrink: 1,
   },
   borrowBtn: {
     marginTop: 26,
@@ -1246,10 +1309,12 @@ const styles = StyleSheet.create({
   confirmValue: {
     fontSize: 14,
     fontWeight: '700',
+    flexShrink: 1,
   },
   confirmValueBold: {
     fontSize: 16,
     fontWeight: '900',
+    flexShrink: 1,
   },
   divider: {
     height: 1,
@@ -1347,11 +1412,13 @@ const styles = StyleSheet.create({
   deskSelectorTitle: {
     fontSize: 14,
     fontWeight: '800',
+    flexShrink: 1,
   },
   miniPill: {
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
+    flexShrink: 0,
   },
   miniPillText: {
     fontSize: 9,
@@ -1362,6 +1429,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
+    flexShrink: 0,
   },
   miniBadgeText: {
     fontSize: 9,
@@ -1378,7 +1446,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     padding: 22,
     paddingBottom: 36,
-    maxHeight: SCREEN_HEIGHT * 0.75,
   },
   sheetSubtitle: {
     fontSize: 12,
@@ -1387,7 +1454,7 @@ const styles = StyleSheet.create({
   },
   deskModalList: {
     marginTop: 10,
-    maxHeight: 380,
+    flexShrink: 1,
   },
   deskModalItem: {
     flexDirection: 'row',
@@ -1408,6 +1475,7 @@ const styles = StyleSheet.create({
   deskModalItemName: {
     fontSize: 14,
     fontWeight: '800',
+    flexShrink: 1,
   },
   deskModalItemSub: {
     fontSize: 11,

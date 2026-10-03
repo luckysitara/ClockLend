@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Linking,
   ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -39,6 +40,9 @@ export const TransactionNoticeModal: React.FC<TransactionNoticeModalProps> = ({
   onClose,
 }) => {
   const { colors } = useTheme();
+  const { width } = useWindowDimensions();
+  // Small screens (360-400dp) get tighter gutters so the card keeps room.
+  const isCompact = width < 400;
 
   if (!data) return null;
 
@@ -92,7 +96,7 @@ export const TransactionNoticeModal: React.FC<TransactionNoticeModalProps> = ({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <View style={[styles.overlay, isCompact && { paddingHorizontal: 16 }]}>
         <TouchableOpacity
           style={StyleSheet.absoluteFill}
           activeOpacity={1}
@@ -100,7 +104,13 @@ export const TransactionNoticeModal: React.FC<TransactionNoticeModalProps> = ({
           accessibilityRole="button"
           accessibilityLabel="Dismiss notice"
         />
-        <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+        <View
+          style={[
+            styles.modalCard,
+            { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            isCompact && { paddingHorizontal: 16, paddingBottom: 16 },
+          ]}
+        >
           {/* Top Close Button & Handle Bar */}
           <View style={styles.headerRow}>
             <View style={styles.handleBar} />
@@ -132,18 +142,30 @@ export const TransactionNoticeModal: React.FC<TransactionNoticeModalProps> = ({
               <View style={[styles.statsCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
                 {data.amount && (
                   <View style={styles.statRow}>
-                    <Text style={[styles.statLabel, { color: colors.textMuted }]}>
+                    <Text
+                      style={[styles.statLabel, { color: colors.textMuted }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
                       {data.type === 'repay' ? 'Repaid Principal & Fee' : 'Disbursed USDC'}
                     </Text>
-                    <Text style={[styles.statValue, { color: colors.primaryLabel }]}>{data.amount}</Text>
+                    <Text style={[styles.statValue, { color: colors.primaryLabel }]} numberOfLines={1}>
+                      {data.amount}
+                    </Text>
                   </View>
                 )}
                 {data.collateral && (
                   <View style={styles.statRow}>
-                    <Text style={[styles.statLabel, { color: colors.textMuted }]}>
+                    <Text
+                      style={[styles.statLabel, { color: colors.textMuted }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
                       {data.type === 'repay' ? 'Collateral Returned' : 'Collateral Locked'}
                     </Text>
-                    <Text style={[styles.statValue, { color: colors.accentLight }]}>{data.collateral}</Text>
+                    <Text style={[styles.statValue, { color: colors.accentLight }]} numberOfLines={1}>
+                      {data.collateral}
+                    </Text>
                   </View>
                 )}
                 {/* No "Credit Boost +N pts" row: the program applies
@@ -161,7 +183,13 @@ export const TransactionNoticeModal: React.FC<TransactionNoticeModalProps> = ({
                 <View style={styles.evidenceHeader}>
                   <View style={styles.evidenceDotRow}>
                     <View style={[styles.dotLive, { backgroundColor: colors.success }]} />
-                    <Text style={[styles.evidenceHeaderText, { color: colors.text }]}>ON-CHAIN VERIFICATION</Text>
+                    <Text
+                      style={[styles.evidenceHeaderText, { color: colors.text }]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      ON-CHAIN VERIFICATION
+                    </Text>
                   </View>
                   <View style={[styles.networkBadge, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
                     <Text style={[styles.networkBadgeText, { color: colors.primaryLabel }]}>Solana Mainnet</Text>
@@ -330,14 +358,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   statLabel: {
     fontSize: 12,
     fontWeight: '600',
+    flexShrink: 1,
   },
   statValue: {
     fontSize: 13,
     fontWeight: '800',
+    flexShrink: 0,
   },
   evidenceBox: {
     width: '100%',
@@ -366,12 +397,14 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
+    flexShrink: 1,
   },
   networkBadge: {
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
     borderWidth: 1,
+    flexShrink: 0,
   },
   networkBadgeText: {
     fontSize: 9,

@@ -36,12 +36,13 @@ export const QuickStartBar: React.FC<QuickStartBarProps> = ({
       <View style={styles.shieldRow}>
         <View style={styles.shieldBadge}>
           <Ionicons name="shield-checkmark" size={13} color={colors.success} />
-          <Text style={[styles.shieldText, { color: colors.success }]}>
+          <Text style={[styles.shieldText, { color: colors.success }]} numberOfLines={1}>
             24H GRACE SHIELD · NO INSTANT LIQUIDATION
           </Text>
         </View>
         <TouchableOpacity
           onPress={tap(onDismiss)}
+          style={styles.dismissBtn}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           activeOpacity={0.6}
           accessibilityRole="button"
@@ -63,7 +64,9 @@ export const QuickStartBar: React.FC<QuickStartBarProps> = ({
             accessibilityRole="button"
             accessibilityLabel={`Quick borrow ${amt} dollars`}
           >
-            <Text style={[styles.presetChipText, { color: colors.primaryLabel }]}>Borrow ${amt}</Text>
+            <Text style={[styles.presetChipText, { color: colors.primaryLabel }]} numberOfLines={1}>
+              Borrow ${amt}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -88,14 +91,23 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   shieldBadge: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
   },
   shieldText: {
+    flex: 1,
+    flexShrink: 1,
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
+  },
+  dismissBtn: {
+    flexShrink: 0,
+    marginLeft: 8,
   },
   sectionLabel: {
     fontSize: 9,
@@ -116,6 +128,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   presetChipText: {
+    flexShrink: 1,
     fontSize: 13,
     fontWeight: '800',
   },

@@ -126,9 +126,15 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
           {/* Top Header */}
           <View style={styles.topRow}>
-            <View>
-              <Text style={[styles.title, { color: colors.text }]}>Seeker Wallet Assets</Text>
-              <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <Text style={[styles.title, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
+                Seeker Wallet Assets
+              </Text>
+              <Text
+                style={[styles.subtitle, { color: colors.textSecondary }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
                 Hardware Seed Vault • @{skrHandle}
               </Text>
             </View>
@@ -203,9 +209,13 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
             {/* Total Balance Card */}
             <View style={[styles.totalBanner, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-              <View>
+              <View style={{ flex: 1, flexShrink: 1, minWidth: 0 }}>
                 <View style={styles.totalRow}>
-                  <Text style={[styles.totalLabel, { color: colors.textMuted }]}>
+                  <Text
+                    style={[styles.totalLabel, { color: colors.textMuted }]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
                     SOLANA PORTFOLIO VALUE
                   </Text>
                   <View
@@ -221,22 +231,36 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
                         styles.networkPillText,
                         { color: '#6366F1' },
                       ]}
+                      numberOfLines={1}
                     >
                       SOLANA MAINNET
                     </Text>
                   </View>
                 </View>
-                <Text style={[styles.totalVal, { color: colors.text }]}>
+                <Text
+                  style={[styles.totalVal, { color: colors.text }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                >
                   ${assets.totalUsdValue.toFixed(2)}
                 </Text>
-                <Text style={[styles.priceSourceNote, { color: priceTrusted ? colors.textMuted : colors.warning }]}>
+                <Text
+                  style={[styles.priceSourceNote, { color: priceTrusted ? colors.textMuted : colors.warning }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
                   {priceTrusted
                     ? `Live on-chain price feed${priceAge !== null ? ` · ${priceAge}s ago` : ''}`
                     : 'Price feed unavailable — values are last known, not live'}
                 </Text>
               </View>
               <View style={[styles.identityTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
-                <Text style={[styles.identityTagText, { color: colors.primaryLabel }]}>
+                <Text
+                  style={[styles.identityTagText, { color: colors.primaryLabel }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
                   {skrHandle.replace(/^@/, '').replace(/\.skr$/i, '')}.skr
                 </Text>
               </View>
@@ -251,14 +275,34 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
                 <View style={[styles.assetIconBox, { backgroundColor: 'rgba(0, 255, 163, 0.15)' }]}>
                   <Image source={SOL_LOGO} style={styles.assetLogo} resizeMode="contain" />
                 </View>
-                <View>
-                  <Text style={[styles.assetName, { color: colors.text }]}>Solana (SOL)</Text>
-                  <Text style={[styles.assetSymbol, { color: colors.textMuted }]}>Native Gas & Collateral</Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.assetName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
+                    Solana (SOL)
+                  </Text>
+                  <Text
+                    style={[styles.assetSymbol, { color: colors.textMuted }]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    Native Gas & Collateral
+                  </Text>
                 </View>
               </View>
               <View style={styles.assetRight}>
-                <Text style={[styles.assetAmount, { color: colors.text }]}>{assets.solBalance.toFixed(3)} SOL</Text>
-                <Text style={[styles.assetUsd, { color: colors.textSecondary }]}>
+                <Text
+                  style={[styles.assetAmount, { color: colors.text }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                >
+                  {assets.solBalance.toFixed(3)} SOL
+                </Text>
+                <Text
+                  style={[styles.assetUsd, { color: colors.textSecondary }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                >
                   ≈ ${solUsd.toFixed(2)}
                 </Text>
               </View>
@@ -270,14 +314,34 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
                 <View style={[styles.assetIconBox, { backgroundColor: 'rgba(59, 130, 246, 0.15)' }]}>
                   <Image source={USDC_LOGO} style={styles.assetLogo} resizeMode="contain" />
                 </View>
-                <View>
-                  <Text style={[styles.assetName, { color: colors.text }]}>USD Coin (USDC)</Text>
-                  <Text style={[styles.assetSymbol, { color: colors.textMuted }]}>Lending Liquidity</Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.assetName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
+                    USD Coin (USDC)
+                  </Text>
+                  <Text
+                    style={[styles.assetSymbol, { color: colors.textMuted }]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    Lending Liquidity
+                  </Text>
                 </View>
               </View>
               <View style={styles.assetRight}>
-                <Text style={[styles.assetAmount, { color: colors.text }]}>{assets.usdcBalance.toFixed(2)} USDC</Text>
-                <Text style={[styles.assetUsd, { color: colors.textSecondary }]}>
+                <Text
+                  style={[styles.assetAmount, { color: colors.text }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                >
+                  {assets.usdcBalance.toFixed(2)} USDC
+                </Text>
+                <Text
+                  style={[styles.assetUsd, { color: colors.textSecondary }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                >
                   ≈ ${assets.usdcBalance.toFixed(2)}
                 </Text>
               </View>
@@ -289,16 +353,34 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
                 <View style={[styles.assetIconBox, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
                   <Image source={SKR_LOGO} style={styles.assetLogo} resizeMode="contain" />
                 </View>
-                <View>
-                  <Text style={[styles.assetName, { color: colors.text }]}>Seeker Token (SKR)</Text>
-                  <Text style={[styles.assetSymbol, { color: colors.textMuted }]}>Reputation & Staking</Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.assetName, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
+                    Seeker Token (SKR)
+                  </Text>
+                  <Text
+                    style={[styles.assetSymbol, { color: colors.textMuted }]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    Reputation & Staking
+                  </Text>
                 </View>
               </View>
               <View style={styles.assetRight}>
-                <Text style={[styles.assetAmount, { color: colors.text }]}>
+                <Text
+                  style={[styles.assetAmount, { color: colors.text }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                >
                   {assets.skrBalance > 1000 ? assets.skrBalance.toLocaleString() : assets.skrBalance.toFixed(0)} SKR
                 </Text>
-                <Text style={[styles.assetUsd, { color: colors.textSecondary }]}>
+                <Text
+                  style={[styles.assetUsd, { color: colors.textSecondary }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
+                >
                   ≈ ${skrUsd.toFixed(2)}
                 </Text>
               </View>
@@ -316,15 +398,30 @@ export const WalletAssetsModal: React.FC<WalletAssetsModalProps> = ({
                           {token.symbol.slice(0, 3).toUpperCase()}
                         </Text>
                       </View>
-                      <View>
-                        <Text style={[styles.assetName, { color: colors.text }]}>{token.name || token.symbol}</Text>
-                        <Text style={[styles.assetSymbol, { color: colors.textMuted }]}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text
+                          style={[styles.assetName, { color: colors.text }]}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
+                          {token.name || token.symbol}
+                        </Text>
+                        <Text
+                          style={[styles.assetSymbol, { color: colors.textMuted }]}
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
+                        >
                           {token.symbol} • SPL Token
                         </Text>
                       </View>
                     </View>
                     <View style={styles.assetRight}>
-                      <Text style={[styles.assetAmount, { color: colors.text }]}>
+                      <Text
+                        style={[styles.assetAmount, { color: colors.text }]}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.7}
+                      >
                         {token.amount > 1000 ? token.amount.toLocaleString() : token.amount.toFixed(2)} {token.symbol}
                       </Text>
                     </View>
@@ -392,6 +489,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
   },
   closeText: {
     fontSize: 14,
@@ -518,11 +616,13 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.5,
+    flexShrink: 1,
   },
   networkPill: {
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
+    flexShrink: 0,
   },
   networkPillText: {
     fontSize: 9,
@@ -543,10 +643,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 12,
     borderWidth: 1,
+    flexShrink: 0,
+    maxWidth: '40%',
   },
   identityTagText: {
     fontSize: 12,
     fontWeight: '800',
+    flexShrink: 1,
   },
   sectionLabel: {
     fontSize: 11,
@@ -591,6 +694,7 @@ const styles = StyleSheet.create({
   assetName: {
     fontSize: 14,
     fontWeight: '700',
+    flexShrink: 1,
   },
   assetSymbol: {
     fontSize: 11,
@@ -598,6 +702,9 @@ const styles = StyleSheet.create({
   },
   assetRight: {
     alignItems: 'flex-end',
+    flexShrink: 0,
+    marginLeft: 8,
+    maxWidth: '45%',
   },
   assetAmount: {
     fontSize: 14,

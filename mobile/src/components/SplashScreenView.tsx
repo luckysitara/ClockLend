@@ -6,12 +6,11 @@ import {
   Text,
   Image,
   Animated,
-  Dimensions,
   Easing,
+  useWindowDimensions,
 } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 
-const { width } = Dimensions.get('window');
 const LOGO_IMG = require('../../assets/logo.png');
 
 interface SplashScreenViewProps {
@@ -20,6 +19,8 @@ interface SplashScreenViewProps {
 
 export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) => {
   const { colors } = useTheme();
+  // Per-render window width (used only for the entrance translate offsets).
+  const { width } = useWindowDimensions();
 
   // Animations
   const logoTranslateX = useRef(new Animated.Value(-width * 0.75)).current;
@@ -31,7 +32,7 @@ export const SplashScreenView: React.FC<SplashScreenViewProps> = ({ onFinish }) 
 
   const exitOpacity = useRef(new Animated.Value(1)).current;
 
-  const textWidthRef = useRef(162);
+  const textWidthRef = useRef(180);
   const hasFinishedRef = useRef(false);
 
   const finishEarly = () => {

@@ -11,6 +11,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -63,6 +64,10 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
   onQuestClaimed,
 }) => {
   const { colors, mode } = useTheme();
+  // Small phones (360-400dp): tighten paddings and title sizes so nothing
+  // gets clipped inside the profile cards and stake modals.
+  const { width } = useWindowDimensions();
+  const isCompact = width < 400;
   const [subView, setSubView] = useState<'PROFILE' | 'SETTINGS'>('PROFILE');
   const [lockEnabled, setLockEnabledState] = useState<boolean>(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -212,7 +217,13 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
       <View style={styles.topHeaderRow}>
         <View style={styles.brandRow}>
           <Image source={require('../../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
-          <Text style={[styles.screenTitle, { color: colors.text }]}>Profile</Text>
+          <Text
+            style={[styles.screenTitle, { color: colors.text }, isCompact && styles.screenTitleCompact]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            Profile
+          </Text>
         </View>
         <TouchableOpacity
           onPress={() => {
@@ -232,7 +243,13 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
       <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         <View style={styles.skrUserRow}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.skrUsernameText, { color: colors.text }]}>{skrUsername}</Text>
+            <Text
+              style={[styles.skrUsernameText, { color: colors.text }, isCompact && styles.skrUsernameTextCompact]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {skrUsername}
+            </Text>
             <Text style={[styles.skrHandleSub, { color: colors.primaryLabel }]}>
               Solana Seeker Verified Profile
             </Text>
@@ -247,13 +264,21 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         <View style={styles.heroQuickInfo}>
           <View style={styles.heroQuickItem}>
             <Text style={[styles.heroQuickLabel, { color: colors.textMuted }]}>Tier Status</Text>
-            <Text style={[styles.heroQuickValue, { color: colors.text }]}>
+            <Text
+              style={[styles.heroQuickValue, { color: colors.text }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
               {currentDiscount >= 25 ? 'VIP (25% MAX OFF)' : currentDiscount >= 1 ? `Active (${currentDiscount.toFixed(1)}% OFF)` : 'Standard (0% OFF)'}
             </Text>
           </View>
           <View style={styles.heroQuickItem}>
             <Text style={[styles.heroQuickLabel, { color: colors.textMuted }]}>Reputation Score</Text>
-            <Text style={[styles.heroQuickValue, { color: colors.primary }]}>
+            <Text
+              style={[styles.heroQuickValue, { color: colors.primary }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
               {userProfile.reputationScore > 0 ? `${(userProfile.reputationScore / 100).toFixed(0)} pts` : '0 pts'}
             </Text>
           </View>
@@ -269,9 +294,15 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
       {/* ── 2. SKR Staking Hub Card ── */}
       <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         <View style={styles.creditHeaderRow}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Ionicons name="sparkles" size={18} color={colors.primary} />
-            <Text style={[styles.cardHeading, { color: colors.text }]}>SKR Staking</Text>
+            <Text
+              style={[styles.cardHeading, { color: colors.text }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              SKR Staking
+            </Text>
           </View>
           <View style={[styles.tierTag, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
             <Text style={[styles.tierTagText, { color: colors.primaryLabel }]}>
@@ -288,7 +319,12 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         <View style={styles.bondStatsRow}>
           <View style={[styles.bondStatBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
             <Text style={[styles.bondStatLabel, { color: colors.textMuted }]}>Staked Balance</Text>
-            <Text style={[styles.bondStatValue, { color: colors.text }]}>
+            <Text
+              style={[styles.bondStatValue, { color: colors.text }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
               {stakedSkr.toLocaleString()} SKR
             </Text>
             <Text style={[styles.bondStatSub, { color: colors.textMuted }]}>
@@ -297,7 +333,12 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
           </View>
           <View style={[styles.bondStatBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
             <Text style={[styles.bondStatLabel, { color: colors.textMuted }]}>In Wallet</Text>
-            <Text style={[styles.bondStatValue, { color: colors.primaryLabel }]}>
+            <Text
+              style={[styles.bondStatValue, { color: colors.primaryLabel }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
               {walletSkr.toLocaleString()} SKR
             </Text>
             <Text style={[styles.bondStatSub, { color: colors.textMuted }]}>
@@ -319,7 +360,13 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         {/* Tier Progress Bar */}
         <View style={styles.progressContainer}>
           <View style={styles.progressHeaderRow}>
-            <Text style={[styles.progressTitle, { color: colors.textMuted }]}>DISCOUNT PROGRESS (10K SKR MAX)</Text>
+            <Text
+              style={[styles.progressTitle, { color: colors.textMuted }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              DISCOUNT PROGRESS (10K SKR MAX)
+            </Text>
             <Text style={[styles.progressBadgeText, { color: colors.primaryLabel }]}>
               {currentDiscount > 0 ? `${currentDiscount.toFixed(1)}% APR OFF` : '0% DISCOUNT'}
             </Text>
@@ -378,7 +425,13 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
               onPress={() => handleOpenStake(500)}
               activeOpacity={0.7}
             >
-              <Text style={[styles.presetBtnText, { color: colors.primaryLabel }]}>+500 SKR</Text>
+              <Text
+                style={[styles.presetBtnText, { color: colors.primaryLabel }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                +500 SKR
+              </Text>
               <Text style={[styles.presetBtnSub, { color: colors.textMuted }]}>~2.0% off</Text>
             </TouchableOpacity>
 
@@ -387,7 +440,13 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
               onPress={() => handleOpenStake(5000)}
               activeOpacity={0.7}
             >
-              <Text style={[styles.presetBtnText, { color: colors.primaryLabel }]}>+5,000 SKR</Text>
+              <Text
+                style={[styles.presetBtnText, { color: colors.primaryLabel }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                +5,000 SKR
+              </Text>
               <Text style={[styles.presetBtnSub, { color: colors.textMuted }]}>~13.0% off</Text>
             </TouchableOpacity>
 
@@ -396,7 +455,13 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
               onPress={() => handleOpenStake(10000)}
               activeOpacity={0.7}
             >
-              <Text style={[styles.presetBtnText, { color: colors.primaryLabel }]}>+10,000 SKR</Text>
+              <Text
+                style={[styles.presetBtnText, { color: colors.primaryLabel }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                +10,000 SKR
+              </Text>
               <Text style={[styles.presetBtnSub, { color: colors.textMuted }]}>25% MAX off</Text>
             </TouchableOpacity>
           </View>
@@ -406,9 +471,15 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
       {/* ── 3. Staking Yield Rewards Card ── */}
       <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
         <View style={styles.creditHeaderRow}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Ionicons name="gift-outline" size={18} color={colors.success} />
-            <Text style={[styles.cardHeading, { color: colors.text }]}>Protocol Yield Dividends</Text>
+            <Text
+              style={[styles.cardHeading, { color: colors.text }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              Protocol Yield Dividends
+            </Text>
           </View>
           <View style={[styles.tierTag, { backgroundColor: accruedUsd > 0 ? 'rgba(16, 185, 129, 0.12)' : colors.cardAlt, borderColor: accruedUsd > 0 ? colors.success : colors.cardBorder }]}>
             <Text style={[styles.tierTagText, { color: accruedUsd > 0 ? colors.success : colors.textMuted }]}>
@@ -424,11 +495,25 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
         <View style={styles.yieldStatsGrid}>
           <View style={[styles.yieldStatItem, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
             <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Accrued Yield</Text>
-            <Text style={[styles.yieldAmountText, { color: colors.text }]}>${accruedUsd.toFixed(4)} USDC</Text>
+            <Text
+              style={[styles.yieldAmountText, { color: colors.text }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              ${accruedUsd.toFixed(4)} USDC
+            </Text>
           </View>
           <View style={[styles.yieldStatItem, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
             <Text style={[styles.metricLabel, { color: colors.textMuted }]}>Lifetime Claimed</Text>
-            <Text style={[styles.yieldAmountText, { color: colors.textSecondary }]}>${totalClaimedUsd.toFixed(4)} USDC</Text>
+            <Text
+              style={[styles.yieldAmountText, { color: colors.textSecondary }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              ${totalClaimedUsd.toFixed(4)} USDC
+            </Text>
           </View>
         </View>
 
@@ -551,7 +636,13 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
             onPress={() => setShowStakeModal(false)}
           />
 
-          <View style={[styles.modalSheet, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          <View
+            style={[
+              styles.modalSheet,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+              isCompact && styles.modalSheetCompact,
+            ]}
+          >
             <View style={styles.modalHeaderRow}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Ionicons name="sparkles" size={20} color={colors.primary} />
@@ -577,7 +668,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
             <View style={[styles.inputBox, { backgroundColor: colors.cardAlt, borderColor: isStakeExceeding ? colors.danger : colors.cardBorder }]}>
               <View style={styles.inputRow}>
                 <TextInput
-                  style={[styles.textInput, { color: colors.text }]}
+                  style={[styles.textInput, { color: colors.text }, isCompact && styles.textInputCompact]}
                   placeholder="0.00"
                   placeholderTextColor={colors.textMuted}
                   keyboardType="decimal-pad"
@@ -634,13 +725,19 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
             <View style={[styles.projectedCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
               <View style={styles.projectedRow}>
                 <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>Projected APR Discount</Text>
-                <Text style={[styles.projectedVal, { color: colors.primaryLabel }]}>
+                <Text
+                  style={[styles.projectedVal, { color: colors.primaryLabel }]}
+                  numberOfLines={1}
+                >
                   {projectedDiscount.toFixed(1)}% APR OFF ({projectedTier})
                 </Text>
               </View>
               <View style={styles.projectedRow}>
                 <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>New Total Stake</Text>
-                <Text style={[styles.projectedVal, { color: colors.text }]}>
+                <Text
+                  style={[styles.projectedVal, { color: colors.text }]}
+                  numberOfLines={1}
+                >
                   {projectedStakedTotal.toLocaleString()} SKR
                 </Text>
               </View>
@@ -708,7 +805,13 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
             onPress={() => setShowUnstakeModal(false)}
           />
 
-          <View style={[styles.modalSheet, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
+          <View
+            style={[
+              styles.modalSheet,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+              isCompact && styles.modalSheetCompact,
+            ]}
+          >
             <View style={styles.modalHeaderRow}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Ionicons name="arrow-undo-circle" size={20} color={colors.primary} />
@@ -727,16 +830,31 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
             <View style={[styles.projectedCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
               <View style={styles.projectedRow}>
                 <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>Total Staked</Text>
-                <Text style={[styles.projectedVal, { color: colors.text }]}>{stakedSkr.toLocaleString()} SKR</Text>
+                <Text
+                  style={[styles.projectedVal, { color: colors.text }]}
+                  numberOfLines={1}
+                >
+                  {stakedSkr.toLocaleString()} SKR
+                </Text>
               </View>
               <View style={styles.projectedRow}>
                 <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>Available to Unstake</Text>
-                <Text style={[styles.projectedVal, { color: colors.success }]}>{availableToUnstake.toLocaleString()} SKR</Text>
+                <Text
+                  style={[styles.projectedVal, { color: colors.success }]}
+                  numberOfLines={1}
+                >
+                  {availableToUnstake.toLocaleString()} SKR
+                </Text>
               </View>
               {lockedSkr > 0 && (
                 <View style={styles.projectedRow}>
                   <Text style={[styles.projectedLabel, { color: colors.warning }]}>Locked in Loans</Text>
-                  <Text style={[styles.projectedVal, { color: colors.warning }]}>{lockedSkr.toLocaleString()} SKR</Text>
+                  <Text
+                    style={[styles.projectedVal, { color: colors.warning }]}
+                    numberOfLines={1}
+                  >
+                    {lockedSkr.toLocaleString()} SKR
+                  </Text>
                 </View>
               )}
             </View>
@@ -745,7 +863,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
             <View style={[styles.inputBox, { backgroundColor: colors.cardAlt, borderColor: isUnstakeExceeding ? colors.danger : colors.cardBorder }]}>
               <View style={styles.inputRow}>
                 <TextInput
-                  style={[styles.textInput, { color: colors.text }]}
+                  style={[styles.textInput, { color: colors.text }, isCompact && styles.textInputCompact]}
                   placeholder="0.00"
                   placeholderTextColor={colors.textMuted}
                   keyboardType="decimal-pad"
@@ -803,19 +921,28 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
               <View style={[styles.projectedCard, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
                 <View style={styles.projectedRow}>
                   <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>Unstaking Amount</Text>
-                  <Text style={[styles.projectedVal, { color: colors.primaryLabel }]}>
+                  <Text
+                    style={[styles.projectedVal, { color: colors.primaryLabel }]}
+                    numberOfLines={1}
+                  >
                     {parsedUnstakeAmount.toLocaleString()} SKR ({availableToUnstake > 0 ? Math.min(100, Math.round((parsedUnstakeAmount / availableToUnstake) * 100)) : 0}%)
                   </Text>
                 </View>
                 <View style={styles.projectedRow}>
                   <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>Remaining Stake</Text>
-                  <Text style={[styles.projectedVal, { color: colors.text }]}>
+                  <Text
+                    style={[styles.projectedVal, { color: colors.text }]}
+                    numberOfLines={1}
+                  >
                     {remainingStaked.toLocaleString()} SKR
                   </Text>
                 </View>
                 <View style={styles.projectedRow}>
                   <Text style={[styles.projectedLabel, { color: colors.textMuted }]}>New APR Discount</Text>
-                  <Text style={[styles.projectedVal, { color: remainingDiscount > 0 ? colors.primaryLabel : colors.textSecondary }]}>
+                  <Text
+                    style={[styles.projectedVal, { color: remainingDiscount > 0 ? colors.primaryLabel : colors.textSecondary }]}
+                    numberOfLines={1}
+                  >
                     {remainingDiscount.toFixed(1)}% OFF {willDowngradeTier ? `(was ${currentDiscount.toFixed(1)}%)` : ''}
                   </Text>
                 </View>
@@ -899,6 +1026,10 @@ const styles = StyleSheet.create({
   screenTitle: {
     fontSize: 22,
     fontWeight: '800',
+    flexShrink: 1,
+  },
+  screenTitleCompact: {
+    fontSize: 20,
   },
   settingsBtn: {
     width: 38,
@@ -930,6 +1061,9 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: -0.3,
   },
+  skrUsernameTextCompact: {
+    fontSize: 18,
+  },
   skrHandleSub: {
     fontSize: 12,
     fontWeight: '600',
@@ -940,6 +1074,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 10,
     borderWidth: 1,
+    flexShrink: 0,
   },
   skrBadgeText: {
     fontSize: 10,
@@ -961,8 +1096,9 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   heroQuickValue: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
+    flexShrink: 1,
   },
   infoCard: {
     borderRadius: 22,
@@ -978,6 +1114,7 @@ const styles = StyleSheet.create({
   cardHeading: {
     fontSize: 16,
     fontWeight: '800',
+    flexShrink: 1,
   },
   creditHeaderRow: {
     flexDirection: 'row',
@@ -990,6 +1127,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 10,
     borderWidth: 1,
+    flexShrink: 0,
   },
   tierTagText: {
     fontSize: 11,
@@ -1023,8 +1161,9 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   bondStatValue: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '800',
+    flexShrink: 1,
   },
   bondStatSub: {
     fontSize: 11,
@@ -1058,6 +1197,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.5,
+    flexShrink: 1,
   },
   progressBadgeText: {
     fontSize: 11,
@@ -1144,13 +1284,13 @@ const styles = StyleSheet.create({
   presetBtn: {
     flex: 1,
     paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 6,
     borderRadius: 14,
     borderWidth: 1,
     alignItems: 'center',
   },
   presetBtnText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '800',
   },
   presetBtnSub: {
@@ -1176,7 +1316,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   yieldAmountText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '800',
     marginTop: 2,
   },
@@ -1297,6 +1437,10 @@ const styles = StyleSheet.create({
     padding: 22,
     paddingBottom: 36,
   },
+  modalSheetCompact: {
+    padding: 16,
+    paddingBottom: 36,
+  },
   modalHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1344,6 +1488,9 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '900',
     padding: 0,
+  },
+  textInputCompact: {
+    fontSize: 20,
   },
   inputTokenLabel: {
     fontSize: 16,
@@ -1396,10 +1543,13 @@ const styles = StyleSheet.create({
   projectedLabel: {
     fontSize: 12,
     fontWeight: '600',
+    flexShrink: 0,
   },
   projectedVal: {
     fontSize: 13,
     fontWeight: '800',
+    flexShrink: 1,
+    textAlign: 'right',
   },
   errorBox: {
     flexDirection: 'row',

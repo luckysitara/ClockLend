@@ -9,7 +9,7 @@ import {
   Image,
   Animated,
   Modal,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,9 +33,6 @@ interface HomeDashboardViewProps {
   isLoading?: boolean;
 }
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const BANNER_WIDTH = SCREEN_WIDTH - 32;
-
 export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
   skrHandle,
   userProfile,
@@ -52,6 +49,11 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
   isLoading = false,
 }) => {
   const { colors, mode } = useTheme();
+  // Width is read per-render so rotation and small (360–400dp) devices stay in sync
+  // with the carousel paging math and the compact typography below.
+  const { width } = useWindowDimensions();
+  const bannerWidth = width - 32;
+  const isCompact = width < 400;
   const [showBalance, setShowBalance] = useState<boolean>(true);
   const [activeBanner, setActiveBanner] = useState<number>(0);
   const [showNotificationsModal, setShowNotificationsModal] = useState<boolean>(false);
@@ -107,7 +109,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
       setActiveBanner((prev) => {
         const next = (prev + 1) % BANNER_CARDS.length;
         carouselRef.current?.scrollTo({
-          x: next * BANNER_WIDTH,
+          x: next * bannerWidth,
           animated: true,
         });
         return next;
@@ -115,7 +117,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
     }, 7500);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [bannerWidth]);
 
   return (
     <ScrollView
@@ -139,8 +141,14 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
           <View style={[styles.avatar, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <Image source={require('../../assets/logo.png')} style={styles.avatarImg} resizeMode="contain" />
           </View>
-          <View>
-            <Text style={[styles.greetingText, { color: colors.text }]}>Hello, {skrHandle}</Text>
+          <View style={styles.userTextWrap}>
+            <Text
+              style={[styles.greetingText, { color: colors.text }, isCompact && styles.greetingTextCompact]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              Hello, {skrHandle}
+            </Text>
           </View>
         </View>
 
@@ -181,7 +189,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
             accessibilityLabel="Leaderboard points"
           >
             <Text style={styles.trophyIcon}>🏅</Text>
-            <Text style={[styles.pointsText, { color: colors.text }]}>
+            <Text style={[styles.pointsText, { color: colors.text }]} numberOfLines={1}>
               {userProfile.reputationScore > 0 ? `${(userProfile.reputationScore / 100).toFixed(0)} pts` : '0 pts'}
             </Text>
           </TouchableOpacity>
@@ -193,11 +201,11 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
         colors={mode === 'dark' ? ['#172554', '#1E40AF', '#2563EB'] : ['#1E3A8A', '#1D4ED8', '#2563EB']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={styles.heroCard}
+        style={[styles.heroCard, isCompact && styles.heroCardCompact]}
       >
         <View style={styles.heroTopRow}>
           <View style={styles.availableLabelRow}>
-            <Text style={styles.availableLabel}>Total Available Balance</Text>
+            <Text style={styles.availableLabel} numberOfLines={1}>Total Available Balance</Text>
             <TouchableOpacity
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -220,10 +228,19 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.heroBalance}>
+        <Text
+          style={[styles.heroBalance, isCompact && styles.heroBalanceCompact]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
+        >
           {showBalance ? `$${totalBalanceUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '$ ••••'}
         </Text>
-        <Text style={styles.heroSubBalance}>
+        <Text
+          style={[styles.heroSubBalance, isCompact && styles.heroSubBalanceCompact]}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
           {showBalance
             ? `${solBalance.toFixed(3)} SOL • ${(walletAssets?.usdcBalance ?? 0).toFixed(2)} USDC${(walletAssets?.skrBalance ?? 0) > 0 ? ` • ${(walletAssets?.skrBalance ?? 0).toLocaleString()} SKR` : ''}`
             : '••••'}
@@ -245,7 +262,12 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
           >
             <Ionicons name="arrow-down-outline" size={28} color={colors.primary} />
           </TouchableOpacity>
-          <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Borrow</Text>
+          <Text
+            style={[styles.actionLabel, { color: colors.textSecondary }, isCompact && styles.actionLabelCompact]}
+            numberOfLines={1}
+          >
+            Borrow
+          </Text>
         </View>
 
         <View style={styles.actionItem}>
@@ -268,7 +290,10 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
               )}
             </View>
           </TouchableOpacity>
-          <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>
+          <Text
+            style={[styles.actionLabel, { color: colors.textSecondary }, isCompact && styles.actionLabelCompact]}
+            numberOfLines={1}
+          >
             {activeOrders.length > 0 ? `Loans (${activeOrders.length})` : 'Loans'}
           </Text>
         </View>
@@ -286,7 +311,12 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
           >
             <Ionicons name="storefront-outline" size={28} color={colors.primary} />
           </TouchableOpacity>
-          <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>Desks</Text>
+          <Text
+            style={[styles.actionLabel, { color: colors.textSecondary }, isCompact && styles.actionLabelCompact]}
+            numberOfLines={1}
+          >
+            Desks
+          </Text>
         </View>
       </View>
 
@@ -301,7 +331,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
             nestedScrollEnabled={true}
             onMomentumScrollEnd={(e) => {
               const offsetX = e.nativeEvent.contentOffset.x;
-              const index = Math.round(offsetX / BANNER_WIDTH);
+              const index = Math.round(offsetX / bannerWidth);
               if (index >= 0 && index < BANNER_CARDS.length) {
                 setActiveBanner(index);
               }
@@ -310,7 +340,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
             {BANNER_CARDS.map((item) => (
               <TouchableOpacity
                 key={item.id}
-                style={[styles.bannerWrapper, { width: BANNER_WIDTH }]}
+                style={[styles.bannerWrapper, { width: bannerWidth }]}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   item.onPress();
@@ -352,7 +382,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
               try { Haptics.selectionAsync(); } catch {}
               setActiveBanner(idx);
               carouselRef.current?.scrollTo({
-                x: idx * BANNER_WIDTH,
+                x: idx * bannerWidth,
                 animated: true,
               });
             }}
@@ -403,16 +433,18 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
                       color={inGrace ? '#F59E0B' : '#10B981'}
                     />
                   </View>
-                  <View>
-                    <Text style={[styles.orderPoolName, { color: colors.text }]}>{order.poolName}</Text>
-                    <Text style={[styles.orderSub, { color: colors.textMuted }]}>
+                  <View style={styles.orderTextWrap}>
+                    <Text style={[styles.orderPoolName, { color: colors.text }]} numberOfLines={1}>
+                      {order.poolName}
+                    </Text>
+                    <Text style={[styles.orderSub, { color: colors.textMuted }]} numberOfLines={1}>
                       Collateral: {order.collateralName}
                     </Text>
                   </View>
                 </View>
 
                 <View style={styles.orderRight}>
-                  <Text style={[styles.orderAmount, { color: colors.text }]}>
+                  <Text style={[styles.orderAmount, { color: colors.text }]} numberOfLines={1}>
                     ${order.principalAmount} USDC
                   </Text>
                   <Text style={[styles.orderStatus, { color: inGrace ? '#F59E0B' : '#10B981' }]}>
@@ -441,9 +473,11 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
           <View style={[styles.modalSheet, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
             <View style={styles.modalSheetHandle} />
             <View style={styles.modalSheetHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1, minWidth: 0 }}>
                 <Ionicons name="notifications" size={20} color={colors.primary} />
-                <Text style={[styles.modalSheetTitle, { color: colors.text }]}>Notifications & Alerts</Text>
+                <Text style={[styles.modalSheetTitle, { color: colors.text }]} numberOfLines={1}>
+                  Notifications & Alerts
+                </Text>
               </View>
               <TouchableOpacity
                 onPress={() => setShowNotificationsModal(false)}
@@ -455,7 +489,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 380 }}>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: '55%', flexShrink: 1 }}>
               <View style={[styles.notificationItem, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
                 <View style={[styles.notifIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
                   <Ionicons name="shield-checkmark" size={18} color="#10B981" />
@@ -520,6 +554,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   userSection: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -532,19 +568,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
+    flexShrink: 0,
   },
   avatarImg: {
     width: 26,
     height: 26,
   },
+  userTextWrap: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
   greetingText: {
     fontSize: 18,
     fontWeight: '800',
+  },
+  greetingTextCompact: {
+    fontSize: 16,
   },
   topRightControls: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexShrink: 0,
   },
   iconBtn: {
     width: 38,
@@ -558,7 +603,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 12,
     borderWidth: 1,
@@ -580,6 +625,9 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 6,
   },
+  heroCardCompact: {
+    padding: 18,
+  },
   heroTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -590,6 +638,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexShrink: 1,
   },
   availableLabel: {
     color: '#FFFFFF',
@@ -610,14 +659,20 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
     marginBottom: 4,
   },
+  heroBalanceCompact: {
+    fontSize: 28,
+  },
   heroSubBalance: {
     color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 14,
     fontWeight: '500',
   },
+  heroSubBalanceCompact: {
+    fontSize: 13,
+  },
   actionRow: {
     flexDirection: 'row',
-    gap: 14,
+    gap: 10,
     marginBottom: 20,
   },
   actionItem: {
@@ -642,6 +697,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 8,
     letterSpacing: 0.2,
+  },
+  actionLabelCompact: {
+    fontSize: 11,
   },
   actionBadge: {
     position: 'absolute',
@@ -788,6 +846,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   orderLeft: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -798,6 +859,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
+  },
+  orderTextWrap: {
+    flexShrink: 1,
+    minWidth: 0,
   },
   orderPoolName: {
     fontSize: 15,
@@ -809,6 +875,8 @@ const styles = StyleSheet.create({
   },
   orderRight: {
     alignItems: 'flex-end',
+    flexShrink: 0,
+    marginLeft: 8,
   },
   orderAmount: {
     fontSize: 15,
@@ -832,7 +900,7 @@ const styles = StyleSheet.create({
     borderRightWidth: 1,
     padding: 20,
     paddingBottom: 36,
-    maxHeight: '75%',
+    maxHeight: '62%',
   },
   modalSheetHandle: {
     width: 38,
@@ -854,6 +922,7 @@ const styles = StyleSheet.create({
   },
   modalCloseBtn: {
     padding: 4,
+    flexShrink: 0,
   },
   notificationItem: {
     flexDirection: 'row',

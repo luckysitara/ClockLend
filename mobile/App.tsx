@@ -9,15 +9,11 @@ import {
   Linking,
   AppState,
   AppStateStatus,
-  Platform,
   StatusBar,
+  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 
-const STATUS_BAR_INSET = Platform.select({
-  android: Math.max(StatusBar.currentHeight ?? 0, 36) + 12,
-  ios: 48,
-  default: 16,
-});
 import { Ionicons } from '@expo/vector-icons';
 import { PublicKey } from '@solana/web3.js';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -114,6 +110,15 @@ const INITIAL_COMMUNITY_OFFERS: P2POffer[] = [];
 
 function MainApp() {
   const { colors, mode } = useTheme();
+
+  // Small-screen layout metrics (computed per render so rotation / window
+  // resizes are picked up). react-native-safe-area-context is not installed,
+  // so the Android gesture/nav-bar inset is derived from the screen-vs-window
+  // height difference.
+  const windowH = useWindowDimensions().height;
+  const screenH = Dimensions.get('screen').height;
+  const bottomInset = Math.max(0, screenH - windowH);
+  const statusBarInset = StatusBar.currentHeight || 24;
 
   // Seeker Wallet & Network Session
   const [showSplash, setShowSplash] = useState<boolean>(true);
@@ -1691,7 +1696,7 @@ function MainApp() {
   // 3. If no wallet connected, show the Seeker Onboarding Gate
   if (!session) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: colors.background, paddingTop: statusBarInset }]}>
         <StatusBar
           translucent
           backgroundColor="transparent"
@@ -1758,7 +1763,7 @@ function MainApp() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background, paddingTop: statusBarInset }]}>
       <StatusBar
         translucent
         backgroundColor="transparent"
@@ -1887,7 +1892,16 @@ function MainApp() {
       </View>
 
       {/* Modern 5-Item Bottom Navigation Bar with Center Floating Button (Matches Screenshots) */}
-      <View style={[styles.tabBar, { backgroundColor: colors.card, borderTopColor: colors.cardBorder }]}>
+      <View
+        style={[
+          styles.tabBar,
+          {
+            backgroundColor: colors.card,
+            borderTopColor: colors.cardBorder,
+            paddingBottom: 8 + Math.max(bottomInset, 8),
+          },
+        ]}
+      >
         {/* 1. Home */}
         <TouchableOpacity
           style={styles.tabItem}
@@ -1965,10 +1979,10 @@ function MainApp() {
               <View
                 style={[
                   styles.tabBadge,
-                  { backgroundColor: '#EF4444', top: -3, right: -12, minWidth: 16, height: 16 },
+                  { backgroundColor: '#EF4444', top: -3, right: -12, minWidth: 16, height: 16, paddingHorizontal: 4 },
                 ]}
               >
-                <Text style={styles.tabBadgeText}>{orders.length}</Text>
+                <Text style={styles.tabBadgeText} numberOfLines={1}>{orders.length}</Text>
               </View>
             )}
           </View>
@@ -2099,7 +2113,6 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingTop: STATUS_BAR_INSET,
   },
   body: {
     flex: 1,
@@ -2156,7 +2169,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -2,
     right: -8,
-    width: 16,
     height: 16,
     borderRadius: 8,
     justifyContent: 'center',
@@ -2171,6 +2183,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 84,
     alignSelf: 'center',
+    maxWidth: '90%',
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
@@ -2187,5 +2200,6 @@ const styles = StyleSheet.create({
   toastText: {
     fontSize: 14,
     fontWeight: '700',
+    flexShrink: 1,
   },
 });

@@ -8,7 +8,6 @@ import {
   Modal,
   Switch,
   Linking,
-  Platform,
   StatusBar,
   TextInput,
   Alert,
@@ -17,12 +16,6 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../theme/ThemeContext';
-
-const STATUS_BAR_INSET = Platform.select({
-  android: Math.max(StatusBar.currentHeight ?? 0, 36) + 16,
-  ios: 52,
-  default: 24,
-});
 
 export interface SettingsViewProps {
   onBack: () => void;
@@ -130,6 +123,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onOpenAssetsModal,
 }) => {
   const { colors, mode, toggleTheme } = useTheme();
+  // Read per render (module-level snapshots miss status-bar changes).
+  const statusBarInset = StatusBar.currentHeight || 24;
   const [activeModal, setActiveModal] = useState<LegalModalType>(null);
   const [feedbackCategory, setFeedbackCategory] = useState<string>('Feature Suggestion');
   const [feedbackMessage, setFeedbackMessage] = useState<string>('');
@@ -155,7 +150,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* ── Top Header Row with Back Arrow & ClockLend Logo ── */}
-      <View style={[styles.headerRow, { borderBottomColor: colors.divider }]}>
+      <View style={[styles.headerRow, { borderBottomColor: colors.divider, paddingTop: statusBarInset }]}>
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => {
@@ -197,7 +192,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </View>
             <View style={styles.textCol}>
               <Text style={[styles.rowTitle, { color: colors.text }]}>Profile Settings</Text>
-              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={2}>
                 {skrHandle} • On-chain credit & bond stats
               </Text>
             </View>
@@ -213,7 +208,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </View>
             <View style={styles.textCol}>
               <Text style={[styles.rowTitle, { color: colors.text }]}>Device Screen Lock</Text>
-              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={2}>
                 System PIN, pattern, or password
               </Text>
             </View>
@@ -231,7 +226,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </View>
             <View style={styles.textCol}>
               <Text style={[styles.rowTitle, { color: colors.text }]}>App Lock on Resume</Text>
-              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={2}>
                 Require unlock each app launch
               </Text>
             </View>
@@ -265,7 +260,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </View>
             <View style={styles.textCol}>
               <Text style={[styles.rowTitle, { color: colors.text }]}>Appearance</Text>
-              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={2}>
                 {mode === 'dark' ? 'Dark mode' : 'Light mode'}
               </Text>
             </View>
@@ -289,7 +284,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </View>
             <View style={styles.textCol}>
               <Text style={[styles.rowTitle, { color: colors.text }]}>Currency Display</Text>
-              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={2}>
                 USDC / USD & SOL Balances
               </Text>
             </View>
@@ -313,7 +308,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </View>
             <View style={styles.textCol}>
               <Text style={[styles.rowTitle, { color: colors.text }]}>Security Center</Text>
-              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={2}>
                 Seed Vault, non-custodial keys & audits
               </Text>
             </View>
@@ -333,7 +328,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </View>
             <View style={styles.textCol}>
               <Text style={[styles.rowTitle, { color: colors.text }]}>Terms & Conditions</Text>
-              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={2}>
                 Protocol smart contract rules & grace period
               </Text>
             </View>
@@ -353,7 +348,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </View>
             <View style={styles.textCol}>
               <Text style={[styles.rowTitle, { color: colors.text }]}>Legal & Compliance</Text>
-              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={2}>
                 Regulatory status, risk disclosures & audits
               </Text>
             </View>
@@ -373,7 +368,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </View>
             <View style={styles.textCol}>
               <Text style={[styles.rowTitle, { color: colors.text }]}>Privacy Policy</Text>
-              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={2}>
                 Zero tracking & decentralized ledger storage
               </Text>
             </View>
@@ -395,7 +390,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </View>
             <View style={styles.textCol}>
               <Text style={[styles.rowTitle, { color: colors.text }]}>FAQs</Text>
-              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={2}>
                 Frequently asked questions & protocol guides
               </Text>
             </View>
@@ -415,7 +410,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </View>
             <View style={styles.textCol}>
               <Text style={[styles.rowTitle, { color: colors.text }]}>Feedback & Suggestions</Text>
-              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={2}>
                 Share your ideas directly with the contributors
               </Text>
             </View>
@@ -437,7 +432,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </View>
             <View style={styles.textCol}>
               <Text style={[styles.rowTitle, { color: colors.text }]}>Program on Solscan</Text>
-              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={2}>
                 Verified Solana Mainnet contract
               </Text>
             </View>
@@ -460,7 +455,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </View>
                 <View style={styles.textCol}>
                   <Text style={[styles.rowTitle, { color: colors.primaryLabel }]}>Lock App Now</Text>
-                  <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+                  <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={2}>
                     Immediately trigger security lock screen
                   </Text>
                 </View>
@@ -486,8 +481,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             backgroundColor="transparent"
             barStyle={mode === 'dark' ? 'light-content' : 'dark-content'}
           />
-          <View style={[styles.modalSheetHeader, { borderBottomColor: colors.divider }]}>
-            <Text style={[styles.modalSheetTitle, { color: colors.text }]}>
+          <View style={[styles.modalSheetHeader, { borderBottomColor: colors.divider, paddingTop: statusBarInset }]}>
+            <Text style={[styles.modalSheetTitle, { color: colors.text }]} numberOfLines={1} ellipsizeMode="tail">
               {activeModal === 'TERMS_CONDITIONS' && 'Terms & Conditions'}
               {activeModal === 'LEGAL_COMPLIANCE' && 'Legal & Compliance'}
               {activeModal === 'PRIVACY_POLICY' && 'Privacy Policy'}
@@ -624,7 +619,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   activeOpacity={0.8}
                 >
                   <Ionicons name="open-outline" size={18} color="#FFFFFF" />
-                  <Text style={styles.openBrowserBtnText}>Open Full Terms on Web (kikhaus.com)</Text>
+                  <Text style={styles.openBrowserBtnText} numberOfLines={1} adjustsFontSizeToFit>
+                    Open Full Terms on Web (kikhaus.com)
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -720,7 +717,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   activeOpacity={0.8}
                 >
                   <Ionicons name="open-outline" size={18} color="#FFFFFF" />
-                  <Text style={styles.openBrowserBtnText}>Open Legal Notice on Web (kikhaus.com)</Text>
+                  <Text style={styles.openBrowserBtnText} numberOfLines={1} adjustsFontSizeToFit>
+                    Open Legal Notice on Web (kikhaus.com)
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -835,7 +834,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   activeOpacity={0.8}
                 >
                   <Ionicons name="open-outline" size={18} color="#FFFFFF" />
-                  <Text style={styles.openBrowserBtnText}>Open Privacy Policy on Web (kikhaus.com)</Text>
+                  <Text style={styles.openBrowserBtnText} numberOfLines={1} adjustsFontSizeToFit>
+                    Open Privacy Policy on Web (kikhaus.com)
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -880,7 +881,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                 <Text style={[styles.docHeading, { color: colors.text }]}>Verified Mainnet Program ID</Text>
                 <View style={[styles.codeBox, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
-                  <Text style={[styles.codeText, { color: colors.primaryLabel }]}>
+                  <Text
+                    style={[styles.codeText, { color: colors.primaryLabel }]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                  >
                     9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG
                   </Text>
                 </View>
@@ -975,7 +981,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: STATUS_BAR_INSET,
     paddingBottom: 14,
     borderBottomWidth: 1,
   },
@@ -1022,15 +1027,16 @@ const styles = StyleSheet.create({
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    padding: 12,
     gap: 14,
   },
   iconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
   },
   textCol: {
     flex: 1,
@@ -1065,7 +1071,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: STATUS_BAR_INSET,
     paddingBottom: 16,
     borderBottomWidth: 1,
   },
@@ -1073,6 +1078,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     flex: 1,
+    flexShrink: 1,
     marginRight: 12,
   },
   modalSheetClose: {
@@ -1194,7 +1200,7 @@ const styles = StyleSheet.create({
   },
   codeText: {
     fontFamily: 'monospace',
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '700',
     textAlign: 'center',
   },

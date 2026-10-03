@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   TextInput,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -33,6 +34,9 @@ export const QuickHubView: React.FC<QuickHubViewProps> = ({
   onLockApp,
 }) => {
   const { colors } = useTheme();
+  // Small phones (360-400dp): shrink the page title so it never clips.
+  const { width } = useWindowDimensions();
+  const isCompact = width < 400;
   const [searchQuery, setSearchQuery] = useState('');
 
   const actions = [
@@ -91,7 +95,13 @@ export const QuickHubView: React.FC<QuickHubViewProps> = ({
       showsVerticalScrollIndicator={false}
     >
       {/* Title */}
-      <Text style={[styles.headerTitle, { color: colors.text }]}>ClockLend Hub</Text>
+      <Text
+        style={[styles.headerTitle, { color: colors.text }, isCompact && styles.headerTitleCompact]}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
+        ClockLend Hub
+      </Text>
 
       {/* Search Input (Matches 94347e6f) */}
       <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}>
@@ -147,6 +157,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
+  headerTitleCompact: {
+    fontSize: 20,
+  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -168,7 +181,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   gridTile: {
-    width: '48%',
+    flexGrow: 1,
+    flexBasis: '47%',
     aspectRatio: 1.15,
     borderRadius: 20,
     borderWidth: 1,

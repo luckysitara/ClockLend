@@ -35,8 +35,8 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Left: Brand Identity or Account Title */}
       {isProfileActive ? (
         <View style={styles.headerTitleGroup}>
-          <Text style={[styles.screenTitle, { color: colors.text }]}>Seeker Account</Text>
-          <Text style={[styles.screenSubtitle, { color: colors.textSecondary }]}>Identity & Credit Profile</Text>
+          <Text style={[styles.screenTitle, { color: colors.text }]} numberOfLines={1}>Seeker Account</Text>
+          <Text style={[styles.screenSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>Identity & Credit Profile</Text>
         </View>
       ) : (
         <TouchableOpacity
@@ -49,14 +49,14 @@ export const Header: React.FC<HeaderProps> = ({
           <View style={[styles.avatar, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
             <Image source={require('../../assets/logo.png')} style={styles.logoImg} resizeMode="contain" />
           </View>
-          <View>
+          <View style={styles.profileTextWrap}>
             <View style={styles.handleRow}>
-              <Text style={[styles.brandName, { color: colors.text }]}>ClockLend</Text>
+              <Text style={[styles.brandName, { color: colors.text }]} numberOfLines={1}>ClockLend</Text>
               {hasSeekerGenesisToken && (
                 <View style={[styles.verifiedDot, { backgroundColor: colors.primary }]} />
               )}
             </View>
-            <Text style={[styles.handleSub, { color: colors.primaryLabel }]}>{skrHandle}</Text>
+            <Text style={[styles.handleSub, { color: colors.primaryLabel }]} numberOfLines={1}>{skrHandle}</Text>
           </View>
         </TouchableOpacity>
       )}
@@ -104,7 +104,7 @@ export const Header: React.FC<HeaderProps> = ({
           accessibilityHint="View token accounts and balances"
         >
           <View style={[styles.onlineDot, { backgroundColor: colors.success }]} />
-          <Text style={[styles.walletPillText, { color: colors.text }]}>
+          <Text style={[styles.walletPillText, { color: colors.text }]} numberOfLines={1}>
             {solBalance > 0 ? `${solBalance.toFixed(2)} SOL` : 'Assets'}
           </Text>
         </TouchableOpacity>
@@ -141,7 +141,7 @@ export const Header: React.FC<HeaderProps> = ({
 const styles = StyleSheet.create({
   container: {
     paddingTop: 52,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingBottom: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -149,9 +149,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   profileButton: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  profileTextWrap: {
+    flexShrink: 1,
+    minWidth: 0,
   },
   logoImg: {
     width: 22,
@@ -164,12 +171,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
   },
   avatarText: {
     fontSize: 18,
   },
   headerTitleGroup: {
     justifyContent: 'center',
+    flexShrink: 1,
+    minWidth: 0,
   },
   screenTitle: {
     fontSize: 18,
@@ -185,6 +195,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: -0.3,
+    flexShrink: 1,
   },
   handleSub: {
     fontSize: 11,
@@ -195,6 +206,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    minWidth: 0,
   },
   handleText: {
     fontSize: 16,
@@ -205,6 +217,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
+    flexShrink: 0,
   },
   subtext: {
     fontSize: 11,
@@ -214,7 +227,8 @@ const styles = StyleSheet.create({
   rightActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    flexShrink: 0,
   },
   themeChip: {
     width: 36,

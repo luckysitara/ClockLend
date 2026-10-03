@@ -10,13 +10,13 @@ import {
   Platform,
   StatusBar,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { authenticateDeviceLock } from '../services/securityService';
 
-const { width } = Dimensions.get('window');
 const LOGO_IMG = require('../../assets/logo.png');
 
 export type LockScreenMode = 'unlock' | 'setup' | 'change_pin';
@@ -35,6 +35,12 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
   onCancel,
 }) => {
   const { colors, mode: themeMode } = useTheme();
+
+  // Bottom inset per render (safe-area-context is not installed): the
+  // screen-vs-window height difference approximates the Android nav bar.
+  const windowH = useWindowDimensions().height;
+  const screenH = Dimensions.get('screen').height;
+  const bottomInset = Math.max(0, screenH - windowH);
 
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
@@ -145,7 +151,7 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
       </View>
 
       {/* Bottom Action Button */}
-      <View style={styles.bottomSection}>
+      <View style={[styles.bottomSection, { paddingBottom: 8 + Math.max(bottomInset, 24) }]}>
         <TouchableOpacity
           style={[
             styles.unlockBtn,
@@ -162,7 +168,11 @@ export const SecurityLockScreen: React.FC<SecurityLockScreenProps> = ({
           ) : (
             <>
               <Ionicons name="lock-open-outline" size={20} color={colors.primaryText} />
-              <Text style={[styles.unlockBtnText, { color: colors.primaryText }]}>
+              <Text
+                style={[styles.unlockBtnText, { color: colors.primaryText }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
                 Unlock with Device Screen Lock
               </Text>
             </>
@@ -270,7 +280,8 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   unlockBtnText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
+    flexShrink: 1,
   },
 });
