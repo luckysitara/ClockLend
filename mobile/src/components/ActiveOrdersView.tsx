@@ -9,8 +9,11 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Image,
+  Platform,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { LoanOrder } from '../types';
 import { CountdownTimer, CountdownUrgency, getCountdownUrgency } from './CountdownTimer';
@@ -163,6 +166,21 @@ export const ActiveOrdersView: React.FC<ActiveOrdersViewProps> = ({
         ) : undefined
       }
     >
+      {/* ── Top Header Row with ClockLend Logo ── */}
+      <View style={styles.topHeaderRow}>
+        <View style={styles.brandRow}>
+          <Image source={require('../../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Loans</Text>
+        </View>
+        {activeOrders.length > 0 && (
+          <View style={[styles.activeBadge, { backgroundColor: colors.badgeBg, borderColor: colors.badgeBorder }]}>
+            <Text style={[styles.activeBadgeText, { color: colors.primaryLabel }]}>
+              {activeOrders.length} {activeOrders.length === 1 ? 'ACTIVE' : 'ACTIVE'}
+            </Text>
+          </View>
+        )}
+      </View>
+
       {/* ── Top Segmented Controls: Active vs History ── */}
       <View style={styles.segmentContainer}>
         <View style={[styles.segmentBar, { backgroundColor: colors.cardAlt, borderColor: colors.cardBorder }]}>
@@ -631,6 +649,39 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 40,
+  },
+  topHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: Platform.OS === 'android' ? 8 : 4,
+    paddingBottom: 14,
+  },
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  headerLogo: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  activeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  activeBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
   emptyBox: {
     padding: 36,

@@ -12,6 +12,7 @@ import {
   StatusBar,
   TextInput,
   Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -153,7 +154,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* ── Top Header Row with Back Arrow ── */}
+      {/* ── Top Header Row with Back Arrow & ClockLend Logo ── */}
       <View style={[styles.headerRow, { borderBottomColor: colors.divider }]}>
         <TouchableOpacity
           style={styles.backBtn}
@@ -167,7 +168,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         >
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
+        <View style={styles.brandTitleRow}>
+          <Image source={require('../../assets/logo.png')} style={styles.headerLogo} resizeMode="contain" />
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
+        </View>
         <View style={{ width: 40 }} />
       </View>
 
@@ -980,6 +984,16 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  brandTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerLogo: {
+    width: 26,
+    height: 26,
+    borderRadius: 7,
   },
   headerTitle: {
     fontSize: 20,
