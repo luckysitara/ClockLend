@@ -78,7 +78,10 @@ export async function crankOraclePrices() {
   const [skrOraclePDA] = PublicKey.findProgramAddressSync([Buffer.from('oracle'), SKR_MINT.toBuffer()], PROGRAM_ID);
 
   // 1. Fetch live market price from Jupiter
-  const jupKey = process.env.JUPITER_API_KEY || process.env.EXPO_PUBLIC_JUPITER_API_KEY;
+  // Node script, never bundled: read the server-side variable only. The
+  // EXPO_PUBLIC_* fallback is removed — those names are for values that end
+  // up inlined in the mobile bundle, which this script must never encourage.
+  const jupKey = process.env.JUPITER_API_KEY;
   const headers = jupKey ? { 'x-api-key': jupKey } : {};
 
   let solPrice = null;

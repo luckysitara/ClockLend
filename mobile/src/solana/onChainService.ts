@@ -59,12 +59,27 @@ import {
 const PROXIED_RPC = process.env.EXPO_PUBLIC_SOLANA_RPC_URL;
 const PROXIED_RPC_GATEKEEPER = process.env.EXPO_PUBLIC_HELIUS_GATEKEEPER_RPC_URL;
 
-// Fail loudly at build/dev time rather than silently publishing a key. This is
-// the one mistake in this file that is unrecoverable once shipped.
+// Fail CLOSED at build/dev time rather than silently publishing a key. This is
+// the one mistake in this file that is unrecoverable once shipped: the bundle
+// is public, so a keyed URL here publishes the key to every app user AND the
+// git repo (the embedded bundle is tracked). Point these at a keyless proxy
+// instead (see serverless /rpc) — a build with a keyed URL must not exist.
 if (PROXIED_RPC && /api-key=/.test(PROXIED_RPC)) {
-  console.warn(
-    '[ClockLend] EXPO_PUBLIC_SOLANA_RPC_URL contains an api-key and will be inlined ' +
+  throw new Error(
+    '[ClockLend] EXPO_PUBLIC_SOLANA_RPC_URL contains an api-key and would be inlined ' +
       'into the shipped bundle. Use a keyless proxy URL instead (see serverless /rpc).'
+  );
+}
+if (PROXIED_RPC_GATEKEEPER && /api-key=/.test(PROXIED_RPC_GATEKEEPER)) {
+  throw new Error(
+    '[ClockLend] EXPO_PUBLIC_HELIUS_GATEKEEPER_RPC_URL contains an api-key and would be ' +
+      'inlined into the shipped bundle. Use a keyless proxy URL instead (see serverless /rpc).'
+  );
+}
+if (process.env.EXPO_PUBLIC_JUPITER_API_KEY) {
+  throw new Error(
+    '[ClockLend] EXPO_PUBLIC_JUPITER_API_KEY must not be set: it is inlined into the ' +
+      'shipped bundle. Move the Jupiter call behind the serverless proxy and keep the key there.'
   );
 }
 

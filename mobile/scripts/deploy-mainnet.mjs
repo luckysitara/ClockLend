@@ -5,7 +5,7 @@ import {
   SystemProgram, SYSVAR_RENT_PUBKEY, SYSVAR_CLOCK_PUBKEY,
   sendAndConfirmTransaction, ComputeBudgetProgram,
 } from '@solana/web3.js';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { assertCluster, normalizeCluster, GENESIS_HASHES } from '../../scripts/lib/cluster-guard.mjs';
 
 async function sendTxWithRetry(instructions, signers) {
@@ -183,7 +183,7 @@ function resolveProgramKeypairPath() {
   for (const p of candidates) {
     if (!fs.existsSync(p)) continue;
     try {
-      const pub = execSync(`solana-keygen pubkey ${p}`, { encoding: 'utf8' }).trim();
+      const pub = execFileSync('solana-keygen', ['pubkey', p], { encoding: 'utf8' }).trim();
       if (pub === PROGRAM_ID.toBase58()) return p;
     } catch (_e) { /* try next candidate */ }
   }
@@ -236,7 +236,10 @@ async function main() {
   const skipBuild = args.includes('--skip-build');
   if (!skipBuild) {
     console.log('Building the program from source (cargo build-sbf)...');
-    execSync(`cd ${new URL('../../program', import.meta.url).pathname} && cargo build-sbf`, { stdio: 'inherit' });
+    execFileSync('cargo', ['build-sbf'], {
+      cwd: new URL('../../program', import.meta.url).pathname,
+      stdio: 'inherit',
+    });
   }
   if (!fs.existsSync(soPath)) {
     throw new Error(`${soPath} not found — run: cd program && cargo build-sbf`);
@@ -264,7 +267,7 @@ async function main() {
       'Rebuild (cargo build-sbf) or pass --skip-build only if you are certain.'
     );
   }
-  const soMd5 = execSync(`md5sum ${soPath}`, { encoding: 'utf8' }).split(' ')[0];
+  const soMd5 = execFileSync('md5sum', [soPath], { encoding: 'utf8' }).split(' ')[0];
   console.log(`Artifact: ${soPath} (${soStat.size} bytes, md5 ${soMd5})`);
 
   if (programExists) {
@@ -313,8 +316,9 @@ async function main() {
         while (remaining > 0) {
           const chunk = Math.min(MIN_EXTEND, remaining);
           console.log(`  solana program extend +${chunk}`);
-          execSync(
-            `solana program extend --url "${CLI_NETWORK}" --keypair ${keypairPath} ${PROGRAM_ID.toBase58()} ${chunk}`,
+          execFileSync(
+            'solana',
+            ['program', 'extend', '--url', CLI_NETWORK, '--keypair', keypairPath, PROGRAM_ID.toBase58(), String(chunk)],
             { stdio: 'inherit' }
           );
           remaining -= chunk;
@@ -323,18 +327,22 @@ async function main() {
 
       const upgradeBufferPath = process.env.BUFFER_KEYPAIR || `${process.env.HOME}/.config/solana/mainnet-buffer.json`;
       console.log(`Writing new program buffer using keypair ${upgradeBufferPath}...`);
-      execSync(
-        `solana program write-buffer --url "${CLI_NETWORK}" --keypair ${keypairPath} ` +
-          `--buffer ${upgradeBufferPath} --use-rpc --with-compute-unit-price 50000 --max-sign-attempts 20 ${soPath}`,
+      execFileSync(
+        'solana',
+        ['program', 'write-buffer', '--url', CLI_NETWORK, '--keypair', keypairPath,
+         '--buffer', upgradeBufferPath, '--use-rpc', '--with-compute-unit-price', '50000',
+         '--max-sign-attempts', '20', soPath],
         { stdio: 'inherit' }
       );
-      const upgradeBuffer = execSync(`solana-keygen pubkey ${upgradeBufferPath}`, { encoding: 'utf8' }).trim();
+      const upgradeBuffer = execFileSync('solana-keygen', ['pubkey', upgradeBufferPath], { encoding: 'utf8' }).trim();
       console.log(`Buffer written: ${upgradeBuffer}`);
 
       console.log(`Deploying upgrade to ${PROGRAM_ID.toBase58()}...`);
-      execSync(
-        `solana program deploy --url "${CLI_NETWORK}" --keypair ${keypairPath} ` +
-          `--program-id ${PROGRAM_ID.toBase58()} --buffer ${upgradeBuffer} --use-rpc --with-compute-unit-price 5000`,
+      execFileSync(
+        'solana',
+        ['program', 'deploy', '--url', CLI_NETWORK, '--keypair', keypairPath,
+         '--program-id', PROGRAM_ID.toBase58(), '--buffer', upgradeBuffer, '--use-rpc',
+         '--with-compute-unit-price', '5000'],
         { stdio: 'inherit' }
       );
 
@@ -367,9 +375,14 @@ async function main() {
 
       const bufferKeypairPath = process.env.BUFFER_KEYPAIR || `${process.env.HOME}/.config/solana/mainnet-buffer.json`;
       console.log(`Writing program buffer using keypair ${bufferKeypairPath}...`);
-      const bufCmd = `solana program write-buffer --url "${CLI_NETWORK}" --keypair ${keypairPath} --buffer ${bufferKeypairPath} --use-rpc --with-compute-unit-price 50000 --max-sign-attempts 20 ${soPath}`;
-      execSync(bufCmd, { stdio: 'inherit' });
-      buffer = execSync(`solana-keygen pubkey ${bufferKeypairPath}`, { encoding: 'utf8' }).trim();
+      execFileSync(
+        'solana',
+        ['program', 'write-buffer', '--url', CLI_NETWORK, '--keypair', keypairPath,
+         '--buffer', bufferKeypairPath, '--use-rpc', '--with-compute-unit-price', '50000',
+         '--max-sign-attempts', '20', soPath],
+        { stdio: 'inherit' }
+      );
+      buffer = execFileSync('solana-keygen', ['pubkey', bufferKeypairPath], { encoding: 'utf8' }).trim();
       console.log(`Program buffer written: ${buffer}`);
     } else {
       console.log(`Using existing on-chain program buffer: ${buffer}`);
@@ -377,7 +390,12 @@ async function main() {
 
     console.log('Deploying program...');
     const programIdArg = programKeypairPath || PROGRAM_ID.toBase58();
-    execSync(`solana program deploy --url "${CLI_NETWORK}" --keypair ${keypairPath} --program-id ${programIdArg} --buffer ${buffer} --use-rpc --with-compute-unit-price 5000`, { stdio: 'inherit' });
+    execFileSync(
+      'solana',
+      ['program', 'deploy', '--url', CLI_NETWORK, '--keypair', keypairPath,
+       '--program-id', programIdArg, '--buffer', buffer, '--use-rpc', '--with-compute-unit-price', '5000'],
+      { stdio: 'inherit' }
+    );
 
     // First deploy: verify the same way an upgrade is verified.
     const verification = await verifyDeployedProgram(soPath, PROGRAM_ID);

@@ -29,5 +29,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "ws@^8.5.0": "^8.20.1"
+  }
 }

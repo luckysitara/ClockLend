@@ -80,8 +80,14 @@ async function signSend(ixs, signers, payer) {
     const tx = new Transaction().add(...ixs);
     tx.recentBlockhash = bh.blockhash;
     tx.feePayer = payer.publicKey;
+    // Simulate before signing so a failing instruction is caught before it
+    // costs a fee or lands in an untested state; keep preflight ON at send.
+    const sim = await conn.simulateTransaction(tx);
+    if (sim.value.err) {
+      return { __sendError: `simulation failed: ${JSON.stringify(sim.value.err)}` };
+    }
     tx.sign(...signers);
-    return await conn.sendRawTransaction(tx.serialize(), { skipPreflight: true });
+    return await conn.sendRawTransaction(tx.serialize(), { skipPreflight: false });
   } catch (e) {
     return { __sendError: e?.message || String(e) };
   }

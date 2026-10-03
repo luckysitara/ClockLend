@@ -3,6 +3,7 @@ name = "clock_lend"
 version = "0.1.0"
 edition = "2021"
 description = "ClockLend: Peer-to-Peer Micro-Lending & Social Pawns on Solana Seeker"
+license = "MIT"
 
 [lib]
 crate-type = ["cdylib", "lib"]

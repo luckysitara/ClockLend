@@ -251,11 +251,28 @@ function MainApp() {
   const processDeepLink = (rawUrl: string) => {
     console.log('[DeepLink] Received URL:', rawUrl);
     try {
+      // The handler only navigates tabs and shows toasts — it never signs or
+      // moves funds. Still validate before acting: exact scheme, allowlisted
+      // actions, and base58-safe target ids so a hostile link can at most
+      // switch a tab, never feed a malformed id into the UI.
+      if (!/^clocklend:\/\/[a-z0-9/]+$/i.test(rawUrl)) {
+        console.warn('[DeepLink] Rejected malformed URL:', rawUrl);
+        return;
+      }
       const clean = rawUrl.replace(/^clocklend:\/\//i, '');
       const [pathAndQuery] = clean.split('?');
       const segments = pathAndQuery.split('/').filter(Boolean);
       const action = segments[0]?.toLowerCase();
       const targetId = segments[1];
+      const allowedActions = ['circle', 'pool', 'pawn', 'pawns', 'borrow', 'loans', 'orders', 'profile', 'account'];
+      if (!allowedActions.includes(action)) {
+        console.warn('[DeepLink] Rejected unknown action:', action);
+        return;
+      }
+      if (targetId && !/^[1-9A-HJ-NP-Za-km-z]{1,44}$/.test(targetId)) {
+        console.warn('[DeepLink] Rejected invalid target id:', targetId);
+        return;
+      }
 
       if (action === 'circle' || action === 'pool') {
         setActiveTab('MARKET');
