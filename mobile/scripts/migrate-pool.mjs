@@ -29,7 +29,8 @@ function u16(n) {
   return b;
 }
 
-const RPC = process.env.MAINNET_RPC || 'https://mainnet.helius-rpc.com/?api-key=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+// Keyless only: never fall back to a keyed URL in a tracked script.
+const RPC = process.env.MAINNET_RPC || 'https://solana-rpc.publicnode.com';
 const connection = new Connection(RPC, 'confirmed');
 
 const keyPath = process.env.DEPLOYER_KEY || '/home/rootkit/.config/solana/mainnet-deployer.json';
