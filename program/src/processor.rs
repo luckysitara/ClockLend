@@ -453,19 +453,19 @@ pub fn process_initialize_pool(
         ],
     )?;
 
-    // Liquidity pools must be SPL token based: 6-decimal USD-pegged mints
-    // (USDC on either cluster) or wrapped SOL. Raw native SOL is rejected.
-    // The borrow path values non-native pools at $1.00/6dp, which is only
-    // sound for USD pegs — other mints are rejected outright (same
-    // allowlist as F5 on the P2P path).
-    if *liquidity_mint.key != USDC_DEVNET_MINT
-        && *liquidity_mint.key != USDC_MAINNET_MINT
-        && *liquidity_mint.key != spl_token::native_mint::id()
-    {
+    // Liquidity pools must be SPL token based 6-decimal USD-pegged mints (USDC
+    // on either cluster). Raw native SOL is rejected, and so is wrapped SOL:
+    // `debt` is denominated in the liquidity mint's base units and the whole
+    // borrow/default path values non-native pools at $1.00/6dp, which is only
+    // sound for a USD peg. A WSOL pool would carry 9-decimal lamports as if
+    // they were micro-USD, inflating ClaimDefault's `collateral_for_debt` by
+    // ~1e9/price and full-seizing every default (same allowlist as F5 on the
+    // P2P path).
+    if *liquidity_mint.key != USDC_DEVNET_MINT && *liquidity_mint.key != USDC_MAINNET_MINT {
         return Err(ClockLendError::UnsupportedCollateralMint.into());
     }
 
-    // F-02: If SPL token/WSOL liquidity mint and vault account is uninitialized, create/initialize vault token PDA
+    // F-02: If the SPL liquidity vault account is uninitialized, create/initialize the vault token PDA
     if vault_account.owner == &solana_program::system_program::id() {
         if let Some(token_program) = token_program_opt {
             assert_token_program(token_program)?;
@@ -645,9 +645,14 @@ pub fn process_stake_skr(
     assert_token_program(token_program)?;
     assert_system_program(system_program)?;
 
-    if amount == 0 {
-        return Err(ClockLendError::InvalidInstruction.into());
-    }
+    // A zero amount is not a stake, it is a RESYNC. Anyone can donate one base
+    // unit of SKR into a user's escrow, desyncing it from position.staked_skr
+    // and making ClaimSkrYield revert with YieldCooldown (the H-2 desync check)
+    // until the position is re-synced. Both repair paths used to reject
+    // amount == 0, so a victim had to stake MORE of their own SKR to clear a
+    // grief they did not cause. Allowing the zero-amount call lets them repair
+    // and claim in one transaction at no cost.
+    let resync_only = amount == 0;
 
     let (expected_profile_pda, profile_bump) =
         Pubkey::find_program_address(&[PROFILE_SEED, user.key.as_ref()], program_id);
@@ -726,23 +731,26 @@ pub fn process_stake_skr(
         initial_profile.pack_into_slice(&mut user_profile_account.try_borrow_mut_data()?)?;
     }
 
-    // Transfer SKR tokens to escrow
-    invoke(
-        &spl_token::instruction::transfer(
-            token_program.key,
-            user_skr_account.key,
-            skr_escrow_account.key,
-            user.key,
-            &[],
-            amount,
-        )?,
-        &[
-            user_skr_account.clone(),
-            skr_escrow_account.clone(),
-            user.clone(),
-            token_program.clone(),
-        ],
-    )?;
+    // Transfer SKR tokens to escrow. Skipped on a resync: there is nothing to
+    // move, and the sync loop below is what actually repairs the desync.
+    if !resync_only {
+        invoke(
+            &spl_token::instruction::transfer(
+                token_program.key,
+                user_skr_account.key,
+                skr_escrow_account.key,
+                user.key,
+                &[],
+                amount,
+            )?,
+            &[
+                user_skr_account.clone(),
+                skr_escrow_account.clone(),
+                user.clone(),
+                token_program.clone(),
+            ],
+        )?;
+    }
 
     // Update user profile
     let mut profile = UserProfile::unpack_from_slice(&user_profile_account.try_borrow_data()?)?;
@@ -874,7 +882,15 @@ pub fn process_stake_skr(
                         .checked_mul(vault.acc_reward_per_share)
                         .ok_or(ClockLendError::AmountOverflow)?)
                         / YIELD_SCALE;
-                    position.last_interaction_time = Clock::get()?.unix_timestamp;
+                    // A resync must NOT re-arm the anti-JIT cooldown anchor.
+                    // MIN_STAKE_AGE_SECS is measured from this field, so writing
+                    // it here would let a 1-base-unit donation reset a
+                    // legitimate staker's clock — the very grief this fix
+                    // removes. Leaving it untouched keeps the anti-JIT
+                    // property intact and makes resync non-exploitable.
+                    if !resync_only {
+                        position.last_interaction_time = Clock::get()?.unix_timestamp;
+                    }
 
                     position.pack_into_slice(&mut yield_pos_account.try_borrow_mut_data()?)?;
                     vault.pack_into_slice(&mut yield_vault_account.try_borrow_mut_data()?)?;
@@ -1293,6 +1309,14 @@ pub fn process_set_price_feed(
             )
         };
 
+    // A first-time POOL-scoped write has no previous price of its own, so the
+    // move bound below had nothing to compare against — and that same write is
+    // what flips `pool.has_custom_oracle`, which ClaimDefault then prices that
+    // pool's defaults with. Anchor it to the global feed for the same mint, so a
+    // pool authority cannot bootstrap its own feed straight to a price that
+    // full-seizes its borrowers. Set inside the init branch, read by the bound.
+    let mut anchor_prev_price_micro_usd: Option<u64> = None;
+
     let mut feed = if !oracle_account.data_is_empty() && oracle_account.owner == program_id {
         if let Ok(existing) = PriceFeed::unpack_from_slice(&oracle_account.try_borrow_data()?) {
             if existing.is_initialized {
@@ -1369,6 +1393,31 @@ pub fn process_set_price_feed(
             }
         }
 
+        if is_pool_oracle {
+            // The global feed PDA must be passed explicitly. It may legitimately
+            // not exist yet (no global feed published for this mint), in which
+            // case the runtime loads it as a system-owned empty account and there
+            // is simply no anchor to check against.
+            let anchor_acc = accounts
+                .iter()
+                .find(|a| *a.key == expected_global_oracle_pda)
+                .ok_or(ClockLendError::PriceFeedAnchorRequired)?;
+            if !anchor_acc.data_is_empty() {
+                if anchor_acc.owner != program_id {
+                    return Err(ClockLendError::InvalidOracleAccount.into());
+                }
+                let anchor = PriceFeed::unpack_from_slice(&anchor_acc.try_borrow_data()?)?;
+                if !anchor.is_initialized
+                    || anchor.price_micro_usd == 0
+                    || anchor.mint != *mint_account.key
+                    || anchor.decimals != decimals
+                {
+                    return Err(ClockLendError::InvalidOracleAccount.into());
+                }
+                anchor_prev_price_micro_usd = Some(anchor.price_micro_usd);
+            }
+        }
+
         let signers_seeds: Vec<&[u8]> = pda_seeds.iter().map(|s| s.as_slice()).collect();
         create_or_allocate_pda(
             program_id,
@@ -1401,23 +1450,55 @@ pub fn process_set_price_feed(
         Clock::get()?.unix_timestamp
     };
 
-    // Round-14 H-1: bound per-update movement on existing feeds (first-time
-    // initialization has previous price 0 and is exempt) so a single
-    // compromised oracle write cannot reprice collateral protocol-wide.
-    if feed.price_micro_usd > 0 {
-        let prev = feed.price_micro_usd as u128;
+    // Round-14 H-1, hardened: bound how far a feed may move as a RATE, not a
+    // flat per-write cap.
+    //
+    // The old rule allowed MAX_PRICE_MOVE_BPS per write and compared against the
+    // STORED price — which each write overwrites — so N instructions packed into
+    // one transaction compounded 1.25^N (~1000x at N=31) and a single
+    // transaction could reprice collateral protocol-wide. It was also a
+    // permanent deadlock: a genuine move of more than 25% could never be written
+    // at all, staling the feed forever and halting every borrow on that mint.
+    //
+    // Elapsed-proportional fixes both. Every instruction in a transaction shares
+    // Clock::unix_timestamp, so elapsed is 0 within one transaction and the
+    // allowance is 0: compounding is dead. An honest keeper that has been away
+    // for 600s may still move 83%, so a real gap can be absorbed rather than
+    // deadlocking. A first-time write is measured against the global anchor
+    // instead of being exempt.
+    let prev_price = if feed.price_micro_usd > 0 {
+        Some(feed.price_micro_usd)
+    } else {
+        anchor_prev_price_micro_usd
+    };
+    if let Some(prev) = prev_price {
+        let prev = prev as u128;
         let next = price_micro_usd as u128;
         let dev_bps = if next > prev {
             (next - prev).saturating_mul(10_000) / prev
         } else {
             (prev - next).saturating_mul(10_000) / prev
         };
-        if dev_bps > MAX_PRICE_MOVE_BPS as u128 {
+        let allowance_bps: u128 = if feed.price_micro_usd > 0 {
+            let elapsed = if feed.last_updated_at > 0 {
+                unix_timestamp
+                    .saturating_sub(feed.last_updated_at)
+                    .max(0) as u128
+            } else {
+                0
+            };
+            (MAX_PRICE_MOVE_BPS as u128).saturating_mul(elapsed) / (PRICE_MOVE_WINDOW_SECS as u128)
+        } else {
+            // First write: no elapsed time to scale by, so the anchor gets the
+            // full single-window allowance.
+            MAX_PRICE_MOVE_BPS as u128
+        };
+        if dev_bps > allowance_bps {
             msg!(
-                "ClockLend: rejected feed move of {} bps for mint {} (max {} bps)",
+                "ClockLend: rejected feed move of {} bps for mint {} (allowance {} bps)",
                 dev_bps,
                 mint_account.key,
-                MAX_PRICE_MOVE_BPS
+                allowance_bps
             );
             return Err(ClockLendError::InvalidInstruction.into());
         }
@@ -2303,9 +2384,20 @@ pub fn process_create_p2p_offer(
         return Err(ClockLendError::InvalidSeeds.into());
     }
 
-    // C-2: Forbid PDA reuse outright — cannot re-initialize an existing offer under any status
+    // C-2: forbid re-initializing a slot that holds a LIVE offer. A cancelled
+    // slot does not hold one and may be re-initialised in place. Testing the
+    // data LENGTH alone (as this used to) also rejects a slot that
+    // CancelP2POffer zeroed but which someone then revived with rent-exempt
+    // lamports — which would burn the (creator, offer_id) id permanently for
+    // the cost of a donation. Unpacking answers the real question instead.
     if p2p_offer_account.owner == program_id && !p2p_offer_account.data_is_empty() {
-        return Err(ClockLendError::OfferAlreadyActive.into());
+        let live = matches!(
+            P2POffer::unpack_from_slice(&p2p_offer_account.try_borrow_data()?),
+            Ok(o) if o.is_initialized
+        );
+        if live {
+            return Err(ClockLendError::OfferAlreadyActive.into());
+        }
     }
 
     // Security check: verify escrow PDA
@@ -3454,30 +3546,22 @@ pub fn process_claim_default(program_id: &Pubkey, accounts: &[AccountInfo]) -> P
             );
 
             // A feed cannot be identified by inspection, so the scan matches the
-            // derived PDAs only (pool-scoped wins over global, as in BorrowFromPool).
-            let mut collateral_oracle_opt: Option<&AccountInfo> = None;
+            // derived PDAs only. Note this fills TWO INDEPENDENT slots rather
+            // than one slot with pool-scoped precedence: the priced split wants
+            // the best available price, and the old precedence let a pool
+            // authority that also liquidates its own defaults choose the number
+            // that sizes its claim.
+            let mut pool_oracle_opt: Option<&AccountInfo> = None;
+            let mut global_oracle_opt: Option<&AccountInfo> = None;
             for acc in accounts.iter() {
                 if *acc.key == expected_pool_collateral_oracle1
                     || *acc.key == expected_pool_collateral_oracle2
                 {
-                    collateral_oracle_opt = Some(acc);
-                } else if (*acc.key == expected_global_collateral_oracle1
-                    || *acc.key == expected_global_collateral_oracle2)
-                    && collateral_oracle_opt.is_none()
+                    pool_oracle_opt = Some(acc);
+                } else if *acc.key == expected_global_collateral_oracle1
+                    || *acc.key == expected_global_collateral_oracle2
                 {
-                    collateral_oracle_opt = Some(acc);
-                }
-            }
-            // H-3 mirror: a pool that configured its own feed must be liquidated
-            // at that feed's price, so a global feed alone is not usable here.
-            if pool.has_custom_oracle {
-                if let Some(acc) = collateral_oracle_opt {
-                    if *acc.key != expected_pool_collateral_oracle1
-                        && *acc.key != expected_pool_collateral_oracle2
-                    {
-                        collateral_oracle_opt = None;
-                        msg!("ClockLend: Pool-scoped collateral feed missing on default - falling back to the 5/95 split");
-                    }
+                    global_oracle_opt = Some(acc);
                 }
             }
 
@@ -3498,14 +3582,38 @@ pub fn process_claim_default(program_id: &Pubkey, accounts: &[AccountInfo]) -> P
                 }
             }
 
-            let collateral_price_micro_usd = resolve_default_collateral_price(
-                collateral_oracle_opt,
+            let pool_price_micro_usd = resolve_default_collateral_price(
+                pool_oracle_opt,
                 program_id,
                 &loan.collateral_mint,
                 &canonical_collateral_mint,
                 is_native_sol,
                 now,
             );
+            let global_price_micro_usd = resolve_default_collateral_price(
+                global_oracle_opt,
+                program_id,
+                &loan.collateral_mint,
+                &canonical_collateral_mint,
+                is_native_sol,
+                now,
+            );
+            // The HIGHER usable price wins. `collateral_for_debt` is
+            // debt * 10^dec / price, so a LOWER price means a LARGER lender
+            // claim: taking the max is precisely what stops a pool authority
+            // rigging its own feed down to full-seize a solvent borrower.
+            //
+            // Accepting a global feed when the pool has a custom oracle is also
+            // a client-correctness fix, not just hardening. The mobile app sends
+            // the GLOBAL feed for desk loans (App.tsx passes no pool, so
+            // pool?.hasCustomOracle is undefined), so the old precedence
+            // silently stripped those borrowers of their surplus.
+            let collateral_price_micro_usd = match (pool_price_micro_usd, global_price_micro_usd) {
+                (Some(p), Some(g)) => Some(p.max(g)),
+                (Some(p), None) => Some(p),
+                (None, Some(g)) => Some(g),
+                (None, None) => None,
+            };
 
             // The feed's declared scale must match the collateral's denomination
             // (the C-1 guard from BorrowFromPool): a feed published with the wrong
@@ -3516,6 +3624,20 @@ pub fn process_claim_default(program_id: &Pubkey, accounts: &[AccountInfo]) -> P
             let col_scale = 10u128
                 .checked_pow(expected_collateral_decimals as u32)
                 .ok_or(ClockLendError::AmountOverflow)?;
+
+            // `debt` below is only micro-USD when the pool is denominated in a
+            // 6-decimal USD peg. WSOL is rejected at InitializePool now, but a
+            // pool created before that guard would still carry 9-decimal
+            // lamports as though they were micro-USD, inflating the claim by
+            // ~1e9/price and full-seizing every default. Any non-USD pool fails
+            // closed here rather than being priced with the wrong unit.
+            let debt_is_micro_usd =
+                pool.liquidity_mint == USDC_MAINNET_MINT || pool.liquidity_mint == USDC_DEVNET_MINT;
+            let collateral_price_micro_usd = if debt_is_micro_usd {
+                collateral_price_micro_usd
+            } else {
+                None
+            };
 
             // debt is denominated in the pool's liquidity mint (micro-USD);
             // convert it into collateral base units at the feed price. The lender
@@ -3577,25 +3699,31 @@ pub fn process_claim_default(program_id: &Pubkey, accounts: &[AccountInfo]) -> P
             };
 
             let (lender_collateral, treasury_collateral, borrower_collateral) = match priced_split {
-                Some((lender, treasury, borrower))
-                    if (treasury == 0 || treasury_usable)
-                        && (borrower == 0 || borrower_collateral_opt.is_some()) =>
-                {
+                Some((lender, treasury, borrower)) => {
+                    // Neither arm below substitutes a different split when the
+                    // caller merely omits an account. That was the whole defect:
+                    // the seizing party builds the transaction, so an "optional"
+                    // destination was an optional payout.
+                    //
+                    // The underwater arm (lender = whole escrow, treasury = 0,
+                    // borrower = 0) passes both checks unchanged and still
+                    // full-seizes, which is correct — nothing is shared when the
+                    // collateral no longer covers the debt.
+                    if treasury > 0 && !treasury_usable {
+                        return Err(ClockLendError::InvalidTreasuryAccount.into());
+                    }
+                    if borrower > 0 && borrower_collateral_opt.is_none() {
+                        return Err(ClockLendError::BorrowerSurplusDestinationRequired.into());
+                    }
                     (lender, treasury, borrower)
                 }
-                _ => {
-                    if priced_split.is_some() {
-                        msg!("ClockLend: Default split destinations missing - falling back to the 5/95 split");
-                    }
-                    // Feature 8 legacy fallback: 5% liquidation margin to the
-                    // Treasury, the remainder to the lender.
-                    let protocol_margin = ((loan.collateral_amount as u128 * 500) / 10000) as u64; // 5% liquidation margin
-                    (
-                        loan.collateral_amount.saturating_sub(protocol_margin),
-                        protocol_margin,
-                        0,
-                    )
-                }
+                // No usable, correctly-scaled, fresh collateral price. The old
+                // legacy 95/5 split ran here and paid the borrower nothing, so
+                // the caller could reach a zero-surplus outcome by omitting the
+                // FEED rather than the destination. A default now settles only at
+                // a real price; an unpriceable position stays in grace until the
+                // feed returns, and nothing is lost.
+                None => return Err(ClockLendError::CollateralPriceUnavailable.into()),
             };
 
             // F-04: Mandatory protocol fee - Treasury account required when a share is owed.
@@ -3878,50 +4006,74 @@ pub fn process_claim_default(program_id: &Pubkey, accounts: &[AccountInfo]) -> P
                 .checked_pow(expected_collateral_decimals as u32)
                 .ok_or(ClockLendError::AmountOverflow)?;
 
+            // Same denomination guard as the pool path: the pawn's debt is only
+            // micro-USD when it is denominated in a 6-decimal USD peg.
+            let debt_is_micro_usd = offer.liquidity_mint == USDC_MAINNET_MINT
+                || offer.liquidity_mint == USDC_DEVNET_MINT;
+
             // `requested_amount + interest_offered` is exactly what the creator
             // owes to close the pawn, so it is the debt the funder is owed.
-            let p2p_split: Option<(u64, u64, u64)> = resolve_default_collateral_price(
-                p2p_oracle_opt,
-                program_id,
-                &offer.collateral_mint,
-                &canonical_collateral_mint,
-                is_native_sol,
-                now,
-            )
-            .and_then(|price_micro_usd| {
-                let debt =
-                    (offer.requested_amount as u128).checked_add(offer.interest_offered as u128)?;
-                let collateral_for_debt = debt
-                    .checked_mul(col_scale)?
-                    .checked_div(price_micro_usd as u128)?;
-                if collateral_for_debt >= offer.collateral_amount as u128 {
-                    // Underwater: the funder takes everything, nothing to split.
-                    return Some((offer.collateral_amount, 0, 0));
-                }
-                let funder_share = collateral_for_debt as u64;
-                let surplus = offer.collateral_amount.checked_sub(funder_share)?;
-                let platform_share =
-                    ((surplus as u128 * PLATFORM_SURPLUS_FEE_BPS as u128) / 10000) as u64;
-                let creator_share = surplus.checked_sub(platform_share)?;
-                // funder + platform + creator == surplus + funder == collateral,
-                // exactly, so the escrow drains to zero with nothing stranded.
-                Some((funder_share, platform_share, creator_share))
-            });
+            let p2p_split: Option<(u64, u64, u64)> = if debt_is_micro_usd {
+                resolve_default_collateral_price(
+                    p2p_oracle_opt,
+                    program_id,
+                    &offer.collateral_mint,
+                    &canonical_collateral_mint,
+                    is_native_sol,
+                    now,
+                )
+                .and_then(|price_micro_usd| {
+                    let debt = (offer.requested_amount as u128)
+                        .checked_add(offer.interest_offered as u128)?;
+                    let collateral_for_debt = debt
+                        .checked_mul(col_scale)?
+                        .checked_div(price_micro_usd as u128)?;
+                    if collateral_for_debt >= offer.collateral_amount as u128 {
+                        // Underwater: the funder takes everything, nothing to split.
+                        return Some((offer.collateral_amount, 0, 0));
+                    }
+                    let funder_share = collateral_for_debt as u64;
+                    let surplus = offer.collateral_amount.checked_sub(funder_share)?;
+                    let platform_share =
+                        ((surplus as u128 * PLATFORM_SURPLUS_FEE_BPS as u128) / 10000) as u64;
+                    let creator_share = surplus.checked_sub(platform_share)?;
+                    // funder + platform + creator == surplus + funder == collateral,
+                    // exactly, so the escrow drains to zero with nothing stranded.
+                    Some((funder_share, platform_share, creator_share))
+                })
+            } else {
+                None
+            };
+
+            // Mirror of the pool path's treasury test. The pawn branch had no
+            // usability check when SELECTING the split (only later, when moving
+            // the funds), which is how a funder could omit the treasury
+            // destination and have the fallback hand them the entire escrow.
+            let treasury_usable = match treasury_dest_opt {
+                None => false,
+                Some(acc) if is_native_sol => *acc.key == expected_treasury_pda,
+                Some(acc) => spl_token::state::Account::unpack(&acc.try_borrow_data()?)
+                    .map(|tok| {
+                        tok.owner == expected_treasury_pda && tok.mint == offer.collateral_mint
+                    })
+                    .unwrap_or(false),
+            };
 
             let (funder_collateral, treasury_collateral, creator_collateral) = match p2p_split {
-                Some((funder, treasury, creator))
-                    if (treasury == 0 || treasury_dest_opt.is_some())
-                        && (creator == 0 || creator_collateral_opt.is_some()) =>
-                {
+                Some((funder, treasury, creator)) => {
+                    if treasury > 0 && !treasury_usable {
+                        return Err(ClockLendError::InvalidTreasuryAccount.into());
+                    }
+                    if creator > 0 && creator_collateral_opt.is_none() {
+                        return Err(ClockLendError::BorrowerSurplusDestinationRequired.into());
+                    }
                     (funder, treasury, creator)
                 }
-                _ => {
-                    if p2p_split.is_some() {
-                        msg!("ClockLend: Pawn default split destinations missing - falling back to full seizure");
-                    }
-                    // Legacy behaviour: the funder takes the whole escrow.
-                    (offer.collateral_amount, 0, 0)
-                }
+                // The legacy arm here handed the funder the WHOLE escrow, and
+                // reaching it required only omitting the feed — so a pawn creator
+                // could lose every bit of their equity to a funder who simply did
+                // not pass an account. An unpriceable pawn now stays in grace.
+                None => return Err(ClockLendError::CollateralPriceUnavailable.into()),
             };
 
             if is_native_sol {
@@ -4202,6 +4354,13 @@ pub fn process_cancel_p2p_offer(program_id: &Pubkey, accounts: &[AccountInfo]) -
         || offer.collateral_mint == spl_token::native_mint::id();
 
     if is_native_sol {
+        // Every other native-SOL destination in this file is key-checked; this
+        // branch was the lone exception. The caller is the creator (checked
+        // above) so this is not a live theft path, but an unchecked destination
+        // is one refactor away from becoming one.
+        if *creator_collateral_account.key != *creator.key {
+            return Err(ClockLendError::Unauthorized.into());
+        }
         let escrow_lamports = collateral_escrow_account.lamports();
         transfer_native_sol_from_escrow(
             collateral_escrow_account,
@@ -4276,12 +4435,20 @@ pub fn process_cancel_p2p_offer(program_id: &Pubkey, accounts: &[AccountInfo]) -
         );
     }
 
-    // Close offer PDA and refund rent lamports to creator
+    // Close offer PDA and refund rent lamports to creator.
+    //
+    // Zeroing the data alone left a program-owned, 202-byte account at 0
+    // lamports. The runtime hides those (a 0-lamport account loads as None), so
+    // the slot reads as empty and reuse works — but anyone can revive it by
+    // donating rent-exempt lamports, and it then loads as a program-owned
+    // account containing zeroed data. Reallocating to zero length closes it
+    // outright so no such zombie can exist to be revived.
     let offer_lamports = p2p_offer_account.lamports();
     if offer_lamports > 0 {
         **creator.try_borrow_mut_lamports()? = creator.lamports().saturating_add(offer_lamports);
         **p2p_offer_account.try_borrow_mut_lamports()? = 0;
         p2p_offer_account.try_borrow_mut_data()?.fill(0);
+        p2p_offer_account.resize(0)?;
     }
 
     msg!(
@@ -4464,6 +4631,13 @@ const ADMIN_FEED_MAX_PRICE_AGE_SECS: i64 = 600;
 /// Round-14 H-1: maximum per-update deviation for an existing price feed
 /// (25%). Bounds the blast radius of a compromised oracle authority so a
 /// single write cannot reprice the entire protocol.
+/// The window over which `MAX_PRICE_MOVE_BPS` is earned. Matches the production
+/// crank cadence — the DigitalOcean systemd timer and the Cloudflare cron both
+/// run every 3 minutes — so a keeper writing on schedule gets exactly the
+/// allowance it always had. Deliberately not lower: a faster keeper would be
+/// pro-rated and could be rejected while the market is genuinely moving.
+const PRICE_MOVE_WINDOW_SECS: i64 = 180;
+
 const MAX_PRICE_MOVE_BPS: u64 = 2500;
 
 /// Platform's cut of the equity a defaulted loan releases back to the borrower.
@@ -4476,9 +4650,15 @@ const PLATFORM_SURPLUS_FEE_BPS: u64 = 5000;
 /// same checks `process_borrow_from_pool` applies when pricing a borrow.
 ///
 /// Returns `None` — NEVER an error — when the feed is absent, dead, mis-scaled or
-/// denominated in the wrong mint. Both default paths read that as "this position
-/// cannot be priced" and fall back to seizing the whole escrow, so a stale oracle
-/// degrades the outcome rather than blocking a default from ever settling.
+/// denominated in the wrong mint. Callers read that as "this position cannot be
+/// priced" and REFUSE to settle, returning `CollateralPriceUnavailable`.
+///
+/// That is a deliberate reversal of the original behaviour. Falling back to
+/// seizing the whole escrow meant a stale (or withheld) oracle quietly enriched
+/// the seizing party — the caller could reach a zero-surplus outcome just by not
+/// passing the feed account. A default now waits for a real price instead: the
+/// loan stays in grace, nothing is lost, and the lender settles when the feed
+/// returns.
 ///
 /// Shared deliberately: the desk path and the pawn path must agree on what
 /// counts as a usable price, or the same feed would be trusted in one place and
@@ -4494,21 +4674,21 @@ fn resolve_default_collateral_price(
 ) -> Option<u64> {
     let oracle_acc = oracle_acc?;
     if oracle_acc.owner != program_id || oracle_acc.data_is_empty() {
-        msg!("ClockLend: Unprovisioned collateral feed on default - falling back to full seizure");
+        msg!("ClockLend: Unprovisioned collateral feed on default - refusing to settle");
         return None;
     }
 
     let data = match oracle_acc.try_borrow_data() {
         Ok(d) => d,
         Err(_) => {
-            msg!("ClockLend: Unreadable collateral feed on default - falling back to full seizure");
+            msg!("ClockLend: Unreadable collateral feed on default - refusing to settle");
             return None;
         }
     };
     let feed = match PriceFeed::unpack_from_slice(&data) {
         Ok(f) => f,
         Err(_) => {
-            msg!("ClockLend: Unreadable collateral feed on default - falling back to full seizure");
+            msg!("ClockLend: Unreadable collateral feed on default - refusing to settle");
             return None;
         }
     };
@@ -4532,7 +4712,7 @@ fn resolve_default_collateral_price(
     {
         Some(feed.price_micro_usd)
     } else {
-        msg!("ClockLend: Unusable collateral feed on default - falling back to full seizure");
+        msg!("ClockLend: Unusable collateral feed on default - refusing to settle");
         None
     }
 }

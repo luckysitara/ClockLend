@@ -11,6 +11,7 @@
 //   * getGenesisHash is verified against the intended cluster before signing.
 import fs from 'fs';
 import { assertCluster, normalizeCluster, GENESIS_HASHES } from './lib/cluster-guard.mjs';
+import { redactUrl } from './lib/redact-url.mjs';
 
 let web3;
 try {
@@ -124,7 +125,7 @@ async function main() {
 
   console.log('=== ClockLend Treasury Profit Withdrawal ===');
   console.log('Cluster:', network);
-  console.log('RPC:', RPC_URL);
+  console.log('RPC:', redactUrl(RPC_URL));
   console.log('Admin Signer:', adminKeypair.publicKey.toBase58());
   console.log('Treasury PDA:', treasuryPda.toBase58());
 

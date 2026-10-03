@@ -14,6 +14,7 @@
 // 100k / 1M accounts of that type.
 
 import { Connection, PublicKey } from '@solana/web3.js';
+import { redactUrl } from '../../scripts/lib/redact-url.mjs';
 
 const RPC = process.argv[2] || process.env.SOLANA_RPC_URL || 'https://api.devnet.solana.com';
 const BORROWER = process.argv[3];
@@ -40,7 +41,7 @@ async function timed(label, fn) {
   }
 }
 
-console.log(`RPC: ${RPC}\nProgram: ${PROGRAM_ID.toBase58()}\n`);
+console.log(`RPC: ${redactUrl(RPC)}\nProgram: ${PROGRAM_ID.toBase58()}\n`);
 
 console.log('1) What the app used to do (pre-Phase-1):');
 const unfiltered = await timed('   unfiltered getProgramAccounts (full program scan)',

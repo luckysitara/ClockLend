@@ -40,7 +40,12 @@ const DEFAULT_CONFIG: VersionConfig = {
 const REMOTE_VERSION_URLS = [
   'https://seek.kikhaus.com/version.json',
   'https://clocklend.kikhaus.com/version.json',
-  'https://raw.githubusercontent.com/luckysitara/Clock-It/master/site/version.json',
+  // Was .../Clock-It/... — the GitHub repo was renamed to ClockLend, so this
+  // pointed at a name no longer under our control. Since this document can force
+  // a lockout and supply a URL that gets opened, a stale namespace is a
+  // supply-chain hole, not just a broken link: whoever claims the old name could
+  // serve a malicious version.json.
+  'https://raw.githubusercontent.com/luckysitara/ClockLend/master/site/version.json',
 ];
 
 /**
@@ -122,8 +127,35 @@ export async function checkAppVersion(): Promise<VersionGateResult> {
 /**
  * Open Solana Seeker dApp Store directly, falling back to Android market or browser.
  */
+/**
+ * Schemes that may be opened from a REMOTE-supplied URL.
+ *
+ * `customUrl` arrives in the version.json document fetched over the network, so
+ * it is attacker-controlled if any of those hosts — or the old repo namespace —
+ * is ever compromised. A version.json is also the one document that can force a
+ * lockout, so it is the highest-value thing to hijack. An arbitrary URI passed
+ * to `Linking.openURL` can launch another app's deep link or an `intent:`
+ * redirect, so only the two schemes this feature legitimately needs are allowed.
+ *
+ * Prefix matching rather than `new URL()`: React Native's URL implementation is
+ * historically partial, and the scheme check must not silently degrade here.
+ */
+const ALLOWED_URL_SCHEMES = ['https://', 'solanadappstore://'];
+
+function isAllowedOpenUrl(raw: string): boolean {
+  const value = raw.trim();
+  // Reject embedded whitespace/control characters outright: several platforms
+  // ignore everything before a newline, which is the classic scheme-check bypass.
+  if (/[\s\u0000-\u001f]/.test(value)) return false;
+  const lower = value.toLowerCase();
+  return ALLOWED_URL_SCHEMES.some((prefix) => lower.startsWith(prefix));
+}
+
 export async function openDAppStore(customUrl?: string): Promise<void> {
-  const dappStoreUri = customUrl || DEFAULT_CONFIG.dappStoreUrl;
+  // A remote URL that fails the allowlist falls back to the built-in default
+  // rather than being opened anyway.
+  const dappStoreUri =
+    customUrl && isAllowedOpenUrl(customUrl) ? customUrl : DEFAULT_CONFIG.dappStoreUrl;
   const marketUri = DEFAULT_CONFIG.marketUrl;
   const webFallback = DEFAULT_CONFIG.webUrl;
 

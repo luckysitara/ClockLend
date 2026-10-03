@@ -268,6 +268,13 @@ export async function crankOracles(env: Env): Promise<{
   }
   tx.add(solIx, skrIx);
 
+  // Snapshot both feeds BEFORE sending so the post-confirmation read-back can
+  // prove a strict increase over these exact values (see verifyFeedsAdvanced).
+  const [priorSolUpdatedAt, priorSkrUpdatedAt] = await Promise.all([
+    readFeedUpdatedAt(connection, solOraclePDA),
+    readFeedUpdatedAt(connection, skrOraclePDA),
+  ]);
+
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
   tx.recentBlockhash = blockhash;
   tx.feePayer = authority.publicKey;
@@ -290,18 +297,13 @@ export async function crankOracles(env: Env): Promise<{
   // crank that silently did not update a feed is indistinguishable from a
   // healthy one until the 600s pricing bound lapses and every borrow reverts,
   // so verify here and fail loudly instead.
-  const crankStartedAt = Math.floor(Date.now() / 1000);
-  const unverified = await verifyFeedsAdvanced(
-    connection,
-    [
-      { pda: solOraclePDA, label: `SOL $${sol}` },
-      { pda: skrOraclePDA, label: `SKR $${skr}` },
-    ],
-    crankStartedAt
-  );
+  const unverified = await verifyFeedsAdvanced(connection, [
+    { pda: solOraclePDA, label: `SOL $${sol}`, priorUpdatedAt: priorSolUpdatedAt },
+    { pda: skrOraclePDA, label: `SKR $${skr}`, priorUpdatedAt: priorSkrUpdatedAt },
+  ]);
   if (unverified.length > 0) {
     throw new Error(
-      `Crank confirmed (${signature}) but these feeds did not advance past ${crankStartedAt}: ` +
+      `Crank confirmed (${signature}) but these feeds did not advance: ` +
         `${unverified.join(', ')}. Treating the run as failed rather than reporting success.`
     );
   }
@@ -329,29 +331,41 @@ export async function crankOracles(env: Env): Promise<{
 }
 
 // Query on-chain PDA health & current price
+const REDACTED = 'REDACTED';
+
 /**
- * Strip credential-bearing query parameters before a URL is handed to a caller.
+ * Strip credential-bearing material before a URL is handed to a caller.
  * `getOracleStatus` backs the unauthenticated `/`, `/health` and `/status` routes,
  * so returning the raw RPC_URL disclosed the provider API key to anyone who asked.
+ *
+ * Query parameters alone are NOT enough. Providers also put the credential in the
+ * PATH (Alchemy `.../v2/<KEY>`, QuickNode `https://<host>/<TOKEN>/`) or in
+ * userinfo (`https://user:pass@host`), and both of those forms survived the
+ * original param-only scrub in full — the leak only stayed hidden because the
+ * documented provider, Helius, happens to use `?api-key=`.
+ *
  * The host is kept so operators can still tell which endpoint is in use.
  */
 function redactUrl(raw: string): string {
   try {
     const u = new URL(raw);
+    if (u.username) u.username = REDACTED;
+    if (u.password) u.password = REDACTED;
     for (const k of Array.from(u.searchParams.keys())) {
-      if (/key|token|secret|auth|pass/i.test(k)) u.searchParams.set(k, 'REDACTED');
+      if (/key|token|secret|auth|pass/i.test(k)) u.searchParams.set(k, REDACTED);
     }
+    // Path-embedded credentials. Short segments (`v2`, `rpc`) are structural and
+    // kept; anything long enough to be a real secret is replaced wholesale.
+    u.pathname = u.pathname
+      .split('/')
+      .map((seg) => (seg.length >= 16 ? REDACTED : seg))
+      .join('/');
     return u.toString();
   } catch {
     return '(unparseable RPC URL)';
   }
 }
 
-/**
- * Sanitise an error message before returning it to an anonymous caller.
- * @solana/web3.js and fetch errors routinely embed the endpoint URL, including
- * its `?api-key=...` query parameter, so raw `err.message` must not be echoed.
- */
 /**
  * Read each feed back and confirm `last_updated_at` moved forward.
  *
@@ -365,20 +379,27 @@ function redactUrl(raw: string): string {
  */
 export async function verifyFeedsAdvanced(
   connection: Connection,
-  feeds: Array<{ pda: PublicKey; label: string }>,
-  sinceUnix: number,
+  feeds: Array<{ pda: PublicKey; label: string; priorUpdatedAt: number }>,
   attempts = 3
 ): Promise<string[]> {
   const unconfirmed: string[] = [];
-  for (const { pda, label } of feeds) {
+  for (const { pda, label, priorUpdatedAt } of feeds) {
     let confirmed = false;
     for (let i = 0; i < attempts && !confirmed; i++) {
       try {
         const acc = await connection.getAccountInfo(pda);
         if (acc && acc.data.length >= 58) {
           const updatedAt = Number(acc.data.readBigInt64LE(50));
-          // Allow a small clock skew between this host and the cluster.
-          if (updatedAt >= sinceUnix - 60) confirmed = true;
+          // STRICT increase over the value captured BEFORE this crank was sent.
+          //
+          // This used to compare against `now - 60`, tolerating clock skew. That
+          // tolerance also swallowed the exact failure the function exists to
+          // catch: when a crank failed to land, the read-back still saw a feed
+          // written by a PREVIOUS run inside the last 60 seconds and reported
+          // success — a silently stale oracle that only surfaces when the 600s
+          // pricing bound lapses and every borrow reverts. A value snapshotted
+          // before the send cannot be satisfied by anyone else's write.
+          if (updatedAt > priorUpdatedAt) confirmed = true;
         }
       } catch {
         // fall through to the retry
@@ -388,6 +409,17 @@ export async function verifyFeedsAdvanced(
     if (!confirmed) unconfirmed.push(label);
   }
   return unconfirmed;
+}
+
+/** Read a feed's `last_updated_at`, or 0 when the account is absent/unreadable. */
+async function readFeedUpdatedAt(connection: Connection, pda: PublicKey): Promise<number> {
+  try {
+    const acc = await connection.getAccountInfo(pda);
+    if (acc && acc.data.length >= 58) return Number(acc.data.readBigInt64LE(50));
+  } catch {
+    // Absent reads as 0: a first-ever write must still count as an advance.
+  }
+  return 0;
 }
 
 /**
@@ -425,6 +457,30 @@ const ALLOWED_RPC_METHODS = new Set([
   'simulateTransaction',
 ]);
 
+/**
+ * Caps that bound what a single anonymous request can cost.
+ *
+ * These exist because `/rpc` has no rate limiting behind it: without them one
+ * request could carry an unbounded call array, or a body up to the platform cap
+ * (~100MB on non-Enterprise plans), straight to the paid upstream endpoint.
+ */
+const MAX_RPC_BATCH = 10;
+const MAX_RPC_BODY_BYTES = 8 * 1024;
+
+/**
+ * Per-isolate cache for the unauthenticated status routes.
+ *
+ * `/`, `/health` and `/status` share one handler that fans out to two BILLED
+ * upstream calls (`getGenesisHash` + `getMultipleAccountsInfo`) per request.
+ * With no rate limiting behind them, a trivial loop of GETs drains the same paid
+ * quota as hammering the /rpc relay, without needing to speak JSON-RPC at all.
+ *
+ * 20s is deliberately far inside both the 600s on-chain pricing bound and the
+ * 540s staleness alert, so a slightly-stale answer cannot mask a real problem.
+ */
+const STATUS_CACHE_MS = 20_000;
+let statusCache: { at: number; value: Awaited<ReturnType<typeof getOracleStatus>> } | null = null;
+
 /** Small JSON responder. Never includes upstream URLs (they carry API keys). */
 function json(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -433,9 +489,48 @@ function json(payload: unknown, status = 200): Response {
   });
 }
 
+/**
+ * Constant-time string comparison for shared secrets.
+ *
+ * `===` on strings short-circuits at the first differing byte, leaking the
+ * length of the shared prefix through timing. Over the internet that is a noisy
+ * channel — every guess costs a full round trip — but this token is the ONLY
+ * thing guarding an endpoint that spends the oracle authority's lamports and
+ * writes global protocol prices, so it is worth closing rather than arguing
+ * about exploitability.
+ *
+ * Both sides are SHA-256'd first: `timingSafeEqual` requires equal-length
+ * inputs, and hashing also keeps the real length out of the comparison.
+ */
+async function secretEquals(a: string, b: string): Promise<boolean> {
+  const enc = new TextEncoder();
+  const [ha, hb] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(a)),
+    crypto.subtle.digest('SHA-256', enc.encode(b)),
+  ]);
+  return crypto.subtle.timingSafeEqual(ha, hb);
+}
+
+/**
+ * Sanitise an error message before returning it to an anonymous caller.
+ * @solana/web3.js and fetch errors routinely embed the endpoint URL, including
+ * its credential, so raw `err.message` must not be echoed.
+ *
+ * This must stay AT LEAST as strong as `redactUrl` — the two disagreed, and this
+ * one was the weaker of the pair: it required an `api-?key`-style parameter
+ * NAME, so a bare `?key=`, a path-embedded credential (`.../v2/<KEY>`) or
+ * userinfo all passed straight through into the response, on every error path.
+ */
 function safeErrorMessage(err: any): string {
   const raw = String(err?.message ?? err);
-  return raw.replace(/([?&](?:api-?key|token|secret|auth|pass)[^=]*=)[^&\s"']+/gi, '$1REDACTED');
+  // Anything URL-shaped in the message gets the full URL treatment (userinfo,
+  // path segments and query parameters alike).
+  const urlsScrubbed = raw.replace(/https?:\/\/[^\s"'<>)]+/gi, (m) => redactUrl(m));
+  // Belt for credential params appearing in free text that is not a parseable URL.
+  return urlsScrubbed.replace(
+    /([?&][A-Za-z0-9_-]*(?:key|token|secret|auth|pass)[A-Za-z0-9_-]*=)[^&\s"']+/gi,
+    `$1${REDACTED}`
+  );
 }
 
 export async function getOracleStatus(env: Env) {
@@ -541,8 +636,14 @@ export default {
     //
     // The method whitelist matters: without it this is an open relay that lets
     // anyone spend the protocol's paid RPC quota. It is a cost/abuse control,
-    // not a security boundary — pair it with a Cloudflare Rate Limiting rule on
-    // this path.
+    // not a security boundary.
+    //
+    // What this handler ACTUALLY enforces: a method allowlist, a batch-depth cap
+    // and a body-size cap. It does not rate limit — no Rate Limiting rule is
+    // configured for this Worker, and a Worker cannot apply one by itself (there
+    // is no Durable Object binding in wrangler.toml). Adding an edge rate-limit
+    // rule on this path is still an operator task; the caps below are what bound
+    // a single request in the meantime.
     if (url.pathname === '/rpc') {
       if (request.method !== 'POST') {
         return json({ error: 'POST only' }, 405);
@@ -552,15 +653,46 @@ export default {
         return json({ error: 'RPC_URL is not configured on this Worker' }, 503);
       }
 
+      // Reject non-JSON content types. A cross-site fetch with a "simple" type
+      // (text/plain) is never preflighted, so without this any page could drive
+      // this endpoint blind.
+      const contentType = (request.headers.get('content-type') || '').split(';')[0].trim();
+      if (contentType !== 'application/json') {
+        return json({ error: 'content-type must be application/json' }, 415);
+      }
+
+      // Bound the body BEFORE parsing it. The declared length is a cheap early
+      // reject; the real length is checked as well because the header can be
+      // absent (chunked) or simply lie.
+      const declared = Number(request.headers.get('content-length') || '0');
+      if (declared > MAX_RPC_BODY_BYTES) {
+        return json({ error: 'request body too large' }, 413);
+      }
+      let rawBody: string;
+      try {
+        rawBody = await request.text();
+      } catch {
+        return json({ error: 'unreadable request body' }, 400);
+      }
+      if (rawBody.length > MAX_RPC_BODY_BYTES) {
+        return json({ error: 'request body too large' }, 413);
+      }
+
       let body: any;
       try {
-        body = await request.json();
+        body = JSON.parse(rawBody);
       } catch {
         return json({ error: 'invalid JSON body' }, 400);
       }
 
-      // Batch requests carry an array; validate every method in it.
+      // Batch requests carry an array; validate every method in it AND cap the
+      // depth. The methods were always allowlisted, but the array length was
+      // unbounded — so one request could carry an arbitrary number of calls
+      // straight to the paid upstream in a single subrequest.
       const calls = Array.isArray(body) ? body : [body];
+      if (calls.length > MAX_RPC_BATCH) {
+        return json({ error: `batch too large (max ${MAX_RPC_BATCH})` }, 413);
+      }
       for (const call of calls) {
         if (!call || typeof call.method !== 'string' || !ALLOWED_RPC_METHODS.has(call.method)) {
           return json(
@@ -591,7 +723,13 @@ export default {
     // Health / Status endpoint
     if (url.pathname === '/' || url.pathname === '/health' || url.pathname === '/status') {
       try {
-        const status = await getOracleStatus(env);
+        // Served from the short-lived per-isolate cache when warm, so repeated
+        // anonymous GETs do not each cost two billed upstream calls.
+        const nowMs = Date.now();
+        if (!statusCache || nowMs - statusCache.at >= STATUS_CACHE_MS) {
+          statusCache = { at: nowMs, value: await getOracleStatus(env) };
+        }
+        const status = statusCache.value;
 
         // Staleness alert: log loudly when any feed is approaching the on-chain
         // 600s pricing cliff. Alerting at 540s leaves a usable margin to react.
@@ -648,7 +786,9 @@ export default {
 
       const authHeader = request.headers.get('authorization') || '';
       const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-      if (token !== env.CRANK_AUTH_TOKEN) {
+      // Constant-time (see secretEquals). The 503 above already guarantees the
+      // configured token is non-empty, so an empty/short guess cannot match.
+      if (!(await secretEquals(token, env.CRANK_AUTH_TOKEN))) {
         return new Response(JSON.stringify({ error: 'Unauthorized' }), {
           status: 401,
           headers: { 'content-type': 'application/json' },

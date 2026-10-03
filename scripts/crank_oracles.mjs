@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { redactUrl } from './lib/redact-url.mjs';
 
 // Portable web3 import: resolve standard node module or relative from mobile
 let web3;
@@ -71,7 +72,7 @@ export async function crankOraclePrices() {
   }
   console.log('=== ClockLend Live Oracle Crank ===');
   console.log('Admin:', adminKeypair.publicKey.toBase58());
-  console.log('RPC:', RPC);
+  console.log('RPC:', redactUrl(RPC));
 
   const [adminPDA] = PublicKey.findProgramAddressSync([Buffer.from('admin')], PROGRAM_ID);
   const [solOraclePDA] = PublicKey.findProgramAddressSync([Buffer.from('oracle'), NATIVE_SOL_MINT.toBuffer()], PROGRAM_ID);
