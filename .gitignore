@@ -52,6 +52,15 @@ build/
 .vscode/
 *.sublime-*
 
+# Claude Code tooling — local only, never published.
+#
+# These were tracked and showed up on the public repo page. They are editor/
+# tooling config, not project source, so they stay on disk (so local tooling
+# keeps working) but out of the repo. Unanchored so they match at any depth:
+# `mobile/CLAUDE.md` and `mobile/.claude/` are covered too.
+CLAUDE.md
+.claude/
+
 # Logs & Temporary Files
 *.log
 .system_generated/
