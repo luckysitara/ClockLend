@@ -64,22 +64,31 @@ const PROXIED_RPC_GATEKEEPER = process.env.EXPO_PUBLIC_HELIUS_GATEKEEPER_RPC_URL
 // is public, so a keyed URL here publishes the key to every app user AND the
 // git repo (the embedded bundle is tracked). Point these at a keyless proxy
 // instead (see serverless /rpc) — a build with a keyed URL must not exist.
-if (PROXIED_RPC && /api-key=/.test(PROXIED_RPC)) {
+//
+// Deliberate escape hatch: a solo project may choose to keep a keyed URL for a
+// personal, low-distribution build. Setting EXPO_PUBLIC_CLOCKLEND_ACK_KEYED_RPC=1
+// ACKNOWLEDGES that the key ships in the bundle — it exists so the fail-closed
+// default is never silently defeated, only consciously waived.
+const KEYED_RPC_ACKNOWLEDGED = process.env.EXPO_PUBLIC_CLOCKLEND_ACK_KEYED_RPC === '1';
+if (!KEYED_RPC_ACKNOWLEDGED && PROXIED_RPC && /api-key=/.test(PROXIED_RPC)) {
   throw new Error(
     '[ClockLend] EXPO_PUBLIC_SOLANA_RPC_URL contains an api-key and would be inlined ' +
-      'into the shipped bundle. Use a keyless proxy URL instead (see serverless /rpc).'
+      'into the shipped bundle. Use a keyless proxy URL instead (see serverless /rpc), or ' +
+      'set EXPO_PUBLIC_CLOCKLEND_ACK_KEYED_RPC=1 to consciously waive this check.'
   );
 }
-if (PROXIED_RPC_GATEKEEPER && /api-key=/.test(PROXIED_RPC_GATEKEEPER)) {
+if (!KEYED_RPC_ACKNOWLEDGED && PROXIED_RPC_GATEKEEPER && /api-key=/.test(PROXIED_RPC_GATEKEEPER)) {
   throw new Error(
     '[ClockLend] EXPO_PUBLIC_HELIUS_GATEKEEPER_RPC_URL contains an api-key and would be ' +
-      'inlined into the shipped bundle. Use a keyless proxy URL instead (see serverless /rpc).'
+      'inlined into the shipped bundle. Use a keyless proxy URL instead (see serverless /rpc), or ' +
+      'set EXPO_PUBLIC_CLOCKLEND_ACK_KEYED_RPC=1 to consciously waive this check.'
   );
 }
-if (process.env.EXPO_PUBLIC_JUPITER_API_KEY) {
+if (!KEYED_RPC_ACKNOWLEDGED && process.env.EXPO_PUBLIC_JUPITER_API_KEY) {
   throw new Error(
     '[ClockLend] EXPO_PUBLIC_JUPITER_API_KEY must not be set: it is inlined into the ' +
-      'shipped bundle. Move the Jupiter call behind the serverless proxy and keep the key there.'
+      'shipped bundle. Move the Jupiter call behind the serverless proxy and keep the key there, or ' +
+      'set EXPO_PUBLIC_CLOCKLEND_ACK_KEYED_RPC=1 to consciously waive this check.'
   );
 }
 
