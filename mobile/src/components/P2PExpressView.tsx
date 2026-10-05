@@ -189,10 +189,17 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
   const effectiveRateBps = applyAprDiscountBps(baseRateBps, userProfile.aprDiscount);
   const effectiveApr = effectiveRateBps / 100;
 
+  // M-2 (comprehensive audit): the desk's term bounds are enforced on-chain at
+  // borrow time, so the sheet must quote the SAME term that will be signed —
+  // never a duration the program will clamp to a different (longer) one.
+  const deskMinDays = bestPool ? bestPool.minDurationDays : 3;
+  const deskMaxDays = bestPool ? bestPool.maxDurationDays : 30;
+  const clampedDurationDays = Math.min(Math.max(durationDays, deskMinDays), deskMaxDays);
+
   const estInterestMicro = calculateExactInterestDue(
     BigInt(Math.round(numAmount * 1_000_000)),
     baseRateBps,
-    durationDays * 86400,
+    clampedDurationDays * 86400,
     userProfile.aprDiscount
   );
   const estInterest = Number(estInterestMicro) / 1_000_000;
@@ -201,6 +208,12 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
     BigInt(Math.round(numAmount * 1_000_000)),
     collateralType === 'SOL'
   );
+  const originationFeeUsd = Number(origination.feeMicro) / 1_000_000;
+  // M-3: the signed collateral is ceil'd for SKR — the sheet must show exactly
+  // what the wallet will be asked to sign.
+  const signedCollateralUnits = isDecimal
+    ? parseFloat(requiredCollateralUnits.toFixed(3))
+    : Math.ceil(requiredCollateralUnits);
 
   const handleOpenConfirm = () => {
     if (numAmount <= 0) {
@@ -247,10 +260,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
     } catch {}
     setIsSubmitting(true);
     try {
-      const collUnits = isDecimal
-        ? parseFloat(requiredCollateralUnits.toFixed(3))
-        : Math.ceil(requiredCollateralUnits);
-      await onBorrow(numAmount, collUnits, collateralType, bestPool, durationDays);
+      await onBorrow(numAmount, signedCollateralUnits, collateralType, bestPool, clampedDurationDays);
     } catch (e: any) {
       Alert.alert('Transaction Notice', e?.message || 'Failed to submit borrow transaction');
     } finally {
@@ -444,7 +454,9 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
         <View style={styles.durationSection}>
           <Text style={[styles.durationLabel, { color: colors.textSecondary }]}>LOAN DURATION</Text>
           <View style={styles.durationPillsRow}>
-            {[3, 7, 14, 30].map((days) => {
+            {[3, 7, 14, 30]
+              .filter((days) => days >= deskMinDays && days <= deskMaxDays)
+              .map((days) => {
               const isSelected = durationDays === days;
               return (
                 <TouchableOpacity
@@ -748,7 +760,22 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
                   numberOfLines={1}
                   ellipsizeMode="tail"
                 >
-                  ${numAmount.toFixed(2)} USDC
+                  ${(numAmount - originationFeeUsd).toFixed(2)} USDC
+                </Text>
+              </View>
+
+              <View style={[styles.divider, { backgroundColor: colors.divider }]} />
+
+              <View style={styles.confirmRow}>
+                <Text style={[styles.confirmLabel, { color: colors.textMuted }]}>
+                  Origination Fee ({collateralType === 'SOL' ? '0.25' : '0.50'}%)
+                </Text>
+                <Text
+                  style={[styles.confirmValue, { color: colors.text }]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  ${originationFeeUsd.toFixed(2)} USDC
                 </Text>
               </View>
 
@@ -761,7 +788,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
                   numberOfLines={1}
                   ellipsizeMode="tail"
                 >
-                  {requiredCollateralUnits.toFixed(3)} {collateralType}
+                  {signedCollateralUnits.toFixed(isDecimal ? 3 : 0)} {collateralType}
                 </Text>
               </View>
 
@@ -774,7 +801,7 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
                   numberOfLines={1}
                   ellipsizeMode="tail"
                 >
-                  {durationDays} Days (+24h Grace)
+                  {clampedDurationDays} Days (+24h Grace)
                 </Text>
               </View>
 

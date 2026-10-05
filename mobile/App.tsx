@@ -1705,7 +1705,14 @@ function MainApp() {
           lastUnlockAtRef.current = Date.now();
           setIsLocked(false);
         }}
-        onCancel={() => setIsLocked(false)}
+        // H-2 (comprehensive audit): the lock must not be one tap away from
+        // dismissed. The cancel affordance exists only for opt-in setup
+        // flows, never for the unlock challenge itself.
+        onCancel={
+          lockScreenMode === 'setup' || lockScreenMode === 'change_pin'
+            ? () => setIsLocked(false)
+            : undefined
+        }
       />
     );
   }
