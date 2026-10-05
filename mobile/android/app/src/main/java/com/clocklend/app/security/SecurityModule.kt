@@ -55,8 +55,11 @@ class SecurityModule(private val reactContext: ReactApplicationContext) :
 
                 val keyguardManager = reactContext.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
                 if (keyguardManager == null || !keyguardManager.isDeviceSecure) {
-                    // Device has no PIN, Pattern, or Password configured
-                    promise.resolve(true)
+                    // Device has no PIN, Pattern, or Password configured — there
+                    // is nothing to authenticate against, so the challenge FAILS.
+                    // Resolving true here made the app lock a no-op on exactly the
+                    // devices that need it most.
+                    promise.resolve(false)
                     return@runOnUiThread
                 }
 

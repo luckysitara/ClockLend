@@ -88,9 +88,23 @@ export async function checkAppVersion(): Promise<VersionGateResult> {
       if (resp.ok) {
         const json = await resp.json();
         if (json && typeof json.minimumVersion === 'string') {
+          // Field whitelist: the config is unsigned, so only the update-gating
+          // fields are accepted. dappStoreUrl/webUrl are deliberately NOT taken
+          // from the remote — the modal renders them under a "Verified Release"
+          // badge, so they are pinned constants only.
           remoteConfig = {
             ...DEFAULT_CONFIG,
-            ...json,
+            minimumVersion: json.minimumVersion,
+            latestVersion:
+              typeof json.latestVersion === 'string' ? json.latestVersion : DEFAULT_CONFIG.latestVersion,
+            minimumBuildNumber:
+              typeof json.minimumBuildNumber === 'number'
+                ? json.minimumBuildNumber
+                : DEFAULT_CONFIG.minimumBuildNumber,
+            forceUpdate:
+              json.forceUpdate === true || json.forceUpdate === false
+                ? json.forceUpdate
+                : DEFAULT_CONFIG.forceUpdate,
           };
           break;
         }
@@ -123,7 +137,30 @@ export async function checkAppVersion(): Promise<VersionGateResult> {
  * Open Solana Seeker dApp Store directly, falling back to Android market or browser.
  */
 export async function openDAppStore(customUrl?: string): Promise<void> {
-  const dappStoreUri = customUrl || DEFAULT_CONFIG.dappStoreUrl;
+  // Trust no remote URL: the version config is unsigned. Only well-known
+  // app-store schemes and project-owned hosts are openable; anything else
+  // falls back to the pinned constants.
+  const ALLOWED_UPDATE_SCHEMES = new Set(['solanadappstore:', 'market:', 'appmarket:']);
+  const ALLOWED_UPDATE_HOSTS = new Set([
+    'play.google.com',
+    'apps.apple.com',
+    'clocklend.kikhaus.com',
+    'kikhaus.com',
+  ]);
+  const isAllowedUpdateUrl = (u?: string): boolean => {
+    if (!u) return false;
+    try {
+      const parsed = new URL(u);
+      return (
+        ALLOWED_UPDATE_SCHEMES.has(parsed.protocol.toLowerCase()) ||
+        ALLOWED_UPDATE_HOSTS.has(parsed.hostname.toLowerCase())
+      );
+    } catch {
+      return false;
+    }
+  };
+
+  const dappStoreUri = isAllowedUpdateUrl(customUrl) ? (customUrl as string) : DEFAULT_CONFIG.dappStoreUrl;
   const marketUri = DEFAULT_CONFIG.marketUrl;
   const webFallback = DEFAULT_CONFIG.webUrl;
 
