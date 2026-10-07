@@ -4,7 +4,7 @@
 > **Mainnet Program ID:** [`4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7`](https://solscan.io/account/4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7) — deployed and bytecode-hash-verified  
 > **Devnet Program ID:** [`HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3`](https://explorer.solana.com/address/HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3?cluster=devnet) (exists on devnet only)  
 > **Physical Target Hardware:** Solana Seeker (Android 14+ / Seed Vault / MWA 2.0)  
-> **Security Audit Status:** 14 internal AI-assisted rounds • 103 on-chain test functions • **no third-party audit** • round-14 fixes are deployed (verified 2026-09-29)
+> **Security Audit Status:** 14 internal AI-assisted rounds • 122 on-chain test functions • **no third-party audit** • round-14 fixes are deployed (verified 2026-09-29). A further hardening pass (default settlement, oracle move bound, WSOL liquidity mints) is **merged in source but not yet deployed** — see the Treasury Monetization notes below.
 
 ---
 
@@ -27,7 +27,7 @@ faucet/switch UI has been removed, and the data layer is fully network-aware.
 - **Round-15 program hardening is deployed.** Includes four key fixes: P2P LTV capped under
   shared `MAX_LTV_BPS` = 7000; pool-PDA re-derivation added to `BorrowFromPool`; permissionless
   borrow parks yield fee; and redundant 182-byte `AccountKind` heuristic removed.
-- 103 on-chain test functions across six suites (`grep -c '#\[test\]\|#\[tokio::test\]' program/tests/*.rs`)
+- 122 on-chain test functions across six suites (`grep -c '#\[test\]\|#\[tokio::test\]' program/tests/*.rs`)
 - 8-byte account discriminators with fail-closed dispatch, ProgramData-derived admin root,
   PDA-verified escrows with front-run authority defense
 - **Upgradeable**, not immutable: the deployer key can replace the program
@@ -162,8 +162,12 @@ ClockLend introduces a hybrid credit paradigm combining **algorithmic micro-pool
      Treasury PDA.
    - **15% Interest Take-Rate**: Deducted from earned interest upon successful repayment.
    - **50% Surplus Split**: On a priced default, half of any collateral value above the
-     outstanding principal + interest goes to the treasury. With no usable price feed the
-     fallback is a flat 5% of the collateral instead.
+     outstanding principal + interest goes to the treasury and the remainder back to the
+     borrower. A default now **requires a usable, fresh price feed**: with none available
+     the claim reverts (`CollateralPriceUnavailable`) and the loan stays in its grace
+     window until the feed returns. There is deliberately **no fallback** — the old one
+     paid the seizing party the whole escrow and the borrower nothing, which meant the
+     caller could reach that outcome simply by withholding the feed account.
    - There is **no insurance reserve**: no such mechanism exists in the program.
 
 ---
@@ -267,8 +271,8 @@ flowchart TD
     RepayFlow -->|15% Interest Take-Rate| Treasury
     
     Borrower -.->|Defaults past 24h Grace| LiquidationFlow["Liquidation / ClaimDefault"]
-    LiquidationFlow -->|95% Collateral| DeskVault
-    LiquidationFlow -->|5% Liquidation Margin| Treasury
+    LiquidationFlow -->|Collateral = Debt Owed| DeskVault
+    LiquidationFlow -->|50% of Surplus| Treasury
     
     Treasury -->|30% Revenue Allocation| BuyBurn["🔥 30% Buyback & Burn Engine<br>(Permanent $SKR Supply Destruction)"]
     Treasury -->|70% Revenue Allocation (committed)| TreasuryReserves["🛡️ 70% Protocol Reserves & Ops<br>(Security, Development, Growth)"]
@@ -282,7 +286,7 @@ flowchart TD
 | :--- | :--- | :--- | :--- | :--- |
 | **Loan Origination Fee** | **0.25%** (SOL)<br>**0.50%** (USDC/SKR) | Withheld upfront at loan disbursement, on **both** pool borrows and P2P fundings. A percentage of principal only — it does **not** scale with term | **50%** Treasury PDA<br>**50%** SKR Yield Vault (pool borrows)<br>**100%** Treasury (P2P) | [`processor.rs#L1821`](program/src/processor.rs#L1821) |
 | **Interest Take-Rate** | **15%** of interest | Deducted upon borrower loan repayment | **100%** Treasury PDA | [`processor.rs#L2400-L2462`](program/src/processor.rs#L2400-L2462) |
-| **Liquidation Margin** | **5%** of collateral | Claimed if borrower defaults past 24h grace | **100%** Treasury PDA | [`processor.rs#L2952-L2975`](program/src/processor.rs#L2952-L2975) |
+| **Liquidation Margin** | **50%** of the surplus above the debt | Claimed if borrower defaults past 24h grace | **100%** Treasury PDA | [`processor.rs`](program/src/processor.rs) |
 
 #### B. What Happens to the Rest of the Capital?
 - **Lending Desk Owners & LPs**: Receive **100% of their loan principal** and **85% of all loan interest** compounded automatically into their pool vault PDA (`pool.vault_pda`). If a loan defaults past grace, they receive collateral **worth the outstanding principal + interest** — not the whole escrow. Any surplus value above that is split equally between the borrower and the treasury. Desk owners can withdraw anytime via `WithdrawLiquidity` (Tag 9).
@@ -309,7 +313,7 @@ To drive deflation and long-term value accrual for the $SKR token, the project h
 The protocol operations engine executes the 30% buyback and burn via [`scripts/burn-skr.mjs`](scripts/burn-skr.mjs):
 
 1. **Mode 1: Direct Burn (Zero DEX Fees & Zero Slippage)**:
-   - When borrowers pay origination fees in SKR, or when defaulted SKR collateral is liquidated (5% protocol margin), SKR accumulates directly in the Treasury PDA.
+   - When borrowers pay origination fees in SKR, or when defaulted SKR collateral is liquidated (the treasury takes 50% of the collateral value above the debt), SKR accumulates directly in the Treasury PDA.
    - The CLI script bundles `WithdrawTreasury` and SPL Token `Burn` into a **single atomic transaction**. The tokens are permanently destroyed on-chain without any DEX slippage.
    ```bash
    # Burn 30% of Treasury SKR holdings atomically
@@ -559,7 +563,7 @@ flowchart TD
 
 ## 🧪 Smart Contract Verification & Test Suite
 
-The Solana program has **103 test functions** across six suites, running against the
+The Solana program has **122 test functions** across six suites, running against the
 `solana-program-test` runtime. Count them yourself rather than trusting this number:
 
 ```bash
@@ -639,7 +643,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 | :--- | :---: | :--- |
 | **Mobile-First UX** | 25% | Built natively for Solana Seeker. Features an animated ticking countdown clock, 1-tap Seed Vault MWA signing, biometric app locking, and NFC phone bumping. |
 | **$10,000 SKR Track** | 25% | SKR is the primary collateral asset and the protocol's core reputation engine. Staking SKR grants up to a 25% interest discount, sliding continuously with stake size. It does not change LTV, and staked SKR is never seized — the bond is a lock, not a penalty. |
-| **Technical Execution** | 25% | Macro-free native Rust (`solana-program`) smart contract with pure integer math, 103 test functions, deployed and bytecode-hash-verified on Solana Mainnet-beta, plus an Android release build with R8 obfuscation and anti-emulator detection. |
+| **Technical Execution** | 25% | Macro-free native Rust (`solana-program`) smart contract with pure integer math, 122 test functions, deployed and bytecode-hash-verified on Solana Mainnet-beta, plus an Android release build with R8 obfuscation and anti-emulator detection. |
 | **Real-World Impact** | 25% | Addresses the $500B+ informal peer credit market (ROSCAs, community lending, pawnshops) by providing decentralized, transparent, and non-predatory micro-loans on mobile. |
 
 ---

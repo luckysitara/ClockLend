@@ -29,8 +29,8 @@ use clock_lend::{
     instruction::ClockLendInstruction,
     processor::process_instruction,
     state::{
-        LendingPool, LoanOrder, LoanStatus, P2POffer, PoolType, SkrYieldVault, UserProfile,
-        UserYieldPosition, ADMIN_SEED, DISCRIMINATOR_LOAN, DISCRIMINATOR_POOL,
+        LendingPool, LoanOrder, LoanStatus, P2POffer, PoolType, PriceFeed, SkrYieldVault,
+        UserProfile, UserYieldPosition, ADMIN_SEED, DISCRIMINATOR_LOAN, DISCRIMINATOR_POOL,
         DISCRIMINATOR_PROFILE, ESCROW_SEED, LOAN_SEED, ORACLE_SEED, P2P_SEED, POOL_SEED,
         PROFILE_SEED, SKR_MINT, SKR_YIELD_TOKEN_SEED, SKR_YIELD_VAULT_SEED, TREASURY_SEED,
         USDC_DEVNET_MINT, USER_YIELD_SEED, VAULT_SEED,
@@ -1508,7 +1508,6 @@ async fn fuzz_liquidation_path() {
     println!("\n=== liquidation fuzzer === seed={seed} steps={steps}");
 
     let pid = clock_lend::id();
-    let usdc = Keypair::new();
     let authority = Keypair::new();
     let (pool, _) = Pubkey::find_program_address(
         &[POOL_SEED, authority.pubkey().as_ref(), &1u64.to_le_bytes()],
@@ -1524,6 +1523,7 @@ async fn fuzz_liquidation_path() {
         escrow: Pubkey,
         profile: Pubkey,
         skr_escrow: Pubkey,
+        borrower_skr: Pubkey,
         native: bool,
         staked: u64,
         locked: u64,
@@ -1532,6 +1532,53 @@ async fn fuzz_liquidation_path() {
     let mut loans: Vec<L> = Vec::new();
 
     let mut pt = ProgramTest::new("clock_lend", pid, processor!(process_instruction));
+    // Round-16: fresh GLOBAL collateral feeds at the exact PDAs the processor
+    // derives. Without these every ClaimDefault now fails closed with
+    // CollateralPriceUnavailable and the priced split is never exercised -
+    // which is precisely how the old 95/5 fallback shipped untested.
+    //
+    // The bank clock advances ~0.4s per processed slot, so a campaign must stay
+    // under ADMIN_FEED_MAX_PRICE_AGE_SECS (600s) of bank time for the feeds to
+    // stay usable.
+    let feed_now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock before unix epoch")
+        .as_secs() as i64;
+    let (sol_feed_pda, _) = Pubkey::find_program_address(
+        &[ORACLE_SEED, spl_token::native_mint::id().as_ref()],
+        &pid,
+    );
+    let (skr_feed_pda, _) =
+        Pubkey::find_program_address(&[ORACLE_SEED, SKR_MINT.as_ref()], &pid);
+    for (pda, mint, price, decimals) in [
+        (sol_feed_pda, spl_token::native_mint::id(), 150_000_000u64, 9u8), // $150 / SOL
+        (skr_feed_pda, SKR_MINT, 200_000u64, 6u8), // $0.20 / SKR
+    ] {
+        pt.add_account(
+            pda,
+            Account {
+                lamports: 100_000_000_000,
+                data: borsh::to_vec(&PriceFeed {
+                    discriminator: PriceFeed::DISCRIMINATOR,
+                    is_initialized: true,
+                    mint,
+                    price_micro_usd: price,
+                    decimals,
+                    last_updated_at: feed_now,
+                    max_staleness_seconds: 86_400,
+                    authority: Pubkey::default(),
+                })
+                .unwrap(),
+                owner: pid,
+                executable: false,
+                rent_epoch: 0,
+            },
+        );
+    }
+
+
+
+
     pt.add_account(
         SKR_MINT,
         Account {
@@ -1547,7 +1594,7 @@ async fn fuzz_liquidation_path() {
         treasury_tok,
         Account {
             lamports: 100_000_000_000,
-            data: tok(usdc.pubkey(), treasury_pda, 0),
+            data: tok(USDC_DEVNET_MINT, treasury_pda, 0),
             owner: spl_token::id(),
             executable: false,
             rent_epoch: 0,
@@ -1697,12 +1744,27 @@ async fn fuzz_liquidation_path() {
             },
         );
 
+        // Round-16: the borrower's share of the released SKR surplus needs a
+        // destination token account the borrower actually owns.
+        let borrower_skr = Pubkey::new_unique();
+        pt.add_account(
+            borrower_skr,
+            Account {
+                lamports: 10_000_000,
+                executable: false,
+                rent_epoch: 0,
+                owner: spl_token::id(),
+                data: tok(SKR_MINT, borrower.pubkey(), 0),
+            },
+        );
+
         loans.push(L {
             borrower,
             loan,
             escrow,
             profile,
             skr_escrow,
+            borrower_skr,
             native,
             staked,
             locked,
@@ -1723,7 +1785,9 @@ async fn fuzz_liquidation_path() {
                 pool_type: PoolType::Individual,
                 authority: authority.pubkey(),
                 name: [0u8; 32],
-                liquidity_mint: usdc.pubkey(),
+                // Round-16: the debt is only priced in micro-USD (and therefore
+                // the priced split only runs) for a USDC-denominated pool.
+                liquidity_mint: USDC_DEVNET_MINT,
                 vault_pda: vault,
                 total_liquidity: 0,
                 total_borrowed: 0,
@@ -1776,9 +1840,16 @@ async fn fuzz_liquidation_path() {
     for step in 0..steps {
         bh = bc.get_latest_blockhash().await.unwrap();
         let idx = rng.below(N_LOANS as u64) as usize;
-        let (l_loan, l_escrow, l_profile, l_skr_escrow, l_native) = {
+        let (l_loan, l_escrow, l_profile, l_skr_escrow, l_borrower_skr, l_native) = {
             let l = &loans[idx];
-            (l.loan, l.escrow, l.profile, l.skr_escrow, l.native)
+            (
+                l.loan,
+                l.escrow,
+                l.profile,
+                l.skr_escrow,
+                l.borrower_skr,
+                l.native,
+            )
         };
 
         // Mostly-valid calls with a minority of invalid variants, so the happy
@@ -1794,6 +1865,31 @@ async fn fuzz_liquidation_path() {
         // loan, a treasury-owned token account for an SKR loan.
         let include_treasury = rng.below(100) < 90;
         let include_slash = rng.below(100) < 80;
+        // Round-16 coverage: the priced split is only reached when a usable
+        // collateral feed is supplied, and only settleable when the borrower's
+        // surplus destination is supplied too.
+        let include_oracle = rng.below(100) < 70;
+        let include_borrower_dest = rng.below(100) < 70;
+
+        // The expected priced split for this loan at the genesis feed prices:
+        // debt = principal + interest, collateral_for_debt = debt * 10^dec /
+        // price, and (when solvent) the surplus is split 50/50 between the
+        // treasury and the borrower. Both prices keep every fixture solvent.
+        let debt: u128 = 100_000_000 + 1_000_000;
+        let (price, dec, collateral_amount) = if l_native {
+            (150_000_000u128, 9u32, 1_000_000_000u128)
+        } else {
+            (200_000u128, 6u32, 5_000_000_000u128)
+        };
+        let collateral_for_debt = debt * 10u128.pow(dec) / price;
+        let underwater = collateral_for_debt >= collateral_amount;
+        let (exp_treasury, exp_borrower) = if underwater {
+            (0u64, 0u64)
+        } else {
+            let surplus = collateral_amount - collateral_for_debt;
+            let t = (surplus * 5000 / 10000) as u64;
+            (t, (surplus - t as u128) as u64)
+        };
 
         // destination must be a token account owned by the authority / vault for
         // SKR loans, or the authority wallet / vault PDA for SOL loans.
@@ -1821,9 +1917,26 @@ async fn fuzz_liquidation_path() {
         if include_slash {
             accounts.push(AccountMeta::new(slash_dest, false));
         }
+        // Order matters: the treasury PDA must be seen before the feeds and the
+        // borrower destination, which the outer scan would otherwise capture as
+        // the "bare treasury" fallback.
         if include_treasury {
             accounts.push(AccountMeta::new(
                 if l_native { treasury_pda } else { treasury_skr },
+                false,
+            ));
+        }
+        if include_oracle {
+            accounts.push(AccountMeta::new_readonly(sol_feed_pda, false));
+            accounts.push(AccountMeta::new_readonly(skr_feed_pda, false));
+        }
+        if include_borrower_dest {
+            accounts.push(AccountMeta::new(
+                if l_native {
+                    loans[idx].borrower.pubkey()
+                } else {
+                    l_borrower_skr
+                },
                 false,
             ));
         }
@@ -1834,6 +1947,33 @@ async fn fuzz_liquidation_path() {
             data: borsh::to_vec(&ClockLendInstruction::ClaimDefault).unwrap(),
         };
 
+        // Destination balances before the step, for the (a) delta invariant.
+        let borrower_before_lamports = bc
+            .get_account(loans[idx].borrower.pubkey())
+            .await
+            .unwrap()
+            .map(|a| a.lamports)
+            .unwrap_or(0);
+        let borrower_before_skr = token_amount(&mut bc, l_borrower_skr).await;
+        let treasury_before_lamports = bc
+            .get_account(treasury_pda)
+            .await
+            .unwrap()
+            .map(|a| a.lamports)
+            .unwrap_or(0);
+        let treasury_before_skr = token_amount(&mut bc, treasury_skr).await;
+
+        // Was the position still live (and therefore priceable) at step start?
+        let live_before = match bc.get_account(l_loan).await.unwrap() {
+            Some(a) if a.owner == pid && a.data.len() >= LoanOrder::LEN => {
+                matches!(
+                    LoanOrder::unpack_from_slice(&a.data).unwrap().status,
+                    LoanStatus::InGracePeriod
+                )
+            }
+            _ => false,
+        };
+
         // L5 conservation: total SKR across every account that can hold it must be
         // unchanged. This is destination-agnostic, so it stays valid no matter which
         // candidate the resolver picks for the slash (slash_dest, the treasury SKR
@@ -1842,7 +1982,8 @@ async fn fuzz_liquidation_path() {
         let mut before_total = token_amount(&mut bc, l_skr_escrow).await
             + token_amount(&mut bc, slash_dest).await
             + token_amount(&mut bc, collat_dest).await
-            + token_amount(&mut bc, treasury_skr).await;
+            + token_amount(&mut bc, treasury_skr).await
+            + borrower_before_skr;
         if !l_native {
             before_total += token_amount(&mut bc, l_escrow).await;
         }
@@ -1852,6 +1993,74 @@ async fn fuzz_liquidation_path() {
             accepted += 1;
         } else {
             rejected += 1;
+        }
+
+        // CL-3: with no feed at all there is no legacy fallback any more - the
+        // default MUST fail closed and the loan MUST stay in grace.
+        if !include_oracle {
+            assert!(
+                !ok,
+                "CL-3 VIOLATED at step {step} (loan {idx}): default with NO feed settled"
+            );
+        }
+
+        // CL-2: a usable fresh feed plus a solvent position and no borrower
+        // destination MUST be rejected (the seizing party builds the tx, so an
+        // omitted destination would otherwise silently keep the surplus).
+        if include_oracle && !include_borrower_dest && !underwater && live_before {
+            assert!(
+                !ok,
+                "CL-2 VIOLATED at step {step} (loan {idx}): solvent priced default \
+                 succeeded without a borrower destination"
+            );
+        }
+
+        if ok {
+            // CL-1: a successful default is a priced split. The lender is paid
+            // the debt, the treasury takes half the surplus and the borrower
+            // keeps the rest - measured on the real destination balances.
+            let (exp_borrower_delta, exp_treasury_delta) = if underwater {
+                (0u64, 0u64)
+            } else {
+                (exp_borrower, exp_treasury)
+            };
+            if l_native {
+                let borrower_after = bc
+                    .get_account(loans[idx].borrower.pubkey())
+                    .await
+                    .unwrap()
+                    .map(|a| a.lamports)
+                    .unwrap_or(0);
+                let treasury_after = bc
+                    .get_account(treasury_pda)
+                    .await
+                    .unwrap()
+                    .map(|a| a.lamports)
+                    .unwrap_or(0);
+                assert_eq!(
+                    borrower_after.saturating_sub(borrower_before_lamports),
+                    exp_borrower_delta,
+                    "CL-1 VIOLATED at step {step} (loan {idx}, SOL): borrower surplus delta"
+                );
+                assert_eq!(
+                    treasury_after.saturating_sub(treasury_before_lamports),
+                    exp_treasury_delta,
+                    "CL-1 VIOLATED at step {step} (loan {idx}, SOL): treasury surplus delta"
+                );
+            } else {
+                let borrower_after = token_amount(&mut bc, l_borrower_skr).await;
+                let treasury_after = token_amount(&mut bc, treasury_skr).await;
+                assert_eq!(
+                    borrower_after - borrower_before_skr,
+                    exp_borrower_delta,
+                    "CL-1 VIOLATED at step {step} (loan {idx}, SKR): borrower surplus delta"
+                );
+                assert_eq!(
+                    treasury_after - treasury_before_skr,
+                    exp_treasury_delta,
+                    "CL-1 VIOLATED at step {step} (loan {idx}, SKR): treasury surplus delta"
+                );
+            }
         }
 
         // L1/L2: bond accounting must hold regardless of outcome
@@ -1901,7 +2110,8 @@ async fn fuzz_liquidation_path() {
             let mut after = token_amount(&mut bc, l_skr_escrow).await
                 + token_amount(&mut bc, slash_dest).await
                 + token_amount(&mut bc, collat_dest).await
-                + token_amount(&mut bc, treasury_skr).await;
+                + token_amount(&mut bc, treasury_skr).await
+                + token_amount(&mut bc, l_borrower_skr).await;
             if !l_native {
                 after += token_amount(&mut bc, l_escrow).await;
             }

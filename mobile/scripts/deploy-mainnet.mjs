@@ -7,6 +7,7 @@ import {
 } from '@solana/web3.js';
 import { execFileSync } from 'child_process';
 import { assertCluster, normalizeCluster, GENESIS_HASHES } from '../../scripts/lib/cluster-guard.mjs';
+import { redactUrl } from '../../scripts/lib/redact-url.mjs';
 
 async function sendTxWithRetry(instructions, signers) {
   const tx = new Transaction();
@@ -57,8 +58,31 @@ function createAssociatedTokenAccountIdempotentInstruction(payer, ata, owner, mi
   });
 }
 
-// Load the repo-root .env (no external deps) so server-side scripts can use
+// Load the repo-root .env (no external deps) so this script can use
 // SOLANA_RPC_URL / HELIUS_RPC_URL without exporting them manually.
+//
+// ONLY the names this script actually consumes are imported. This previously
+// copied EVERY `KEY=value` line into `process.env`, so an unrelated credential
+// sitting in .env (the GitHub PAT, say) was silently inherited by every child
+// process — including `cargo build-sbf`, which executes the dependency graph's
+// build scripts. A token with write access to this repo should not be visible to
+// a build tool, let alone a compromised crate's build.rs.
+const ENV_ALLOWLIST = new Set([
+  'SOLANA_RPC_URL',
+  'SOLANA_CLUSTER',
+  'HELIUS_RPC_URL',
+  'MAINNET_RPC',
+  'DEPLOYER_KEY',
+  'PROGRAM_KEYPAIR',
+  'PROGRAM_ID',
+  'ORACLE_KEY',
+  'BUFFER',
+  'BUFFER_KEYPAIR',
+  'CLUSTER',
+  'JUPITER_API_KEY',
+  'JUPITER_API_URL',
+]);
+
 function loadEnv() {
   // Try the repo-root .env first (server keys), then the app's mobile/.env
   let envPath = new URL('../../.env', import.meta.url).pathname;
@@ -66,7 +90,7 @@ function loadEnv() {
   try {
     for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
       const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
-      if (m && !(m[1] in process.env)) {
+      if (m && ENV_ALLOWLIST.has(m[1]) && !(m[1] in process.env)) {
         process.env[m[1]] = m[2].trim().replace(/^['"]|['"]$/g, '');
       }
     }
@@ -205,7 +229,7 @@ async function main() {
   if (unknown.length) throw new Error(`Unknown flags: ${unknown.join(', ')}`);
 
   console.log(`Cluster: ${CLUSTER}`);
-  console.log(`RPC:     ${RPC}`);
+  console.log(`RPC:     ${redactUrl(RPC)}`);
   // Prove the endpoint is the cluster we think it is before spending anything.
   // Fail closed: a mismatch here would deploy mainnet bytecode to devnet (or
   // vice versa) while every log line claims the other cluster.
@@ -236,9 +260,19 @@ async function main() {
   const skipBuild = args.includes('--skip-build');
   if (!skipBuild) {
     console.log('Building the program from source (cargo build-sbf)...');
+    // Hand the build a stripped environment. `cargo build-sbf` compiles and RUNS
+    // the dependency graph's build scripts — third-party code that has no
+    // business seeing an RPC key, a deployer key path, or a repo-write token.
+    // Inherit-then-remove rather than constructing a minimal env, so the
+    // toolchain still gets PATH/HOME/CARGO_HOME/etc. and the build cannot break.
+    const buildEnv = { ...process.env };
+    for (const name of ENV_ALLOWLIST) delete buildEnv[name];
+    delete buildEnv.GITHUB_TOKEN;
+    delete buildEnv.GH_TOKEN;
     execFileSync('cargo', ['build-sbf'], {
       cwd: new URL('../../program', import.meta.url).pathname,
       stdio: 'inherit',
+      env: buildEnv,
     });
   }
   if (!fs.existsSync(soPath)) {

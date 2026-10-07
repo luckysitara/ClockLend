@@ -13,6 +13,7 @@
 //   * prints the current -> proposed authority diff and requires --yes.
 import fs from 'fs';
 import { assertCluster, normalizeCluster, GENESIS_HASHES } from './lib/cluster-guard.mjs';
+import { redactUrl } from './lib/redact-url.mjs';
 
 let web3;
 try {
@@ -126,7 +127,7 @@ function decodeAdminConfig(data) {
 async function rotate() {
   console.log('=== ClockLend Oracle Authority Rotation ===');
   console.log('Cluster:            ', network);
-  console.log('RPC:                ', RPC_URL);
+  console.log('RPC:                ', redactUrl(RPC_URL));
   console.log('Program:            ', PROGRAM_ID.toBase58());
   console.log('Admin (signer):     ', adminKeypair.publicKey.toBase58());
   console.log('New oracle source:  ', newOracleSource);

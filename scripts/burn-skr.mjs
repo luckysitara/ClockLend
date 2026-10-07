@@ -14,6 +14,7 @@
 //     fatal — it is never coerced to 0.
 import fs from 'fs';
 import { assertCluster, normalizeCluster } from './lib/cluster-guard.mjs';
+import { redactUrl } from './lib/redact-url.mjs';
 
 // scripts/ has no node_modules of its own: resolve @solana/web3.js from a real
 // install, else borrow the copy vendored under serverless/ or mobile/ so the
@@ -296,7 +297,7 @@ async function main() {
   console.log('🔥 ClockLend SKR Buyback & Burn Portal');
   console.log('====================================================');
   console.log('Network:       ', network);
-  console.log('RPC:           ', RPC_URL);
+  console.log('RPC:           ', redactUrl(RPC_URL));
   console.log('Admin Signer:  ', adminKeypair.publicKey.toBase58());
   console.log('Treasury PDA:  ', treasuryPda.toBase58());
   console.log('Mode:          ', dryRun ? 'DRY RUN (nothing will be sent)' : (confirmed ? 'LIVE (--yes)' : 'build + simulate only'));

@@ -82,6 +82,14 @@ pub enum ClockLendError {
     InvalidUserYieldPosition,
     #[error("SKR Yield Claim Cooldown Active")]
     YieldCooldown,
+    // Appended, never inserted: the mobile client maps these by numeric value,
+    // so new variants must only ever go on the end.
+    #[error("Borrower surplus destination account required")]
+    BorrowerSurplusDestinationRequired,
+    #[error("Collateral price unavailable for default settlement")]
+    CollateralPriceUnavailable,
+    #[error("First-time pool feed write requires the global feed anchor account")]
+    PriceFeedAnchorRequired,
 }
 
 impl From<ClockLendError> for ProgramError {
