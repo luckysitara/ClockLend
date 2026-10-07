@@ -4,7 +4,7 @@
 > **Mainnet Program ID:** [`4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7`](https://solscan.io/account/4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7) — deployed on mainnet-beta (bytecode-hash re-verification pending after the audit-remediation redeploy; see *Production Status*)  
 > **Devnet Program ID:** [`HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3`](https://explorer.solana.com/address/HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3?cluster=devnet) (exists on devnet only)  
 > **Physical Target Hardware:** Solana Seeker (Android 14+ / Seed Vault / MWA 2.0)  
-> **Security Audit Status:** 14 internal audit rounds • 122 on-chain test functions • **no third-party audit** • an independent audit is the next step. The round-15 hardening and the audit-remediation pass that followed it are both **merged and deployed** — see *Production Status* below, which currently records a **byte-reproduction gap** rather than a verified hash.
+> **Security Audit Status:** 14 internal audit rounds • 122 on-chain test functions • **no third-party audit** • an independent audit is the next step. The round-15 hardening **is deployed**. The audit-remediation pass that followed it is **merged in this repository but NOT deployed** — see *Production Status* below. The deployed program still contains the pre-remediation default-settlement paths.
 
 ---
 
@@ -42,9 +42,16 @@ faucet/switch UI has been removed, and the data layer is fully network-aware.
 - **Round-15 program hardening (deployed).** P2P LTV capped under shared `MAX_LTV_BPS` = 7000;
   pool-PDA re-derivation added to `BorrowFromPool`; permissionless borrow parks yield fee; and
   the redundant 182-byte `AccountKind` heuristic removed.
-- **Audit-remediation pass (deployed).** A four-surface audit — on-chain program, Cloudflare
-  worker, ops scripts and mobile client — produced the following changes, all now on chain or
-  in the shipped app:
+- ⚠️ **Audit-remediation pass — MERGED IN THIS REPO, NOT YET DEPLOYED ON CHAIN.** A four-surface
+  audit — on-chain program, Cloudflare worker, ops scripts and mobile client — produced the
+  changes below. The **client and script changes ship with the app**; the **on-chain program
+  changes do not exist on mainnet yet**. Verified 2026-10-07 by extracting the deployed
+  `ProgramData` and searching its `.rodata` for the strings these fixes add and remove: the
+  deployed ELF still contains `falling back to the 5/95 split`, `falling back to full seizure`
+  and `Default split destinations missing` (all deleted by this pass), and does not contain
+  `refusing to settle` or `allowance` (both added by it). The deployed program is therefore the
+  pre-remediation build, and the default-settlement issue described below **remains live on
+  mainnet** until this is redeployed. The changes:
   - **Default settlement fails closed.** `ClaimDefault` previously fell back to a legacy
     "95% lender / 5% treasury" split (100% to the funder on the pawn path) whenever the caller
     omitted an account. Because the seizing party builds the transaction, that made the
