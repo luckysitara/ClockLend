@@ -93,6 +93,19 @@ android {
         versionName "2.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
+
+        // Demo escape hatch, for screen-sharing the app on a call.
+        //
+        // Defaults to FALSE, so an ordinary build keeps FLAG_SECURE and the
+        // device-integrity gate exactly as they are. A demo build opts in
+        // explicitly:
+        //
+        //     ./gradlew assembleRelease -PdemoMode
+        //
+        // Doing it here rather than as a constant in MainActivity.kt means there
+        // is nothing to remember to revert before shipping - the secure path is
+        // the default and the insecure one cannot be reached by accident.
+        buildConfigField "boolean", "DEMO_MODE", "${project.hasProperty('demoMode') ? 'true' : 'false'}"
     }
     signingConfigs {
         debug {

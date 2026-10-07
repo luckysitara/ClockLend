@@ -20,8 +20,17 @@ class MainActivity : ReactActivity() {
     // This is required for expo-splash-screen.
     setTheme(R.style.AppTheme);
 
-    // Defense-in-Depth: Prevent screenshots, screen recording, and task switcher snapshots across release builds
-    if (!BuildConfig.DEBUG) {
+    // Defense-in-Depth: Prevent screenshots, screen recording, and task switcher
+    // snapshots across release builds.
+    //
+    // DEMO_MODE (opt in with `./gradlew assembleRelease -PdemoMode`) clears it
+    // instead, so the app can be shown on a screen share. Without that, the app
+    // is a black rectangle to everyone on the call - which is precisely what a
+    // demo cannot survive. Cleared explicitly rather than merely not-set, so a
+    // theme or a previous activity cannot leave it on.
+    if (BuildConfig.DEMO_MODE) {
+      window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    } else if (!BuildConfig.DEBUG) {
       window.setFlags(
         WindowManager.LayoutParams.FLAG_SECURE,
         WindowManager.LayoutParams.FLAG_SECURE
@@ -34,7 +43,10 @@ class MainActivity : ReactActivity() {
     val isHooking = SecurityIntegrity.isHookingDetected()
     val isDebugger = SecurityIntegrity.isDebuggerAttached(this, !BuildConfig.DEBUG)
 
-    if (isEmulator || isRooted || isHooking || (isDebugger && !BuildConfig.DEBUG)) {
+    // Skipped entirely in DEMO_MODE. An emulator is the ordinary way to present
+    // the app on a call, and this gate exits before there is anything to show.
+    if (!BuildConfig.DEMO_MODE &&
+        (isEmulator || isRooted || isHooking || (isDebugger && !BuildConfig.DEBUG))) {
       super.onCreate(null)
       val reason = when {
         isEmulator -> "Virtualized Environment (Emulator / Simulator) Detected."
@@ -59,8 +71,12 @@ class MainActivity : ReactActivity() {
 
   override fun onResume() {
     super.onResume()
-    // Re-assert FLAG_SECURE on resume to guarantee screen shielding in release
-    if (!BuildConfig.DEBUG) {
+    // Re-assert FLAG_SECURE on resume to guarantee screen shielding in release -
+    // or keep it cleared for the whole session in DEMO_MODE, since resuming from
+    // the recents switcher must not re-arm the shield mid-demo.
+    if (BuildConfig.DEMO_MODE) {
+      window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    } else if (!BuildConfig.DEBUG) {
       window.setFlags(
         WindowManager.LayoutParams.FLAG_SECURE,
         WindowManager.LayoutParams.FLAG_SECURE
