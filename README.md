@@ -4,7 +4,7 @@
 > **Mainnet Program ID:** [`4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7`](https://solscan.io/account/4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7) — deployed on mainnet-beta (bytecode-hash re-verification pending after the audit-remediation redeploy; see *Production Status*)  
 > **Devnet Program ID:** [`HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3`](https://explorer.solana.com/address/HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3?cluster=devnet) (exists on devnet only)  
 > **Physical Target Hardware:** Solana Seeker (Android 14+ / Seed Vault / MWA 2.0)  
-> **Security Audit Status:** 14 internal audit rounds • 122 on-chain test functions • **no third-party audit** • an independent audit is the next step. The round-15 hardening and the audit-remediation pass that followed it are both **merged and deployed** — see *Production Status* below for the current bytecode hash.
+> **Security Audit Status:** 14 internal audit rounds • 122 on-chain test functions • **no third-party audit** • an independent audit is the next step. The round-15 hardening and the audit-remediation pass that followed it are both **merged and deployed** — see *Production Status* below, which currently records a **byte-reproduction gap** rather than a verified hash.
 
 ---
 
@@ -13,18 +13,32 @@
 The app is **mainnet-only**: every money flow executes on mainnet-beta, all devnet
 faucet/switch UI has been removed, and the data layer is fully network-aware.
 
-**Program** — **deployed on Solana Mainnet-beta**, bytecode-verified against this repo:
+**Program** — **deployed on Solana Mainnet-beta** (byte-reproduction currently unverified; see below):
 - Program `4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7`, ProgramData
-  `9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG` (377,997 B allocated / 371,632 B ELF;
-  the remainder is retained zero padding),
+  `9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG` (377,997 B allocated; the ELF occupies the
+  first `45 + elf_len` bytes and the remainder is retained zero padding),
   upgrade authority `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds`
-- ⚠️ **Artifact hash pending re-verification.** The previously recorded sha256
-  (`6a3375bf6c7deea30ae0a94c35323f3b2dfd892234bae9e5c5940f2d23afc69d`, the 2026-10-02 deploy)
-  describes a build that **predates the audit-remediation pass below** and is therefore
-  superseded. `deploy-mainnet.mjs` compares `sha256(local .so)` against the on-chain slice
-  `ProgramData.data[45 : 45 + localSize]`; re-run the
-  [`docs/MAINNET_RUNBOOK.md`](docs/MAINNET_RUNBOOK.md) §1.1 procedure and record the new value
-  here before quoting a hash. Do not cite the old one.
+- **Observed on-chain state (2026-10-07).** ProgramData header reports
+  `last_deployed_slot = 453547226` against a then-current slot of 454082700 — i.e. the program
+  was last upgraded roughly 2.5 days earlier, and the 2026-10-02 hash below is therefore
+  **superseded**. The upgrade authority is unchanged at
+  `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds`.
+- ⚠️ **Byte-reproduction is currently UNVERIFIED — do not quote a hash for this build.**
+  A local `cargo build-sbf` (`solana-cargo-build-sbf 3.1.9`) of this repository produces a
+  374,168-byte ELF, while the deployed ELF is a different size and shares only a 24-byte
+  prefix with it. So the deployed bytes do **not** reproduce from this tree in this
+  environment, and the previous claim that the deployment is byte-verified against the repo
+  cannot currently be made.
+
+  This is a *reproducibility* gap, not evidence of a different source: Solana builds are not
+  reliably byte-reproducible across toolchain versions or build hosts, and the audit-remediation
+  pass below was merged around the same time as the upgrade. The previous record
+  (`6a3375bf…`, 2026-10-02, 371,632 B) describes an older build and must not be cited either.
+
+  **To close this:** re-run [`docs/MAINNET_RUNBOOK.md`](docs/MAINNET_RUNBOOK.md) §1.1 on the
+  machine that produced the deployment (or pin the toolchain and rebuild), confirm
+  `sha256(ELF)` equals `sha256(ProgramData.data[45 : 45 + elf_len])`, and record that value
+  here. Until then this README claims deployment, **not** byte-verification.
 - **Round-15 program hardening (deployed).** P2P LTV capped under shared `MAX_LTV_BPS` = 7000;
   pool-PDA re-derivation added to `BorrowFromPool`; permissionless borrow parks yield fee; and
   the redundant 182-byte `AccountKind` heuristic removed.
@@ -674,7 +688,7 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 | :--- | :---: | :--- |
 | **Mobile-First UX** | 25% | Built natively for Solana Seeker. Features an animated ticking countdown clock, 1-tap Seed Vault MWA signing, biometric app locking, and NFC phone bumping. |
 | **$10,000 SKR Track** | 25% | SKR is the primary collateral asset and the protocol's core reputation engine. Staking SKR grants up to a 25% interest discount, sliding continuously with stake size. It does not change LTV, and staked SKR is never seized — the bond is a lock, not a penalty. |
-| **Technical Execution** | 25% | Macro-free native Rust (`solana-program`) smart contract with pure integer math, 122 test functions, deployed and bytecode-hash-verified on Solana Mainnet-beta, plus an Android release build with R8 obfuscation and anti-emulator detection. |
+| **Technical Execution** | 25% | Macro-free native Rust (`solana-program`) smart contract with pure integer math, 122 test functions, deployed to Solana Mainnet-beta (program `4Dp2A6…`, upgrade authority unchanged since launch), plus an Android release build with R8 obfuscation and anti-emulator detection. |
 | **Real-World Impact** | 25% | Addresses the $500B+ informal peer credit market (ROSCAs, community lending, pawnshops) by providing decentralized, transparent, and non-predatory micro-loans on mobile. |
 
 ---
