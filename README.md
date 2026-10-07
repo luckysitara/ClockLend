@@ -1,14 +1,14 @@
 # 📱 ClockLend
 ### *Next-Gen P2P Micro-Lending & Social Pawns on Solana Seeker*
 > **Built for the Solana Mobile CLOCK IN Hackathon (RadiantsDAO & Solana Mobile)**  
-> **Mainnet Program ID:** [`4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7`](https://solscan.io/account/4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7) — deployed and bytecode-hash-verified  
+> **Mainnet Program ID:** [`4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7`](https://solscan.io/account/4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7) — deployed on mainnet-beta (bytecode-hash re-verification pending after the audit-remediation redeploy; see *Production Status*)  
 > **Devnet Program ID:** [`HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3`](https://explorer.solana.com/address/HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3?cluster=devnet) (exists on devnet only)  
 > **Physical Target Hardware:** Solana Seeker (Android 14+ / Seed Vault / MWA 2.0)  
-> **Security Audit Status:** 14 internal AI-assisted rounds • 122 on-chain test functions • **no third-party audit** • round-14 fixes are deployed (verified 2026-09-29). A further hardening pass (default settlement, oracle move bound, WSOL liquidity mints) is **merged in source but not yet deployed** — see the Treasury Monetization notes below.
+> **Security Audit Status:** 14 internal audit rounds • 122 on-chain test functions • **no third-party audit** • an independent audit is the next step. The round-15 hardening and the audit-remediation pass that followed it are both **merged and deployed** — see *Production Status* below for the current bytecode hash.
 
 ---
 
-## 🏭 Production Status (verified 2026-09-29)
+## 🏭 Production Status
 
 The app is **mainnet-only**: every money flow executes on mainnet-beta, all devnet
 faucet/switch UI has been removed, and the data layer is fully network-aware.
@@ -18,15 +18,46 @@ faucet/switch UI has been removed, and the data layer is fully network-aware.
   `9ikmDTbbRhtgYKjRhcnzCK9RpPWQ8uTYUeNJ16kWMLSG` (377,997 B allocated / 371,632 B ELF;
   the remainder is retained zero padding),
   upgrade authority `8YvdDpWVAxpuyDHw3tpUheq99vgtakFELdqezykYosds`
-- **Last verified deploy: 2026-10-02.** At that moment the deployed bytecode matched a local
-  `cargo-build-sbf` build of this repository byte-for-byte over all 371,632 non-padding bytes
-  (artifact sha256 `6a3375bf6c7deea30ae0a94c35323f3b2dfd892234bae9e5c5940f2d23afc69d`, which is
-  what `deploy-mainnet.mjs` compares against the on-chain slice
-  `ProgramData.data[45 : 45 + localSize]`). Recipe and re-verification procedure:
-  [`docs/MAINNET_RUNBOOK.md`](docs/MAINNET_RUNBOOK.md) §1.1
-- **Round-15 program hardening is deployed.** Includes four key fixes: P2P LTV capped under
-  shared `MAX_LTV_BPS` = 7000; pool-PDA re-derivation added to `BorrowFromPool`; permissionless
-  borrow parks yield fee; and redundant 182-byte `AccountKind` heuristic removed.
+- ⚠️ **Artifact hash pending re-verification.** The previously recorded sha256
+  (`6a3375bf6c7deea30ae0a94c35323f3b2dfd892234bae9e5c5940f2d23afc69d`, the 2026-10-02 deploy)
+  describes a build that **predates the audit-remediation pass below** and is therefore
+  superseded. `deploy-mainnet.mjs` compares `sha256(local .so)` against the on-chain slice
+  `ProgramData.data[45 : 45 + localSize]`; re-run the
+  [`docs/MAINNET_RUNBOOK.md`](docs/MAINNET_RUNBOOK.md) §1.1 procedure and record the new value
+  here before quoting a hash. Do not cite the old one.
+- **Round-15 program hardening (deployed).** P2P LTV capped under shared `MAX_LTV_BPS` = 7000;
+  pool-PDA re-derivation added to `BorrowFromPool`; permissionless borrow parks yield fee; and
+  the redundant 182-byte `AccountKind` heuristic removed.
+- **Audit-remediation pass (deployed).** A four-surface audit — on-chain program, Cloudflare
+  worker, ops scripts and mobile client — produced the following changes, all now on chain or
+  in the shipped app:
+  - **Default settlement fails closed.** `ClaimDefault` previously fell back to a legacy
+    "95% lender / 5% treasury" split (100% to the funder on the pawn path) whenever the caller
+    omitted an account. Because the seizing party builds the transaction, that made the
+    borrower's surplus protection optional in practice. A solvent position now *requires* the
+    borrower's destination, collateral is priced at `max(pool, global)`, and an unpriceable
+    position reverts with `CollateralPriceUnavailable` rather than seizing the whole escrow.
+  - **Oracle move bound is now a rate, not a per-write cap.** `SetPriceFeed`'s 25% limit was
+    measured against the stored price, which each write overwrites — so ~31 writes in a single
+    transaction compounded ~1000×. It is now elapsed-proportional (same-timestamp writes get
+    zero allowance), and a first-time pool-scoped write must anchor to the global feed. This
+    also removes a latent deadlock: a genuine move larger than 25% could previously never be
+    written at all, staling the feed permanently.
+  - **WSOL removed from the liquidity-mint allowlist.** `debt` is denominated in the liquidity
+    mint, so 9-decimal lamports were being priced as micro-USD — inflating the claim by
+    ~1e9/price and full-seizing every default on such a pool. USDC only.
+  - **Worker:** `redactUrl` now covers path-embedded credentials and userinfo (Alchemy- and
+    QuickNode-style endpoints leaked in full through the unauthenticated `/health`);
+    `/rpc` gained batch-depth, body-size and content-type caps; the crank token is compared in
+    constant time; feed verification requires a strict increase over a pre-send snapshot rather
+    than a 60-second window that could mask a crank which never landed.
+  - **Client:** the `EXPO_PUBLIC_*` key guard now fails the **bundle** (in `metro.config.js`)
+    rather than throwing at runtime after the key has already shipped; lock and
+    device-integrity checks fail closed; PDA ids come from the CSPRNG instead of `Math.random`.
+  - **Scripts:** `migrate-pool.mjs` gained the cluster guard, `--dry-run` and `--yes` its
+    siblings already had; keyed RPC URLs are redacted from logs.
+  - 11 regression tests were added with the remediation, including a liquidation fuzzer that
+    now exercises the *priced* default path — the gap that let the settlement bug ship.
 - 122 on-chain test functions across six suites (`grep -c '#\[test\]\|#\[tokio::test\]' program/tests/*.rs`)
 - 8-byte account discriminators with fail-closed dispatch, ProgramData-derived admin root,
   PDA-verified escrows with front-run authority defense
