@@ -16,6 +16,7 @@ import {
   Connection, Keypair, PublicKey, Transaction, TransactionInstruction,
   SystemProgram, SYSVAR_RENT_PUBKEY, SYSVAR_CLOCK_PUBKEY,
 } from '@solana/web3.js';
+import { redactUrl } from '../../scripts/lib/redact-url.mjs';
 
 const PROGRAM_ID = new PublicKey(process.env.PROGRAM_ID || '4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7');
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
@@ -126,7 +127,7 @@ try {
     process.exit(1);
   }
 }
-console.log(`RPC: ${RPC}`);
+console.log(`RPC: ${redactUrl(RPC)}`);
 console.log(`Authority: ${authority.publicKey.toBase58()} (${(await conn.getBalance(authority.publicKey)) / 1e9} SOL)\n`);
 
 // ---------------------------------------------------------------------------

@@ -40,7 +40,12 @@ const DEFAULT_CONFIG: VersionConfig = {
 const REMOTE_VERSION_URLS = [
   'https://seek.kikhaus.com/version.json',
   'https://clocklend.kikhaus.com/version.json',
-  'https://raw.githubusercontent.com/luckysitara/Clock-It/master/site/version.json',
+  // Was .../Clock-It/... — the GitHub repo was renamed to ClockLend, so this
+  // pointed at a name no longer under our control. Since this document can force
+  // a lockout and supply a URL that gets opened, a stale namespace is a
+  // supply-chain hole, not just a broken link: whoever claims the old name could
+  // serve a malicious version.json.
+  'https://raw.githubusercontent.com/luckysitara/ClockLend/master/site/version.json',
 ];
 
 /**
@@ -135,6 +140,12 @@ export async function checkAppVersion(): Promise<VersionGateResult> {
 
 /**
  * Open Solana Seeker dApp Store directly, falling back to Android market or browser.
+ *
+ * `customUrl` arrives in the version.json document fetched over the network, so
+ * it is attacker-controlled if any of those hosts is ever compromised — and a
+ * version.json is the one document that can force a lockout, making it the
+ * highest-value thing to hijack. `isAllowedUpdateUrl` below is what constrains
+ * it; the allowlists live inside the function so they sit next to the check.
  */
 export async function openDAppStore(customUrl?: string): Promise<void> {
   // Trust no remote URL: the version config is unsigned. Only well-known
@@ -149,6 +160,10 @@ export async function openDAppStore(customUrl?: string): Promise<void> {
   ]);
   const isAllowedUpdateUrl = (u?: string): boolean => {
     if (!u) return false;
+    // Reject embedded whitespace and control characters outright. Several
+    // platforms ignore everything before a newline, which is the classic
+    // scheme-check bypass, and it costs nothing to refuse them here.
+    if (/[\s\u0000-\u001f]/.test(u)) return false;
     try {
       const parsed = new URL(u);
       return (

@@ -2597,3 +2597,393 @@ async fn poc_ghost_shares_survive_optional_sync_accounts() {
         "phantom shares removed from the denominator"
     );
 }
+
+// ============================================================================
+// Round-16 regression tests for the zero-amount StakeSKR resync.
+// ============================================================================
+
+/// A donated SKR base unit desyncs `position.staked_skr` from the escrow, which
+/// makes ClaimSkrYield revert with the H-2 desync guard. `StakeSKR { amount: 0 }`
+/// is the free repair path: it must repair the shares AND leave the anti-JIT
+/// cooldown anchor untouched (writing it would re-arm the 1h timer for a grief
+/// the user did not cause).
+#[tokio::test]
+async fn test_stake_skr_zero_amount_resyncs_donated_escrow() {
+    let program_id = Pubkey::new_unique();
+    let user = Keypair::new();
+    let reward_mint = USDC_DEVNET_MINT;
+    let staked: u64 = 500 * SKR_DECIMALS;
+    let donated_escrow: u64 = staked + 1; // one base unit donated by a griefer
+
+    let mut program_test =
+        ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
+    program_test.add_account(
+        reward_mint,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    program_test.add_account(
+        SKR_MINT,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    // Ancient cooldown anchor (timestamp 1): the cooldown has long elapsed.
+    let yield_vault_pda =
+        add_vault(&mut program_test, program_id, reward_mint, user.pubkey(), staked);
+    let escrow_pda = add_skr_escrow(&mut program_test, program_id, user.pubkey(), donated_escrow);
+    let user_yield_pda = add_position(
+        &mut program_test,
+        program_id,
+        user.pubkey(),
+        reward_mint,
+        staked,
+        1,
+    );
+    let user_skr = Keypair::new();
+    program_test.add_account(
+        user_skr.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(SKR_MINT, user.pubkey(), 1_000 * SKR_DECIMALS),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    // Lamports for the profile rent + fees.
+    program_test.add_account(
+        user.pubkey(),
+        Account {
+            lamports: 1_000_000_000,
+            data: vec![],
+            owner: solana_program::system_program::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    let (profile_pda, _) =
+        Pubkey::find_program_address(&[PROFILE_SEED, user.pubkey().as_ref()], &program_id);
+    let mut ctx = program_test.start_with_context().await;
+
+    let resync_ix = Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(user.pubkey(), true),
+            AccountMeta::new(profile_pda, false),
+            AccountMeta::new(user_skr.pubkey(), false),
+            AccountMeta::new(escrow_pda, false),
+            AccountMeta::new_readonly(solana_program::system_program::id(), false),
+            AccountMeta::new_readonly(spl_token::id(), false),
+            AccountMeta::new_readonly(SKR_MINT, false),
+            AccountMeta::new(yield_vault_pda, false),
+            AccountMeta::new(user_yield_pda, false),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &USDC_MAINNET_MINT, &user.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(
+                    &program_id,
+                    &USDC_MAINNET_MINT,
+                    &user.pubkey(),
+                    false,
+                ),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &user.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &user.pubkey(), false),
+                false,
+            ),
+        ],
+        data: borsh::to_vec(&ClockLendInstruction::StakeSKR { amount: 0 }).unwrap(),
+    };
+
+    submit(&mut ctx, &[resync_ix], &[&user], &user)
+        .await
+        .expect("zero-amount StakeSKR must be a valid resync");
+
+    // The shares are repaired...
+    let pos = read_position(&mut ctx, user_yield_pda).await;
+    assert_eq!(
+        pos.staked_skr, donated_escrow,
+        "resync must adopt the live escrow balance (including the donation)"
+    );
+    assert_eq!(
+        read_vault(&mut ctx, yield_vault_pda).await.total_staked_skr,
+        donated_escrow,
+        "vault denominator must be repaired to the live escrow balance"
+    );
+    // ...the cooldown anchor is NOT touched...
+    assert_eq!(
+        pos.last_interaction_time, 1,
+        "a zero-amount resync must NOT re-arm the anti-JIT cooldown anchor"
+    );
+    // ...and no user SKR moved.
+    assert_eq!(
+        read_token_amount(&mut ctx, user_skr.pubkey()).await,
+        1_000 * SKR_DECIMALS,
+        "the resync must not transfer any of the user's own SKR"
+    );
+    assert_eq!(
+        read_token_amount(&mut ctx, escrow_pda).await,
+        donated_escrow,
+        "escrow unchanged by the resync"
+    );
+}
+
+/// A zero-amount resync repairs the shares but must NOT clear (or re-arm) the
+/// anti-JIT timer: a position whose anchor is inside the cooldown still cannot
+/// claim its banked rewards afterwards.
+#[tokio::test]
+async fn test_stake_skr_zero_amount_does_not_bypass_cooldown() {
+    let program_id = Pubkey::new_unique();
+    let user = Keypair::new();
+    let reward_mint = USDC_DEVNET_MINT;
+    // Mirrors processor::YIELD_SCALE (private to the processor).
+    const YIELD_SCALE: u128 = 1_000_000_000_000;
+    const ACC: u128 = 1_000_000_000;
+    let staked: u64 = 1_000 * SKR_DECIMALS;
+    let donated_escrow: u64 = staked + 1;
+    let banked_rewards: u64 = 1_000;
+    // Far-future anchor: `now - anchor` saturates to 0, so the 1h cooldown can
+    // never have elapsed, without needing to know the bank's wall-clock time.
+    let anchor: i64 = 4_000_000_000;
+
+    let mut program_test =
+        ProgramTest::new("clock_lend", program_id, processor!(process_instruction));
+    program_test.add_account(
+        reward_mint,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    program_test.add_account(
+        SKR_MINT,
+        Account {
+            lamports: 10_000_000,
+            data: create_mint_data(6),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    let (yield_vault_pda, _) =
+        Pubkey::find_program_address(&[SKR_YIELD_VAULT_SEED, reward_mint.as_ref()], &program_id);
+    let mut vault_data = vec![0u8; SkrYieldVault::LEN];
+    SkrYieldVault {
+        discriminator: DISCRIMINATOR_SKR_YIELD,
+        is_initialized: true,
+        authority: user.pubkey(),
+        reward_mint,
+        total_staked_skr: staked,
+        acc_reward_per_share: ACC,
+        total_rewards_distributed: 0,
+        pending_rewards: banked_rewards,
+        unallocated_rewards: 0,
+    }
+    .pack_into_slice(&mut vault_data);
+    program_test.add_account(
+        yield_vault_pda,
+        Account {
+            lamports: 10_000_000,
+            data: vault_data,
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    let (user_yield_pda, _) = Pubkey::find_program_address(
+        &[
+            USER_YIELD_SEED,
+            user.pubkey().as_ref(),
+            reward_mint.as_ref(),
+        ],
+        &program_id,
+    );
+    let mut pos_data = vec![0u8; UserYieldPosition::LEN];
+    UserYieldPosition {
+        discriminator: DISCRIMINATOR_USER_YIELD,
+        is_initialized: true,
+        user: user.pubkey(),
+        reward_mint,
+        staked_skr: staked,
+        // Exactly the pending debt for the cached stake at ACC, so a claim owes
+        // only the banked accrued_rewards and cannot be a no-op.
+        reward_debt: staked as u128 * ACC / YIELD_SCALE,
+        accrued_rewards: banked_rewards,
+        total_claimed: 0,
+        last_interaction_time: anchor,
+    }
+    .pack_into_slice(&mut pos_data);
+    program_test.add_account(
+        user_yield_pda,
+        Account {
+            lamports: 10_000_000,
+            data: pos_data,
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    // A griefer donated one base unit: the escrow and the position disagree.
+    let escrow_pda = add_skr_escrow(&mut program_test, program_id, user.pubkey(), donated_escrow);
+    let user_skr = Keypair::new();
+    program_test.add_account(
+        user_skr.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(SKR_MINT, user.pubkey(), 1_000 * SKR_DECIMALS),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    let (vault_token_pda, _) =
+        Pubkey::find_program_address(&[SKR_YIELD_TOKEN_SEED, reward_mint.as_ref()], &program_id);
+    program_test.add_account(
+        vault_token_pda,
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, yield_vault_pda, 1_000_000),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    let user_reward = Keypair::new();
+    program_test.add_account(
+        user_reward.pubkey(),
+        Account {
+            lamports: 10_000_000,
+            data: token_data(reward_mint, user.pubkey(), 0),
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+    program_test.add_account(
+        user.pubkey(),
+        Account {
+            lamports: 1_000_000_000,
+            data: vec![],
+            owner: solana_program::system_program::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    let (profile_pda, _) =
+        Pubkey::find_program_address(&[PROFILE_SEED, user.pubkey().as_ref()], &program_id);
+    let mut ctx = program_test.start_with_context().await;
+
+    // 1. Claiming while desynced is the H-2 desync guard (YieldCooldown).
+    let claim = claim_ix(
+        program_id,
+        &user,
+        yield_vault_pda,
+        user_yield_pda,
+        vault_token_pda,
+        user_reward.pubkey(),
+        escrow_pda,
+    );
+    let res = submit(&mut ctx, &[claim.clone()], &[&user], &user).await;
+    expect_custom(
+        &res,
+        ClockLendError::YieldCooldown as u32,
+        "desynced position cannot claim (H-2 guard)",
+    );
+
+    // 2. The free resync repairs the shares...
+    let resync_ix = Instruction {
+        program_id,
+        accounts: vec![
+            AccountMeta::new(user.pubkey(), true),
+            AccountMeta::new(profile_pda, false),
+            AccountMeta::new(user_skr.pubkey(), false),
+            AccountMeta::new(escrow_pda, false),
+            AccountMeta::new_readonly(solana_program::system_program::id(), false),
+            AccountMeta::new_readonly(spl_token::id(), false),
+            AccountMeta::new_readonly(SKR_MINT, false),
+            AccountMeta::new(yield_vault_pda, false),
+            AccountMeta::new(user_yield_pda, false),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &USDC_MAINNET_MINT, &user.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(
+                    &program_id,
+                    &USDC_MAINNET_MINT,
+                    &user.pubkey(),
+                    false,
+                ),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &user.pubkey(), true),
+                false,
+            ),
+            AccountMeta::new(
+                required_yield_extra(&program_id, &SKR_MINT, &user.pubkey(), false),
+                false,
+            ),
+        ],
+        data: borsh::to_vec(&ClockLendInstruction::StakeSKR { amount: 0 }).unwrap(),
+    };
+    submit(&mut ctx, &[resync_ix], &[&user], &user)
+        .await
+        .expect("zero-amount StakeSKR must be a valid resync");
+    let pos = read_position(&mut ctx, user_yield_pda).await;
+    assert_eq!(
+        pos.staked_skr, donated_escrow,
+        "resync must adopt the live escrow balance"
+    );
+    assert_eq!(
+        pos.last_interaction_time, anchor,
+        "resync must not move the cooldown anchor"
+    );
+
+    // 3. ...but the cooldown still blocks the payout: the position now matches
+    //    the escrow, so the ONLY guard left is the anti-JIT timer.
+    let res = submit(&mut ctx, &[claim], &[&user], &user).await;
+    expect_custom(
+        &res,
+        ClockLendError::YieldCooldown as u32,
+        "a resynced position must still serve the anti-JIT cooldown",
+    );
+    assert_eq!(
+        read_token_amount(&mut ctx, user_reward.pubkey()).await,
+        0,
+        "no rewards may be paid while the cooldown is active"
+    );
+    assert_eq!(
+        read_position(&mut ctx, user_yield_pda)
+            .await
+            .accrued_rewards,
+        banked_rewards,
+        "banked rewards stay banked until the cooldown is served"
+    );
+}

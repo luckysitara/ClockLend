@@ -94,6 +94,26 @@ import {
 } from './src/solana/seekerWallet';
 import { LendingPool, LoanOrder, P2POffer, OfferStatus, UserProfile, WalletAssets, SolanaNetwork } from './src/types';
 
+/**
+ * Uniform-ish random integer in [0, max), drawn from the platform CSPRNG.
+ *
+ * `Math.random()` is not a CSPRNG, and the two id sites below drew from only
+ * 9000 and 900 values. These ids become PDA seeds (`offer_id`, `pool_id`) where
+ * the (creator, id) pair must be unique — a collision makes the create
+ * transaction fail outright, and a predictable id is one more thing a griefer
+ * can anticipate. `deriveLoanId` in onChainService.ts already dropped
+ * Math.random for this same class of concern; these two lagged behind.
+ *
+ * `crypto.getRandomValues` is installed app-wide by src/polyfill.ts (imported
+ * first in index.ts), which deliberately THROWS rather than silently degrading
+ * to Math.random. Modulo bias is negligible at these ranges (max << 2^32).
+ */
+function secureRandomInt(max: number): number {
+  const buf = new Uint32Array(1);
+  (globalThis as any).crypto.getRandomValues(buf);
+  return buf[0] % max;
+}
+
 type Tab = 'HOME' | 'BORROW' | 'HUB' | 'MARKET' | 'LOANS' | 'PROFILE';
 
 /**
@@ -933,7 +953,7 @@ function MainApp() {
   ) => {
     if (!session) return;
 
-    const offerId = Math.floor(1000 + Math.random() * 9000);
+    const offerId = 1000 + secureRandomInt(9000);
 
     try {
       const { tx, escrowPDA } = await buildCreateP2POfferTx(
@@ -1224,7 +1244,7 @@ function MainApp() {
       return;
     }
 
-    const poolId = Math.floor(100 + Math.random() * 900);
+    const poolId = 100 + secureRandomInt(900);
     const interestRateBps = Math.round(aprPercent * 100);
     const maxLtvBps = Math.round(maxLtvPercent * 100);
 

@@ -81,7 +81,11 @@ export async function isLockEnabled(): Promise<boolean> {
     return val === 'true';
   } catch (err) {
     console.warn('Error reading lock state:', err);
-    return false;
+    // Fail CLOSED. This used to return false, i.e. "no lock", so any SecureStore
+    // read failure silently dropped the lock screen — turning a storage error
+    // into an authentication bypass. Reporting "locked" is the safe direction,
+    // and matches `isPinConfigured` below, which already fails closed.
+    return true;
   }
 }
 
@@ -124,14 +128,42 @@ function generateSecureSalt(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-const PIN_PBKDF2_ROUNDS = 10000;
+// Iterated-hash PIN stretching.
+//
+// This is an iterated SHA-256 construction, NOT PBKDF2. It used to be stored
+// under the label `pbkdf2_sha256$...`, which overstated it: PBKDF2 uses HMAC as
+// its pseudorandom function and there is no HMAC here. The label is now honest
+// and the cost is raised.
+//
+// Be clear-eyed about the ceiling. A 4-6 digit PIN has at most 10^6 candidates,
+// so IF the SecureStore blob is ever extracted, no software KDF at a
+// phone-acceptable cost survives an offline search — that includes real PBKDF2
+// at a million iterations. What actually protects the PIN is that the blob lives
+// in hardware-backed SecureStore, behind the device-integrity checks above; the
+// KDF only raises the cost of a leak that has already happened.
+//
+// If the threat model ever demands more, use a vetted implementation (e.g.
+// `@noble/hashes` pbkdf2) rather than extending this by hand: a hand-rolled HMAC
+// over the string-based sha256 above is easy to get subtly wrong, and the
+// failure mode here is locking users out of their own app.
+const PIN_KDF_ROUNDS = 50_000;
+const PIN_KDF_ID = 'iter_sha256';
+const LEGACY_PIN_ROUNDS = 10000;
 
-function hashPinWithSalt(pin: string, salt: string, rounds: number = PIN_PBKDF2_ROUNDS): string {
+function hashPinWithSalt(pin: string, salt: string, rounds: number = PIN_KDF_ROUNDS): string {
   let digest = `${salt}:${pin}`;
   for (let i = 0; i < rounds; i++) {
     digest = sha256(`${digest}:${salt}:${i}`);
   }
-  return `pbkdf2_sha256$${rounds}$${digest}`;
+  return `${PIN_KDF_ID}$${rounds}$${digest}`;
+}
+
+/** Length-independent comparison that does not leak a matching prefix by timing. */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
 }
 
 export async function setUserPin(pin: string): Promise<void> {
@@ -158,17 +190,9 @@ export async function verifyUserPin(inputPin: string): Promise<boolean> {
     const salt = await SecureStore.getItemAsync(KEY_PIN_SALT);
     if (!salt) return false;
 
-    if (storedHash.startsWith('pbkdf2_sha256$')) {
-      const parts = storedHash.split('$');
-      const rounds = parseInt(parts[1], 10) || PIN_PBKDF2_ROUNDS;
-      const computedHash = hashPinWithSalt(inputPin, salt, rounds);
-      return computedHash === storedHash;
-    }
-
-    // Legacy migration fallback: raw sha256(`${salt}:${pin}`)
-    const legacyHash = sha256(`${salt}:${inputPin}`);
-    if (legacyHash === storedHash) {
-      // Opportunistically upgrade legacy hash to hardened PBKDF2
+    // Opportunistic re-hash at the current cost. Called from every legacy branch
+    // so an old hash is upgraded the next time the PIN is successfully entered.
+    const upgradeHash = async () => {
       try {
         const upgradedSalt = generateSecureSalt();
         const upgradedHash = hashPinWithSalt(inputPin, upgradedSalt);
@@ -177,6 +201,35 @@ export async function verifyUserPin(inputPin: string): Promise<boolean> {
       } catch (upgradeErr) {
         console.warn('Failed to opportunistically upgrade PIN hash:', upgradeErr);
       }
+    };
+
+    if (storedHash.startsWith(`${PIN_KDF_ID}$`)) {
+      const parts = storedHash.split('$');
+      // Recompute at the STORED round count, not the default, so raising the
+      // cost later cannot lock out an existing PIN.
+      const rounds = parseInt(parts[1], 10) || PIN_KDF_ROUNDS;
+      const ok = constantTimeEqual(hashPinWithSalt(inputPin, salt, rounds), storedHash);
+      if (ok && rounds < PIN_KDF_ROUNDS) await upgradeHash();
+      return ok;
+    }
+
+    // Legacy label: the same construction at a lower cost, stored under a name
+    // that claimed PBKDF2 when there was never any HMAC. Verify against the
+    // stored rounds, then upgrade to the current cost and honest label.
+    if (storedHash.startsWith('pbkdf2_sha256$')) {
+      const parts = storedHash.split('$');
+      const rounds = parseInt(parts[1], 10) || LEGACY_PIN_ROUNDS;
+      if (constantTimeEqual(hashPinWithSalt(inputPin, salt, rounds), storedHash)) {
+        await upgradeHash();
+        return true;
+      }
+      return false;
+    }
+
+    // Legacy migration fallback: raw sha256(`${salt}:${pin}`)
+    const legacyHash = sha256(`${salt}:${inputPin}`);
+    if (constantTimeEqual(legacyHash, storedHash)) {
+      await upgradeHash();
       return true;
     }
 
@@ -319,13 +372,31 @@ export interface DeviceIntegrityResult {
 }
 
 export async function checkDeviceIntegrity(): Promise<DeviceIntegrityResult> {
-  if (Platform.OS !== 'android' || !ClockLendSecurity) {
+  if (Platform.OS !== 'android') {
+    // The integrity check is Android-only; on other platforms there is nothing
+    // to fail, so reporting secure is correct rather than merely convenient.
     return {
       isEmulator: false,
       isRooted: false,
       isHooking: false,
       isDebugger: false,
       isSecure: true,
+    };
+  }
+
+  if (!ClockLendSecurity) {
+    // Android, but the native module did not link. This used to report
+    // isSecure: true, which silently switched off root/emulator/hooking
+    // detection for the WHOLE build — the guard simply ceased to exist, and
+    // nothing said so. A build missing its integrity module is broken, not
+    // clean, so fail closed exactly as the exception path below already does.
+    return {
+      isEmulator: false,
+      isRooted: false,
+      isHooking: false,
+      isDebugger: false,
+      isSecure: false,
+      violationReason: 'Device integrity module unavailable (Fail closed)',
     };
   }
 

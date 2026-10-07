@@ -59,16 +59,26 @@ import {
 const PROXIED_RPC = process.env.EXPO_PUBLIC_SOLANA_RPC_URL;
 const PROXIED_RPC_GATEKEEPER = process.env.EXPO_PUBLIC_HELIUS_GATEKEEPER_RPC_URL;
 
-// Fail CLOSED at build/dev time rather than silently publishing a key. This is
-// the one mistake in this file that is unrecoverable once shipped: the bundle
-// is public, so a keyed URL here publishes the key to every app user AND the
-// git repo (the embedded bundle is tracked). Point these at a keyless proxy
-// instead (see serverless /rpc) — a build with a keyed URL must not exist.
+// Defence in depth — NOT the gate. Do not rely on this to stop a key shipping.
+//
+// This is compiled JS that runs when the module loads, i.e. inside the shipped
+// app. Metro inlines `process.env.EXPO_PUBLIC_*` as a string literal at bundle
+// time, so by the time this throws the key is ALREADY in the APK and the app
+// merely crashes on launch. It cannot prevent the leak it describes.
+//
+// The real gate is in metro.config.js, which fails the BUNDLE — and therefore
+// also covers the Gradle `assembleRelease` -> `export:embed` path, which an npm
+// prebuild script would miss. This check stays as a second line of defence for
+// values that reach the app by some other route; note it only recognises the
+// literal `api-key=` form.
 //
 // Deliberate escape hatch: a solo project may choose to keep a keyed URL for a
 // personal, low-distribution build. Setting EXPO_PUBLIC_CLOCKLEND_ACK_KEYED_RPC=1
 // ACKNOWLEDGES that the key ships in the bundle — it exists so the fail-closed
 // default is never silently defeated, only consciously waived.
+//
+// NOTE: metro.config.js honours the same variable. Waiving it here alone is not
+// enough — the bundle gate fails the build first, so both must agree.
 const KEYED_RPC_ACKNOWLEDGED = process.env.EXPO_PUBLIC_CLOCKLEND_ACK_KEYED_RPC === '1';
 if (!KEYED_RPC_ACKNOWLEDGED && PROXIED_RPC && /api-key=/.test(PROXIED_RPC)) {
   throw new Error(
