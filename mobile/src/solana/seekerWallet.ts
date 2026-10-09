@@ -6,6 +6,8 @@ import { Buffer } from 'buffer';
 import * as SecureStore from 'expo-secure-store';
 import {
   getConnection,
+  queryRpcWithFallback,
+  isEndpointFailure,
   mainnetConnection,
   PROGRAM_ID,
   TOKEN_PROGRAM_ID,
@@ -225,7 +227,15 @@ export async function signAndSendSeekerTransaction(
   validateTransactionInstructions(transaction);
 
   const conn = getConnection(network);
-  const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash('confirmed');
+  // The blockhash has to be fetched BEFORE the wallet is asked to sign, and a
+  // 429 here aborts the whole flow — the user never even sees a prompt. That
+  // makes a rate-limited endpoint indistinguishable from a broken app, and it
+  // is worst on the path where it matters most: repaying inside the grace
+  // window, where a retry minutes later may be too late. Rotate the endpoints
+  // the app already ships instead of dying on whichever one is primary.
+  const { blockhash, lastValidBlockHeight } = await queryRpcWithFallback(network, (c) =>
+    c.getLatestBlockhash('confirmed')
+  );
   // Builders may have pre-set the blockhash/feePayer and collected ephemeral
   // signer signatures over that exact message. Never
   // overwrite those — the pre-collected signature would no longer match.
@@ -264,17 +274,26 @@ export async function signAndSendSeekerTransaction(
   // its own pre-set blockhash, the fresh blockhash's
   // validity window does not apply — poll from the current height instead.
   if (hadPreexistingBlockhash) {
-    const currentHeight = await conn.getBlockHeight('confirmed');
-    await conn.confirmTransaction(
-      {
-        signature,
-        blockhash: transaction.recentBlockhash!,
-        lastValidBlockHeight: currentHeight + 300,
-      },
-      'confirmed'
+    const currentHeight = await queryRpcWithFallback(network, (c) => c.getBlockHeight('confirmed'));
+    await queryRpcWithFallback(
+      network,
+      (c) =>
+        c.confirmTransaction(
+          {
+            signature,
+            blockhash: transaction.recentBlockhash!,
+            lastValidBlockHeight: currentHeight + 300,
+          },
+          'confirmed'
+        ),
+      { shouldFallback: isEndpointFailure }
     );
   } else {
-    await conn.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed');
+    await queryRpcWithFallback(
+      network,
+      (c) => c.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed'),
+      { shouldFallback: isEndpointFailure }
+    );
   }
 
   return signature;

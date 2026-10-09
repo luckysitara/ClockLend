@@ -442,10 +442,26 @@ export const GENESIS_MAINNET_POOL: LendingPool = {
   hasCustomOracle: false,
 };
 
+/**
+ * True when an error indicts the *endpoint* rather than the request.
+ *
+ * A 429 says "not now"; a transaction that the cluster rejected says something
+ * about the transaction, and re-asking a different node will only produce the
+ * same answer more slowly. Callers that may see both pass this as
+ * `shouldFallback`.
+ */
+export function isEndpointFailure(err: any): boolean {
+  const msg = String(err?.message ?? err ?? '');
+  return /429|too many requests|max usage|rate ?limit|throttl|timed? ?out|timeout|fetch failed|network request failed|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|socket hang up|50[234]/i.test(
+    msg
+  );
+}
+
 // Helper to query with automatic fallback to secondary RPC endpoints
 export async function queryRpcWithFallback<T>(
   network: SolanaNetwork,
-  queryFn: (conn: Connection) => Promise<T>
+  queryFn: (conn: Connection) => Promise<T>,
+  opts?: { shouldFallback?: (err: any) => boolean }
 ): Promise<T> {
   const rpcList = network === 'mainnet-beta' ? MAINNET_RPCS : DEVNET_RPCS;
   let lastError: any = null;
@@ -456,6 +472,10 @@ export async function queryRpcWithFallback<T>(
       return await queryFn(conn);
     } catch (err: any) {
       lastError = err;
+      // A caller that knows some failures are about the request, not the
+      // endpoint, stops here and surfaces the real reason instead of retrying
+      // the same doomed call on every remaining node.
+      if (opts?.shouldFallback && !opts.shouldFallback(err)) throw err;
       console.warn(`[RPC Fallback] ${rpc} notice:`, err?.message || err);
     }
   }
