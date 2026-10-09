@@ -185,7 +185,7 @@ never be liquidated.
 - **Oracle authority: one key.** Writes both global feeds, bounded per-update but ratchetable
   over many updates.
 - **Treasury is admin-withdrawable** at the team's discretion.
-- **No third-party audit** has been performed; the 14 "rounds" are internal and AI-assisted.
+- **No third-party audit** has been performed; the 14 "rounds" are internal.
 - **No insurance or reserve mechanism exists** in the program.
 
 ---

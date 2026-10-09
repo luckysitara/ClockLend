@@ -218,7 +218,7 @@ action and therefore also costs a proposal plus the timelock.
   corrected for factual accuracy, not reviewed for legal exposure.
 - **Bump the "Last Updated" dates** on those pages if you consider the corrections material.
 - **A real third-party audit** before meaningful money is at stake. Fourteen internal
-  AI-assisted rounds — including the one that produced this document — are not an audit.
+  internal rounds — including the one that produced this document — are not an audit.
 
 ## 8. Known-open, deliberately not fixed
 
