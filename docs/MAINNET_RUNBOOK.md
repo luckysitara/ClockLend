@@ -35,12 +35,27 @@ Where something is *not* done, it says so explicitly.
 | Lending pool (Legacy) | `4YC4rCNXva8ty6f1pKRC2NX7e5kufqowBYJDCMor12Wu` (`CLK_POOL`, ID #1, drained to 0 USDC) |
 | SKR yield vault | `6tY1CpFg9gr7nXZcgxX8WvBXGgKozd3URXzwFnChQQx4` (`CLK_SYLD`, 121 B) |
 | Treasury PDA | `5buCUcCHHDCzQpanMKCK8uruErL5D2UzSFVrbtPrKV7y` — **no account on chain yet** |
-| Treasury USDC ATA | `9UozceLNGCansqNeDcGFvirwLrnCyrTQFRSKGvmfnG63` — exists, **0 USDC** |
+| Treasury USDC ATA | `9UozceLNGCansqNeDcGFvirwLrnCyrTQFRSKGvmfnG63` — exists, **0.004049 USDC** (first protocol revenue, 2026-10-09 11:56 UTC) |
 
-**Only these five program-owned accounts exist on mainnet:** the two feeds, the pool, the
-AdminConfig PDA, and the SKR yield vault. There are **no loans, offers, or user profiles**,
-the pool has `total_liquidity = 0` / `loans_originated = 0`, and the treasury has never been
-initialized (so no fee has ever been collected). ClockLend has been deployed, not used.
+**Program-owned accounts on mainnet:** the two feeds, the pool, the AdminConfig PDA, and the
+SKR yield vault. No P2P offers and no user profiles exist.
+
+**ClockLend is no longer "deployed but unused."** As of 2026-10-09 11:56 UTC the production
+pool reports `loans_originated = 1` / `loans_repaid = 1`, and every fee leg in the program has
+now moved real money at least once:
+
+| Leg | Amount | Where it shows |
+|---|---|---|
+| 85% of interest to lenders | `+0.015867` | pool `total_liquidity` rose `50.000000 → 50.015867` |
+| 15% interest take-rate to the protocol | `0.002800` | treasury USDC ATA |
+| Origination fee (0.50%) | `0.001249` | treasury USDC ATA |
+
+The three reconcile exactly: pool gain ÷ 0.85 = `0.018667` total interest, whose 15% is
+`0.002800`, and the `0.004049` balance less that is `0.001249` — a 0.50% fee on a `0.2498`
+principal. That is the whole fee path verified end to end on mainnet, not modelled.
+
+The **treasury PDA itself still has no account on chain**; the fee paths need only its token
+account, which exists.
 
 ### 0.1 Two different program ids — do not mix them up
 
@@ -271,8 +286,10 @@ runbook and in `site/index.html` / `site/audit-report.html`.
 ## 4. Treasury operations
 
 The treasury PDA `5buCUcCHHDCzQpanMKCK8uruErL5D2UzSFVrbtPrKV7y` has **no account on chain**.
-Only its USDC ATA exists, with a 0 balance. Fee-bearing instructions that require the treasury
-account will fail until it is initialized, and **no protocol fee has ever been collected**.
+Only its USDC ATA exists, and it now holds **0.004049 USDC** — the first protocol revenue,
+collected 2026-10-09. Fee-bearing instructions work without the PDA account being initialized,
+because they need its *token* account rather than the PDA itself. What remains untested is
+**withdrawing** — the §4 flows below have never been exercised.
 
 All money scripts now verify the cluster via `getGenesisHash` and require `--yes` to send on
 mainnet (`--dry-run` builds and simulates without sending).
