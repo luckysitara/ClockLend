@@ -286,10 +286,36 @@ export async function crankOracles(env: Env): Promise<{
     maxRetries: 3,
   });
 
-  await connection.confirmTransaction(
-    { signature, blockhash, lastValidBlockHeight },
-    'confirmed'
-  );
+  try {
+    await connection.confirmTransaction(
+      { signature, blockhash, lastValidBlockHeight },
+      'confirmed'
+    );
+  } catch (confirmErr: any) {
+    // A confirmation timeout is NOT proof the crank failed.
+    //
+    // `confirmTransaction` gives up once the block height passes
+    // `lastValidBlockHeight`. On a slow or rate-limited RPC that happens
+    // routinely for transactions that landed perfectly well. Observed on
+    // mainnet 2026-10-09 against a public endpoint: the CLI printed
+    // "Signature 24dzVDBu… has expired: block height exceeded" for a
+    // transaction that was in fact finalised at slot 454847332 with err=null,
+    // having updated both feeds to the exact prices the run had fetched.
+    //
+    // Throwing here is the mirror of the bug this file already fixed, where an
+    // unreadable feed was reported as success. Both destroy the meaning of the
+    // exit code: an operator who sees every run fail stops trusting the signal,
+    // and may disable the timer that is in fact working.
+    //
+    // The read-back below is the authority, not the confirmation. If the feeds
+    // advanced past where they were before this run, the crank did its job.
+    // If it did not land, `verifyFeedsAdvanced` still reports it and the run
+    // still fails — so nothing is being waved through.
+    console.warn(
+      `[Serverless Oracle] Confirmation did not complete (${confirmErr?.message || confirmErr}). ` +
+        `Checking whether the transaction landed anyway — the feeds decide.`
+    );
+  }
 
   // Confirm the feeds actually advanced. `confirmTransaction` only proves the
   // transaction was finalised, not that the accounts ended up in the state we
