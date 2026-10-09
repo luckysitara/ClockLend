@@ -620,13 +620,13 @@ grep -c '#\[test\]\|#\[tokio::test\]' program/tests/*.rs
 
 | Suite | Test functions |
 | :--- | :---: |
-| `bank_integration.rs` | 46 |
-| `security_tests.rs` | 23 |
-| `functional.rs` | 16 |
-| `skr_yield_and_lst_tests.rs` | 11 |
-| `zz_round14_poc.rs` | 4 |
+| `bank_integration.rs` | 58 |
+| `security_tests.rs` | 24 |
+| `functional.rs` | 17 |
+| `skr_yield_and_lst_tests.rs` | 14 |
+| `zz_round14_poc.rs` | 6 |
 | `fuzz_invariants.rs` | 3 |
-| **Total** | **103** |
+| **Total** | **122** |
 
 A green suite is a regression signal, **not** a security proof: the round-14 audit found
 three executable proof-of-concept bugs while the suite was green. Treat `cargo test` as a
