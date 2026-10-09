@@ -70,7 +70,7 @@
   <strong>Historical record.</strong> Everything from here down is the per-round log as written at the time.
   Details describe the state <em>at that round</em>, not today — most notably the <strong>Pyth pull-oracle
   integration, which was removed entirely in round 11</strong> in favour of admin price feeds, and the
-  per-round test counts (which differ from the current 103). Read the round-14 section above for present status.
+  per-round test counts (which differ from the current 122). Read the round-14 section above for present status.
 </div>
 
 <h2>Round-8 regression check — all present</h2>
@@ -286,7 +286,7 @@
 </table>
 
 <h3>Test suite</h3>
-<p>The on-chain test suite is counted directly from the source rather than asserted: <code>grep -c '#\[test\]\|#\[tokio::test\]' program/tests/*.rs</code> sums to <strong>103 test functions</strong> across <code>bank_integration</code>, <code>functional</code>, <code>security_tests</code>, <code>fuzz_invariants</code>, <code>skr_yield_and_lst_tests</code> and the round-14 <code>zz_round14_poc</code> regression file. A green count is a regression signal, not a security proof — the three POC items above were found <em>with</em> that suite green.</p>
+<p>The on-chain test suite is counted directly from the source rather than asserted: <code>grep -c '#\[test\]\|#\[tokio::test\]' program/tests/*.rs</code> sums to <strong>122 test functions</strong> across <code>bank_integration</code>, <code>functional</code>, <code>security_tests</code>, <code>fuzz_invariants</code>, <code>skr_yield_and_lst_tests</code> and the round-14 <code>zz_round14_poc</code> regression file. A green count is a regression signal, not a security proof — the three POC items above were found <em>with</em> that suite green.</p>
 
 <h3>What has NOT been done</h3>
 <ul>
