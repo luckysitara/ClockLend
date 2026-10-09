@@ -40,6 +40,7 @@ import { isLockEnabled, checkDeviceIntegrity, DeviceIntegrityResult } from './sr
 import { checkAppVersion, VersionGateResult } from './src/services/versionGateService';
 import { getXQuestStatus, X_REPUTATION_BPS_REWARD } from './src/services/questService';
 import { syncLoanReminders, clearLoanReminders } from './src/services/loanReminders';
+import { syncCollateralAlerts, clearCollateralAlerts } from './src/services/collateralAlerts';
 import * as SecureStore from 'expo-secure-store';
 import {
   fetchLivePools,
@@ -81,6 +82,7 @@ import {
   describeTransactionError,
   isNativeSolCollateralName,
   subscribeToUserLoans,
+  subscribeToPriceUpdates,
   GENESIS_MAINNET_POOL,
 } from './src/solana/onChainService';
 import { getLoanPDA, getPoolPDA } from './src/solana/program';
@@ -581,9 +583,25 @@ function MainApp() {
     void syncLoanReminders(orders);
   }, [orders, session?.publicKey]);
 
+  // Collateral health. The due date is not the only way a borrower loses
+  // collateral — a collateral price fall can leave the escrow worth less than
+  // the debt, at which point a default returns nothing. This announces each
+  // worsening band once, so the warning arrives while repaying is still the
+  // cheaper option. Alerts are best-effort and never throw.
+  useEffect(() => {
+    if (!session?.publicKey) return;
+    void syncCollateralAlerts(orders, poolsRef.current, livePrices);
+    // Prices move without `orders` changing, so the check is re-run on every
+    // feed update rather than only when the loan set does.
+    return subscribeToPriceUpdates(() => {
+      void syncCollateralAlerts(ordersRef.current, poolsRef.current, livePrices);
+    });
+  }, [orders, session?.publicKey]);
+
   const handleDisconnect = () => {
     // Drop this user's scheduled reminders so the next one does not inherit them.
     void clearLoanReminders();
+    void clearCollateralAlerts();
     void clearSavedSeekerSession();
     setShowAssetsModal(false);
     const handle = session?.skrHandle ? `@${session.skrHandle}` : 'wallet';
