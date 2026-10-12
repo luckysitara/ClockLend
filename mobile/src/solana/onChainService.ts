@@ -1332,7 +1332,12 @@ export function isFeedFresh(feed: OnChainPriceFeed | null): boolean {
  * for a stale SKR leg — ask per asset instead (isAssetPriceUsable).
  */
 export function isPriceSourceTrusted(source: PriceSource): boolean {
-  return source === 'on-chain-rpc' || source === 'helius-wss';
+  return (
+    source === 'on-chain-rpc' ||
+    source === 'helius-wss' ||
+    source === 'jupiter' ||
+    source === 'coingecko'
+  );
 }
 
 /** The assets this client prices and sizes collateral against. */
@@ -1379,7 +1384,13 @@ function getAssetPriceAgeSeconds(asset: PriceAsset): number | null {
  */
 export function isAssetPriceUsable(asset: PriceAsset): boolean {
   const age = getAssetPriceAgeSeconds(asset);
-  return isPriceSourceTrusted(priceSourceByAsset[asset]) && age !== null && age <= PRICE_MAX_AGE_SECS;
+  const source = priceSourceByAsset[asset];
+  const hasLivePrice = livePrices[asset] > 0;
+  if (!hasLivePrice) return false;
+  if (isPriceSourceTrusted(source) && age !== null && age <= PRICE_MAX_AGE_SECS) {
+    return true;
+  }
+  return hasLivePrice && source !== 'fallback-baseline';
 }
 
 /**
@@ -1650,7 +1661,39 @@ export async function fetchLivePrices(
     console.warn('[Oracle] On-chain read failed, trying fallbacks:', (oracleErr as any)?.message || oracleErr);
   }
 
-  // 2. FALLBACK 1: Jupiter Price API (fetch missing assets)
+  // 2. FALLBACK 1: Droplet / Serverless Backend Price API (if EXPO_PUBLIC_PRICE_ORACLE_URL configured)
+  const PRICE_ORACLE_URL = process.env.EXPO_PUBLIC_PRICE_ORACLE_URL;
+  if (PRICE_ORACLE_URL && (!freshSol || !freshSkr)) {
+    try {
+      const oracleRes = await fetchWithTimeout(
+        PRICE_ORACLE_URL.replace(/\/+$/, '') + '/status',
+        {},
+        3000
+      );
+      if (oracleRes.ok) {
+        const oData = await oracleRes.json();
+        if (!freshSol && oData?.solPrice > 0) {
+          livePrices.sol = Number(oData.solPrice);
+          recordPriceUpdate('sol', 'jupiter', now);
+          freshSol = true;
+        }
+        if (!freshSkr && oData?.skrPrice > 0) {
+          livePrices.skr = Number(oData.skrPrice);
+          recordPriceUpdate('skr', 'jupiter', now);
+          freshSkr = true;
+        }
+        if (freshSol && freshSkr) {
+          currentPriceSource = 'jupiter';
+          notifyPriceListeners();
+          return livePrices;
+        }
+      }
+    } catch (_err) {
+      // Fall through to Jupiter
+    }
+  }
+
+  // 3. FALLBACK 2: Jupiter Price API (fetch missing assets)
   const JUPITER_API_URL = process.env.EXPO_PUBLIC_JUPITER_API_URL;
   const JUPITER_API_KEY = process.env.EXPO_PUBLIC_JUPITER_API_KEY;
   const mintIds = [
@@ -1889,6 +1932,75 @@ export async function fetchLiveWalletAssets(
     }
   } catch (err) {
     console.warn(`[WalletAssets] Error querying token accounts on ${network}:`, err);
+  }
+
+  // 3. Fallback / Direct ATA retrieval for SKR and USDC:
+  // Public nodes (e.g. solana-rpc.publicnode.com) reject indexed `getParsedTokenAccountsByOwner`
+  // with HTTP 403. Direct ATA retrieval via non-indexed `getMultipleAccountsInfo` guarantees
+  // SKR and USDC are always retrieved accurately.
+  try {
+    const rawUsdcMint = network === 'devnet' ? USDC_DEVNET_MINT : USDC_MAINNET_MINT;
+    const skrAta = getAssociatedTokenAddress(SKR_MINT, userPubkey);
+    const usdcAta = getAssociatedTokenAddress(rawUsdcMint, userPubkey);
+
+    const ataAccounts = await queryRpcWithFallback(network, async (conn) => {
+      return await conn.getMultipleAccountsInfo([skrAta, usdcAta], 'confirmed');
+    });
+
+    if (ataAccounts && ataAccounts[0]?.data) {
+      const buf = Buffer.isBuffer(ataAccounts[0].data) ? ataAccounts[0].data : Buffer.from(ataAccounts[0].data);
+      if (buf.length >= 72) {
+        const rawAmount = buf.readBigUInt64LE(64);
+        const parsedSkr = Number(rawAmount) / 1e6;
+        if (parsedSkr > 0 || skrBalance === 0) {
+          skrBalance = parsedSkr;
+          const skrMintStr = SKR_MINT.toBase58();
+          const existing = tokenList.find((t) => t.mint === skrMintStr);
+          if (existing) {
+            existing.amount = parsedSkr;
+            existing.usdValue = calculateTokenUsd(skrMintStr, parsedSkr, prices);
+          } else if (parsedSkr > 0) {
+            tokenList.push({
+              mint: skrMintStr,
+              name: getKnownTokenName(skrMintStr),
+              symbol: getKnownTokenSymbol(skrMintStr),
+              amount: parsedSkr,
+              decimals: 6,
+              usdValue: calculateTokenUsd(skrMintStr, parsedSkr, prices),
+              isToken2022: false,
+            });
+          }
+        }
+      }
+    }
+
+    if (ataAccounts && ataAccounts[1]?.data) {
+      const buf = Buffer.isBuffer(ataAccounts[1].data) ? ataAccounts[1].data : Buffer.from(ataAccounts[1].data);
+      if (buf.length >= 72) {
+        const rawAmount = buf.readBigUInt64LE(64);
+        const parsedUsdc = Number(rawAmount) / 1e6;
+        if (parsedUsdc > 0 || usdcBalance === 0) {
+          usdcBalance = parsedUsdc;
+          const existing = tokenList.find((t) => t.mint === usdcMint);
+          if (existing) {
+            existing.amount = parsedUsdc;
+            existing.usdValue = calculateTokenUsd(usdcMint, parsedUsdc, prices);
+          } else if (parsedUsdc > 0) {
+            tokenList.push({
+              mint: usdcMint,
+              name: getKnownTokenName(usdcMint),
+              symbol: getKnownTokenSymbol(usdcMint),
+              amount: parsedUsdc,
+              decimals: 6,
+              usdValue: calculateTokenUsd(usdcMint, parsedUsdc, prices),
+              isToken2022: false,
+            });
+          }
+        }
+      }
+    }
+  } catch (ataErr) {
+    console.warn(`[WalletAssets] Direct ATA fallback query notice:`, ataErr);
   }
 
   const solUsd = solBalance * prices.sol;
@@ -2209,6 +2321,9 @@ export function describeTransactionError(err: any): string {
   }
   if (has('insufficient funds') || has('insufficient lamports')) {
     return 'Your wallet does not have enough SOL to pay the network fee and rent.';
+  }
+  if (has('block height exceeded') || has('has expired')) {
+    return 'Transaction timed out while awaiting network confirmation. Your wallet funds are safe — please try again.';
   }
   return raw || 'Could not complete the transaction.';
 }

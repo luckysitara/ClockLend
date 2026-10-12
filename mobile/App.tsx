@@ -750,13 +750,7 @@ function MainApp() {
       setOrders(ordersRef.current);
       await setCachedOrders(session.publicKey.toBase58(), ordersRef.current, selectedNetwork);
 
-      // 3. Refresh assets AND the profile/pools from the chain — the borrow
-      // moved the disbursement, the collateral and (for SKR-bond borrowers)
-      // the locked_skr that drives the APR discount.
-      await refreshWalletAssets(session.publicKey, selectedNetwork);
-      loadProtocolData(session.publicKey, session.skrHandle, selectedNetwork).catch(() => {});
-
-      // 4. Show sleek production transaction notice (net of the origination fee)
+      // 3. Show sleek production transaction notice immediately (zero waiting)
       const feePct = (origination.feeBps / 100).toFixed(2);
       setTransactionNotice({
         type: 'borrow',
@@ -771,10 +765,15 @@ function MainApp() {
         secondaryBtnText: 'Go to Loans',
         onSecondaryPress: () => setActiveTab('LOANS'),
       });
+      showToast('⚡ Loan Disbursed on Solana!');
 
-      // 5. Immediately switch to LOANS tab (the desk selection ends with the loan)
+      // 4. Immediately switch to LOANS tab (the desk selection ends with the loan)
       setSelectedPool(null);
       setActiveTab('LOANS');
+
+      // 5. Refresh assets and protocol data in background
+      refreshWalletAssets(session.publicKey, selectedNetwork).catch(() => {});
+      loadProtocolData(session.publicKey, session.skrHandle, selectedNetwork).catch(() => {});
     } catch (err: any) {
       if (err?.message?.includes('Cancellation') || err?.name?.includes('Cancellation')) {
         setTransactionNotice({
@@ -861,20 +860,6 @@ function MainApp() {
         };
       });
 
-      // L-6/C-2: no local reputation or discount arithmetic. The program bumps
-      // reputation by 50, capped at 10000 (processor.rs:2644) — and a profile
-      // STARTS at 10000 (processor.rs:709), so the real gain can be zero. The
-      // profile is re-read from its PDA and the notice states no delta.
-      const freshProfile = await fetchLiveUserProfile(
-        session.publicKey,
-        session.skrHandle,
-        selectedNetwork
-      );
-      setUserProfile(freshProfile);
-      // Balances and pool state are chain truth after a repayment.
-      await refreshWalletAssets(session.publicKey, selectedNetwork);
-      loadProtocolData(session.publicKey, session.skrHandle, selectedNetwork).catch(() => {});
-
       setTransactionNotice({
         type: 'repay',
         title: 'Loan Repaid & Released!',
@@ -892,6 +877,14 @@ function MainApp() {
         primaryBtnText: 'View on Solscan ↗',
         secondaryBtnText: 'Done',
       });
+      showToast('🎉 Loan Repaid & Released!');
+
+      // Asynchronous background refresh without blocking user UI feedback
+      fetchLiveUserProfile(session.publicKey, session.skrHandle, selectedNetwork)
+        .then((freshProfile) => setUserProfile(freshProfile))
+        .catch(() => {});
+      refreshWalletAssets(session.publicKey, selectedNetwork).catch(() => {});
+      loadProtocolData(session.publicKey, session.skrHandle, selectedNetwork).catch(() => {});
     } catch (err: any) {
       if (err?.message?.includes('Cancellation') || err?.name?.includes('Cancellation')) {
         setTransactionNotice({
@@ -905,7 +898,7 @@ function MainApp() {
       setTransactionNotice({
         type: 'error',
         title: 'Repay Notice',
-        subtitle: err?.message || 'Repayment failed. Please check your balance and try again.',
+        subtitle: describeTransactionError(err),
         primaryBtnText: 'Dismiss',
       });
     }
@@ -1839,10 +1832,7 @@ function MainApp() {
             skrHandle={session.skrHandle}
             userProfile={currentProfile}
             walletAssets={walletAssets}
-            activeOrders={orders.filter((o) => {
-              const s = o.status.toUpperCase();
-              return s === 'ACTIVE' || s === 'INGRACEPERIOD' || s === 'GRACE_PERIOD';
-            })}
+            activeOrders={orders}
             solBalance={solBalance}
             onNavigateBorrow={() => setActiveTab('BORROW')}
             onNavigateRepay={() => setActiveTab('LOANS')}

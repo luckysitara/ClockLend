@@ -114,30 +114,7 @@ export async function deriveSkrUsername(pubkey: PublicKey, mwaLabel?: string): P
 
   const base58 = pubkey.toBase58();
 
-  // 2. Query on-chain SNS registry with a 1500ms timeout guard so it never blocks UI
-  try {
-    const snsPromise = mainnetConnection.getProgramAccounts(SNS_PROGRAM_ID, {
-      filters: [{ memcmp: { offset: 32, bytes: base58 } }],
-    });
-    const timeoutPromise = new Promise<any[]>((_, reject) =>
-      setTimeout(() => reject(new Error('SNS timeout')), 1500)
-    );
-    const snsAccounts = await Promise.race([snsPromise, timeoutPromise]);
-    if (snsAccounts && snsAccounts.length > 0) {
-      const data = snsAccounts[0].account.data;
-      if (data.length > 96) {
-        const rawName = new TextDecoder().decode(data.subarray(96)).replace(/\0/g, '').trim().toLowerCase();
-        const cleanName = rawName.replace(/[^a-z0-9-]/g, '');
-        if (cleanName.length > 0) {
-          return `${cleanName}.skr`;
-        }
-      }
-    }
-  } catch {
-    // Non-blocking fallback
-  }
-
-  // 4. Deterministic Seeker Genesis hardware device handle
+  // Instant deterministic Seeker Genesis hardware device handle
   const head = base58.slice(0, 4).toLowerCase();
   const tail = base58.slice(-4).toLowerCase();
   return `skr_${head}${tail}.skr`;
@@ -289,11 +266,31 @@ export async function signAndSendSeekerTransaction(
       { shouldFallback: isEndpointFailure }
     );
   } else {
-    await queryRpcWithFallback(
-      network,
-      (c) => c.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed'),
-      { shouldFallback: isEndpointFailure }
-    );
+    try {
+      await queryRpcWithFallback(
+        network,
+        (c) => c.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed'),
+        {
+          shouldFallback: (err) =>
+            isEndpointFailure(err) ||
+            /block height exceeded|expired/i.test(String(err?.message ?? err)),
+        }
+      );
+    } catch (confirmErr: any) {
+      // Check if transaction actually landed despite blockheight expiration warning
+      const statusRes = await queryRpcWithFallback(network, (c) =>
+        c.getSignatureStatus(signature)
+      ).catch(() => null);
+      if (
+        statusRes?.value?.confirmationStatus === 'confirmed' ||
+        statusRes?.value?.confirmationStatus === 'finalized'
+      ) {
+        if (!statusRes.value.err) {
+          return signature;
+        }
+      }
+      throw confirmErr;
+    }
   }
 
   return signature;

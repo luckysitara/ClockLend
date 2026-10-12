@@ -77,6 +77,7 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
   const [showUnstakeModal, setShowUnstakeModal] = useState<boolean>(false);
   const [stakeInput, setStakeInput] = useState<string>('');
   const [unstakeInput, setUnstakeInput] = useState<string>('');
+  const [showDisconnectModal, setShowDisconnectModal] = useState<boolean>(false);
 
   useEffect(() => {
     loadSecurityPrefs();
@@ -602,20 +603,70 @@ export const CreditProfileView: React.FC<CreditProfileViewProps> = ({
       <TouchableOpacity
         style={[styles.disconnectBtn, { borderColor: colors.danger, backgroundColor: colors.card }]}
         onPress={() => {
-          Alert.alert(
-            'Disconnect Wallet',
-            'Are you sure you want to disconnect your Seeker Seed Vault session?',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Disconnect', style: 'destructive', onPress: onDisconnectWallet },
-            ]
-          );
+          try {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          } catch {}
+          setShowDisconnectModal(true);
         }}
         activeOpacity={0.8}
       >
         <Ionicons name="log-out-outline" size={18} color={colors.danger} />
         <Text style={[styles.disconnectBtnText, { color: colors.danger }]}>Disconnect Wallet</Text>
       </TouchableOpacity>
+
+      {/* ── MODAL: DISCONNECT WALLET CONFIRMATION ── */}
+      <Modal
+        visible={showDisconnectModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowDisconnectModal(false)}
+      >
+        <View style={styles.disconnectModalBackdrop}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowDisconnectModal(false)}
+          />
+          <View
+            style={[
+              styles.disconnectModalCard,
+              { backgroundColor: colors.card, borderColor: colors.cardBorder },
+            ]}
+          >
+            <View style={[styles.disconnectIconCircle, { backgroundColor: 'rgba(239, 68, 68, 0.12)' }]}>
+              <Ionicons name="log-out-outline" size={32} color={colors.danger} />
+            </View>
+
+            <Text style={[styles.disconnectModalTitle, { color: colors.text }]}>
+              Disconnect Wallet?
+            </Text>
+            <Text style={[styles.disconnectModalDesc, { color: colors.textSecondary }]}>
+              Are you sure you want to disconnect your Seeker Seed Vault session? You can reconnect anytime.
+            </Text>
+
+            <View style={styles.disconnectModalBtnRow}>
+              <TouchableOpacity
+                style={[styles.disconnectModalCancelBtn, { borderColor: colors.cardBorder, backgroundColor: colors.cardAlt }]}
+                onPress={() => setShowDisconnectModal(false)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.disconnectModalCancelText, { color: colors.text }]}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.disconnectModalConfirmBtn, { backgroundColor: colors.danger }]}
+                onPress={() => {
+                  setShowDisconnectModal(false);
+                  onDisconnectWallet();
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.disconnectModalConfirmText}>Disconnect</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* ══════════════════════════════════════════════════════ */}
       {/* ── MODAL: STAKE SKR ───────────────────────────────── */}
@@ -1420,6 +1471,76 @@ const styles = StyleSheet.create({
   disconnectBtnText: {
     fontSize: 15,
     fontWeight: '800',
+  },
+  disconnectModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  disconnectModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: 'center',
+    alignSelf: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  disconnectIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  disconnectModalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  disconnectModalDesc: {
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  disconnectModalBtnRow: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  disconnectModalCancelBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disconnectModalCancelText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  disconnectModalConfirmBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disconnectModalConfirmText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   // Modal Styles
   modalOverlay: {

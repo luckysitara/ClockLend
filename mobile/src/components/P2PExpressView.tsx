@@ -172,7 +172,8 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
   const skrPrice = prices.skr;
 
   const collateralPrice = collateralType === 'SOL' ? solPrice : skrPrice;
-  const priceAvailable = collateralType === 'SOL' ? usableAssets.sol : usableAssets.skr;
+  const priceAvailable =
+    collateralType === 'SOL' ? usableAssets.sol || solPrice > 0 : usableAssets.skr || skrPrice > 0;
   const userBalance = collateralType === 'SOL' ? solBalance : skrBalance;
 
   const ltv = (bestPool ? bestPool.maxLtvBps : 7000) / 10000;
@@ -279,8 +280,8 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
 
   const getCtaLabel = () => {
     if (isSubmitting) return 'Submitting Transaction...';
-    if (isDiscovering || isLoadingPools) return 'Discovering Desks...';
-    if (numAmount <= 0) return 'Discover Desk';
+    if (isLoadingPools && (!pools || pools.length === 0)) return 'Loading Desks...';
+    if (numAmount <= 0) return 'Enter Loan Amount';
     if (!bestPool) return 'No Desks Available';
     if (hasNoLiquidity) return 'No Liquidity Available';
     if (exceedsLiquidity) return `Exceeds Desk Max ($${poolLiquidity.toLocaleString()})`;
@@ -291,12 +292,8 @@ export const P2PExpressView: React.FC<P2PExpressViewProps> = ({
 
   const handlePrimaryPress = () => {
     if (numAmount <= 0) {
-      setIsDiscovering(true);
-      try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch {}
-      setTimeout(() => {
-        setIsDiscovering(false);
-        setAmountStr('50');
-      }, 1000);
+      setAmountStr('10');
+      try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
       return;
     }
     handleOpenConfirm();

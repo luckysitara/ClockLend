@@ -116,15 +116,10 @@ export const Header: React.FC<HeaderProps> = ({
               { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.28)' },
             ]}
             onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              Alert.alert(
-                'Disconnect Wallet',
-                `Log out of ${skrHandle}?`,
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Disconnect', style: 'destructive', onPress: onDisconnectWallet },
-                ]
-              );
+              try {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              } catch {}
+              onDisconnectWallet();
             }}
             activeOpacity={0.7}
             accessibilityRole="button"
