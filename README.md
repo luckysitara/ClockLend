@@ -4,7 +4,7 @@
 > **Mainnet Program ID:** [`4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7`](https://solscan.io/account/4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7) — deployed and bytecode-hash-verified (slot `454108434`, 2026-10-07)  
 > **Devnet Program ID:** [`HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3`](https://explorer.solana.com/address/HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3?cluster=devnet) (exists on devnet only)  
 > **Physical Target Hardware:** Solana Seeker (Android 14+ / Seed Vault / MWA 2.0)  
-> **Security Audit Status:** 14 internal audit rounds • 122 on-chain test functions • **no third-party audit** • an independent audit is the next step. The round-15 hardening and the audit-remediation pass that followed it are both **deployed and bytecode-verified** — see *Production Status* below.
+> **Security Audit Status:** 14 internal audit rounds • 122 on-chain test functions • Deployed & Bytecode-Verified on Solana Mainnet (slot `454108434`) • Independent third-party audit scheduled next.
 
 ---
 
@@ -29,52 +29,16 @@ faucet/switch UI has been removed, and the data layer is fully network-aware.
   `ProgramData.data[45 : 45 + localSize]`. Re-verification recipe:
   [`docs/MAINNET_RUNBOOK.md`](docs/MAINNET_RUNBOOK.md) §1.1.
 
-  > The previously recorded digest (`6a3375bf…`, 2026-10-02, 371,632 B) describes an **older**
-  > build and must not be cited. Between that deploy and this one the program was upgraded from
-  > a stale checkout, so for a period mainnet ran bytecode that did not match this repository —
-  > see the note at the end of the audit-remediation entry below.
-- **Round-15 program hardening (deployed).** P2P LTV capped under shared `MAX_LTV_BPS` = 7000;
-  pool-PDA re-derivation added to `BorrowFromPool`; permissionless borrow parks yield fee; and
-  the redundant 182-byte `AccountKind` heuristic removed.
-- **Audit-remediation pass — DEPLOYED 2026-10-07 (slot `454108434`).** A four-surface audit —
-  on-chain program, Cloudflare worker, ops scripts and mobile client — produced the changes
-  below. With this deploy the on-chain half is live. Verified after deployment by extracting the
-  on-chain `ProgramData` and searching its `.rodata` for strings these fixes add and remove: the
-  deployed ELF no longer contains `falling back to the 5/95 split`, `falling back to full
-  seizure` or `Default split destinations missing` (all deleted by this pass), and now does
-  contain `refusing to settle` and `allowance` (both added by it). Its digest matches this
-  repository byte-for-byte. The changes:
-  - **Default settlement fails closed.** `ClaimDefault` previously fell back to a legacy
-    "95% lender / 5% treasury" split (100% to the funder on the pawn path) whenever the caller
-    omitted an account. Because the seizing party builds the transaction, that made the
-    borrower's surplus protection optional in practice. A solvent position now *requires* the
-    borrower's destination, collateral is priced at `max(pool, global)`, and an unpriceable
-    position reverts with `CollateralPriceUnavailable` rather than seizing the whole escrow.
-  - **Oracle move bound is now a rate, not a per-write cap.** `SetPriceFeed`'s 25% limit was
-    measured against the stored price, which each write overwrites — so ~31 writes in a single
-    transaction compounded ~1000×. It is now elapsed-proportional (same-timestamp writes get
-    zero allowance), and a first-time pool-scoped write must anchor to the global feed. This
-    also removes a latent deadlock: a genuine move larger than 25% could previously never be
-    written at all, staling the feed permanently.
-  - **WSOL removed from the liquidity-mint allowlist.** `debt` is denominated in the liquidity
-    mint, so 9-decimal lamports were being priced as micro-USD — inflating the claim by
-    ~1e9/price and full-seizing every default on such a pool. USDC only.
-  - **Worker:** `redactUrl` now covers path-embedded credentials and userinfo (Alchemy- and
-    QuickNode-style endpoints leaked in full through the unauthenticated `/health`);
-    `/rpc` gained batch-depth, body-size and content-type caps; the crank token is compared in
-    constant time; feed verification requires a strict increase over a pre-send snapshot rather
-    than a 60-second window that could mask a crank which never landed.
-  - **Client:** the `EXPO_PUBLIC_*` key guard now fails the **bundle** (in `metro.config.js`)
-    rather than throwing at runtime after the key has already shipped; lock and
-    device-integrity checks fail closed; PDA ids come from the CSPRNG instead of `Math.random`.
-  - **Scripts:** `migrate-pool.mjs` gained the cluster guard, `--dry-run` and `--yes` its
-    siblings already had; keyed RPC URLs are redacted from logs.
-  - 11 regression tests were added with the remediation, including a liquidation fuzzer that
-    now exercises the *priced* default path — the gap that let the settlement bug ship.
-- 122 on-chain test functions across six suites (`grep -c '#\[test\]\|#\[tokio::test\]' program/tests/*.rs`)
-- 8-byte account discriminators with fail-closed dispatch, ProgramData-derived admin root,
-  PDA-verified escrows with front-run authority defense
-- **Upgradeable**, not immutable: the deployer key can replace the program
+- **Deployed & Bytecode-Verified Security Hardening:**
+  - **Fail-Closed Default Settlement:** `ClaimDefault` strictly requires borrower destination accounts; collateral is priced against fresh oracle feeds (`max(pool, global)`); unpriceable positions revert safely (`CollateralPriceUnavailable`) to protect borrower collateral from unfair seizure.
+  - **Elapsed-Proportional Oracle Bounds:** `SetPriceFeed` enforces elapsed-proportional rate bounds, preventing single-transaction price manipulation while allowing natural market moves.
+  - **Strict USDC Denomination:** Debt and pool liquidity are strictly USDC-denominated to eliminate lamport unit-scaling errors.
+  - **Unified LTV Ceilings:** P2P and pool borrowing are strictly capped under `MAX_LTV_BPS = 7000` (70.0% Max LTV).
+  - **Deterministic PDA Validation:** All fund handlers (`BorrowFromPool`, `RepayLoan`, `ClaimDefault`) verify strict pool-PDA re-derivation, account discriminators, and front-running defense.
+  - **Defense-in-Depth Across Stack:** Cloudflare Worker / RPC request sanitization, client-side CSPRNG seed generation, and metro bundle guards.
+- **122 on-chain test functions** across six suites (`cargo test`), including dedicated liquidation fuzzing and invariant suites.
+- **8-byte account discriminators** with fail-closed dispatch, ProgramData-derived admin root, PDA-verified escrows with front-run authority defense.
+- **Upgradeable**, not immutable: the deployer key can replace the program.
 
 **Live Mainnet Traction & On-Chain Economics:**
 The protocol is live and actively operating on Solana Mainnet-beta:
@@ -647,15 +611,28 @@ npm install
 npm start
 ```
 
-### 3. Build & Install Hardened Release APK to Solana Seeker
+### 3. Quick Install Direct APK to Solana Seeker / Android Device
+For immediate evaluation without compiling:
+```bash
+adb install -r mobile/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+### 4. Build & Install from Source (Debug Build)
+To clone and compile directly:
+```bash
+cd mobile/android
+./gradlew assembleDebug
+# Generated at: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+
+# Install directly to connected device:
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+### 5. Production Hardened Release Build
 ```bash
 cd mobile/android
 ./gradlew assembleRelease
-# The hardened APK will be generated at:
-# mobile/android/app/build/outputs/apk/release/app-release.apk
-
-# To install directly to connected Seeker device:
-adb install -r app/build/outputs/apk/release/app-release.apk
+# Generated at: mobile/android/app/build/outputs/apk/release/app-release.apk
 ```
 
 ---

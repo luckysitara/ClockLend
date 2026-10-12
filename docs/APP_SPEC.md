@@ -193,7 +193,7 @@ never be liquidated.
 ## 3. Design system
 
 Full token tables, typography scale, spacing, radii, shadows and component conventions
-are in the companion document: **[`docs/APP_UI_INVENTORY.md`](APP_UI_INVENTORY.md) §6**.
+are defined in `mobile/src/theme/ThemeContext.tsx` and the individual components in `mobile/src/components/`.
 Headlines:
 
 - **Two themes**, dark and light, in `src/theme/ThemeContext.tsx`. Dark is the intended
@@ -217,8 +217,7 @@ Headlines:
 
 ## 4. Screens, sections and controls
 
-The complete inventory — every gate, tab, modal, control, state and verbatim string — is in
-**[`docs/APP_UI_INVENTORY.md`](APP_UI_INVENTORY.md)**. Its structure:
+The complete component hierarchy and controls are implemented across `mobile/src/components/` and `mobile/App.tsx`:
 
 | Section | Contents |
 | :--- | :--- |

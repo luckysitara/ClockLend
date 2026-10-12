@@ -404,6 +404,7 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
           </TouchableOpacity>
         </View>
 
+
         {activeOrders.length === 0 ? (
           /* Empty Receipt Doodle (Matches 8febc333 exactly) */
           <View style={styles.emptyReceiptBox}>
@@ -415,45 +416,100 @@ export const HomeDashboardView: React.FC<HomeDashboardViewProps> = ({
             </Text>
           </View>
         ) : (
-          /* Active Loans Summary Rows */
-          activeOrders.slice(0, 3).map((order) => {
-            const inGrace = order.status.toUpperCase().includes('GRACE');
-            return (
-              <TouchableOpacity
-                key={order.id}
-                style={[styles.orderRow, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
-                onPress={onNavigateRepay}
-                activeOpacity={0.7}
-              >
-                <View style={styles.orderLeft}>
-                  <View style={[styles.orderIconBg, { backgroundColor: inGrace ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)' }]}>
-                    <Ionicons
-                      name={inGrace ? 'time' : 'checkmark-circle'}
-                      size={20}
-                      color={inGrace ? '#F59E0B' : '#10B981'}
-                    />
-                  </View>
-                  <View style={styles.orderTextWrap}>
-                    <Text style={[styles.orderPoolName, { color: colors.text }]} numberOfLines={1}>
-                      {order.poolName}
-                    </Text>
-                    <Text style={[styles.orderSub, { color: colors.textMuted }]} numberOfLines={1}>
-                      Collateral: {order.collateralName}
-                    </Text>
-                  </View>
-                </View>
+          /* Loans Activity Summary Rows (Active, Grace, Repaid, Closed) */
+          [...activeOrders]
+            .sort((a, b) => {
+              const aActive =
+                !a.status.toUpperCase().includes('REPAID') &&
+                !a.status.toUpperCase().includes('CLOSED');
+              const bActive =
+                !b.status.toUpperCase().includes('REPAID') &&
+                !b.status.toUpperCase().includes('CLOSED');
+              if (aActive && !bActive) return -1;
+              if (!aActive && bActive) return 1;
+              const aTime = a.repaidAt || a.originationTime || a.id;
+              const bTime = b.repaidAt || b.originationTime || b.id;
+              return bTime - aTime;
+            })
+            .slice(0, 5)
+            .map((order) => {
+              const statusUpper = order.status.toUpperCase();
+              const isRepaid =
+                statusUpper.includes('REPAID') ||
+                statusUpper.includes('COMPLETED') ||
+                statusUpper.includes('CLOSED');
+              const inGrace = statusUpper.includes('GRACE');
+              const isLiquidated =
+                statusUpper.includes('LIQUIDAT') || statusUpper.includes('DEFAULT');
 
-                <View style={styles.orderRight}>
-                  <Text style={[styles.orderAmount, { color: colors.text }]} numberOfLines={1}>
-                    ${order.principalAmount} USDC
-                  </Text>
-                  <Text style={[styles.orderStatus, { color: inGrace ? '#F59E0B' : '#10B981' }]}>
-                    {inGrace ? 'Grace Active' : 'Active'}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })
+              const iconName: any = isRepaid
+                ? 'checkmark-done-circle'
+                : inGrace
+                ? 'time'
+                : isLiquidated
+                ? 'alert-circle'
+                : 'checkmark-circle';
+
+              const statusColor = isRepaid
+                ? colors.primary
+                : inGrace
+                ? '#F59E0B'
+                : isLiquidated
+                ? '#EF4444'
+                : '#10B981';
+
+              const statusBg = isRepaid
+                ? 'rgba(79, 70, 229, 0.15)'
+                : inGrace
+                ? 'rgba(245, 158, 11, 0.15)'
+                : isLiquidated
+                ? 'rgba(239, 68, 68, 0.15)'
+                : 'rgba(16, 185, 129, 0.15)';
+
+              const statusLabel = isRepaid
+                ? 'Repaid'
+                : inGrace
+                ? 'Grace Active'
+                : isLiquidated
+                ? 'Liquidated'
+                : 'Active';
+
+              return (
+                <TouchableOpacity
+                  key={order.id}
+                  style={[styles.orderRow, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+                  onPress={onNavigateRepay}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.orderLeft}>
+                    <View style={[styles.orderIconBg, { backgroundColor: statusBg }]}>
+                      <Ionicons
+                        name={iconName}
+                        size={20}
+                        color={statusColor}
+                      />
+                    </View>
+                    <View style={styles.orderTextWrap}>
+                      <Text style={[styles.orderPoolName, { color: colors.text }]} numberOfLines={1}>
+                        {order.poolName}
+                      </Text>
+                      <Text style={[styles.orderSub, { color: colors.textMuted }]} numberOfLines={1}>
+                        Collateral: {order.collateralName}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.orderRight}>
+                    <Text style={[styles.orderAmount, { color: colors.text }]} numberOfLines={1}>
+                      ${order.principalAmount} USDC
+                    </Text>
+                    <Text style={[styles.orderStatus, { color: statusColor }]}>
+                      {statusLabel}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
         )}
       </View>
 
