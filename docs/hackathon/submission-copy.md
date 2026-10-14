@@ -86,27 +86,24 @@ real borrows, and an on-chain oracle keeper running on a 3-minute cadence.
   - **Direct Non-Indexed ATA Fetching**: Bypasses public RPC indexer rate-limits and HTTP 403 errors by reading raw 64-bit uint LE token balances directly.
   - **Instant Handle Derivation**: Sub-millisecond deterministic profile derivation eliminates blocking RPC calls on launch.
 - **Thoughtful Mobile Design (Seeker-Native)**:
-  - **Thumb-Zone Navigation**: Primary actions (Borrow, Repay, Stake, Disconnect) are positioned comfortably within bottom-accessible thumb zones.
+  - **Thumb-Zone Navigation**: Primary actions (Borrow, Repay, Credit Profile, Disconnect) are positioned comfortably within bottom-accessible thumb zones.
   - **Seed Vault & MWA 2.0**: Native biometrics and hardware-backed key protection without ever exposing seed phrases.
   - **Deep SKR Integration**: Dynamic tier progression bars, APR discount badges, and on-chain credit scoring visualized cleanly on mobile screens.
 
 ## Judging-criteria mapping (for the demo/pitch)
 
-- **Stickiness / PMF**: daily-use loop = stake → discount tier → dividends; borrowers
+- **Stickiness / PMF**: daily-use loop = hold SKR → unlock discount tiers → USDC protocol dividends; borrowers
   return for the grace clock; desk owners return for yield. Addresses the
   ROSCA/chit-fund economy — a real, unmet market.
 - **UX**: one-tap borrow, one-swipe repay, countdown widgets, Seed Vault auth.
-- **Innovation**: social grace instead of instant liquidation; staked SKR keeps
-  earning while locked as collateral; on-chain oracle (not an API) prices every loan.
-- **Presentation**: the deck's storyboard (borrow → clock → repay → stake) mirrors
-  the live app; mainnet tx hashes shown on screen.
+- **Innovation**: social grace instead of instant liquidation; non-custodial wallet-based credit tier discounts; on-chain oracle (not an API) prices every loan.
+- **Presentation**: the deck's storyboard mirrors the live app; mainnet tx hashes shown on screen.
 
 ## SKR prize (separate $10k, optional)
 
-ClockLend is **already** the deepest SKR integration in the field: SKR is a first-class
+ClockLend features an end-to-end native SKR integration: SKR is a first-class
 collateral asset, the discount-tier engine (1%–25%, capped 50% with quests), the
-dividend currency, and a staking hub — all verified on-chain. Include the stake→tier
-sequence from the demo and note it in the submission.
+dividend currency, and refers users directly to official Seed Vault staking — all verified on-chain.
 
 ## ORE matched-prize claim (if shipped — see ore-integration-scope.md)
 
