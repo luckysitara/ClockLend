@@ -31,8 +31,8 @@ ClockLend was architected and built from the ground up as a native mobile dApp f
 ClockLend features a deep, end-to-end native SKR integration:
 
 1. **First-Class Collateral Asset**: Borrowers deposit SKR tokens to take out USDC micro-loans, priced in real-time by a live on-chain Jupiter/CoinGecko oracle feed updated every 3 minutes.
-2. **Dynamic Reputation Bond & Continuous APR Discount (1%–25%, up to 50% with quests)**: Staking SKR locks an on-chain reputation bond that dynamically discounts interest rates across all loans. Staked SKR continues to earn yield while bonded.
-3. **SKR Yield Vault & Dividend Distribution**: Loan origination fees deposit USDC dividends directly into the `SkrYieldVault` PDA (`6tY1CpFg9gr7nXZcgxX8WvBXGgKozd3URXzwFnChQQx4`), allowing SKR stakers to claim passive yield right from their phone.
+2. **Non-Custodial APR Discounts (1%–25%, up to 50% with quests)**: Holding SKR in your wallet or staking via Seed Vault unlocks continuous interest rate discounts across all lending desks. ClockLend reads balances non-custodially to reward holders without taking token custody.
+3. **Official Solana Mobile Staking Referral**: ClockLend does not operate third-party staking; the app guides users directly to official staking in Seed Vault Wallet and at stake.solanamobile.com.
 4. **Seeker Identity & Credit Profile**: Derives `@username.skr` identity, tracks historical on-chain credit scores (capped at 10,000), and records community quest milestones.
 
 ### DECK URL*
