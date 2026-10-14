@@ -4,7 +4,14 @@
 > **Mainnet Program ID:** [`4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7`](https://solscan.io/account/4Dp2A6SHQHEpuoMT4GuzZnnpLcDYrJnpELm1UjuNHgv7) — deployed and bytecode-hash-verified (slot `454108434`, 2026-10-07)  
 > **Devnet Program ID:** [`HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3`](https://explorer.solana.com/address/HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3?cluster=devnet) (exists on devnet only)  
 > **Physical Target Hardware:** Solana Seeker (Android 14+ / Seed Vault / MWA 2.0)  
-> **Security Audit Status:** 14 internal audit rounds • 122 on-chain test functions • Deployed & Bytecode-Verified on Solana Mainnet (slot `454108434`) • Independent third-party audit scheduled next.
+> **Security Audit Status:** 14 internal audit rounds • 122 on-chain test functions • Deployed & Bytecode-Verified on Solana Mainnet (slot `454108434`) • Independent third-party audit scheduled next.  
+> **Direct Production Release APK (v1.0):** [`https://github.com/luckysitara/ClockLend/releases/download/v1.0/clocklend-v1.0.apk`](https://github.com/luckysitara/ClockLend/releases/download/v1.0/clocklend-v1.0.apk)
+
+---
+
+> [!NOTE]
+> **Solana dApp Store Policy Compliance:**  
+> All third-party SKR staking UI, buttons, and escrow actions have been completely removed from the application. ClockLend now awards borrowing discounts non-custodially based on the user's wallet balance, and directs users exclusively to official Solana Mobile staking via Seed Vault and stake.solanamobile.com.
 
 ---
 
@@ -89,7 +96,7 @@ The protocol is live and actively operating on Solana Mainnet-beta:
    - [Borrower Walkthrough (Instant Micro-Loan)](#borrower-walkthrough-instant-micro-loan)
    - [Lender / Merchant Walkthrough (Deploying a Desk)](#lender--merchant-walkthrough-deploying-a-desk)
    - [P2P Pawn Walkthrough (Listing & Funding)](#p2p-pawn-walkthrough-listing--funding)
-   - [SKR Staking Walkthrough (Interest Discounts & Bonds)](#skr-staking-walkthrough-interest-discounts--bonds)
+   - [SKR Credit Tier & Discounts Walkthrough](#skr-credit-tier--discounts-walkthrough)
 6. [Real-World Use Cases & Scenarios](#-real-world-use-cases--scenarios)
 7. [Smart Contract Verification & Test Suite](#-smart-contract-verification--test-suite)
 8. [TARDIS & Solana Ecosystem Synergy](#-tardis--solana-ecosystem-synergy)
@@ -515,12 +522,12 @@ flowchart TD
 
 ---
 
-### SKR Staking Walkthrough (Interest Discounts & Bonds)
+### SKR Credit Tier & Discounts Walkthrough
 1. Open the **"Profile"** tab.
 2. View your current Reputation Score and Tier (Standard, Silver, Gold, Diamond).
-3. Under **"SKR Reputation Bond"**, enter the amount of SKR you wish to stake (e.g., `2,500 SKR`).
-4. Tap **"Stake SKR Bond"** and sign via Seed Vault.
-5. Your discount updates immediately on-chain: it applies to all future loans, sliding from 1% at 100 SKR to 25% at 10,000 SKR, and locks a **flat bond per discount band** (100 / 250 / 500 / 1,000 SKR) while you borrow. **Staking does not change your LTV** — LTV is a property of the pool, set when the pool is created and capped at 7000 bps.
+3. Under **"SKR Credit Tier & Discounts"**, view your automatically derived interest rate discount (1%–25%) based non-custodially on your wallet balance.
+4. For users wishing to participate in validator/device staking, ClockLend includes a direct link to official Solana Mobile staking at `stake.solanamobile.com` and Seed Vault.
+5. Your discount updates immediately: it applies to all loans, sliding from 1% at 100 SKR to 25% at 10,000 SKR. Credit tiers do not change your LTV — LTV is a property of the pool, set when the pool is created and capped at 7000 bps.
 
 ---
 
@@ -642,7 +649,7 @@ cd mobile/android
 | Evaluation Criteria | Weight | How ClockLend Meets & Exceeds |
 | :--- | :---: | :--- |
 | **Mobile-First UX** | 25% | Built natively for Solana Seeker. Features an animated ticking countdown clock, 1-tap Seed Vault MWA signing, biometric app locking, and NFC phone bumping. |
-| **$10,000 SKR Track** | 25% | SKR is the primary collateral asset and the protocol's core reputation engine. Staking SKR grants up to a 25% interest discount, sliding continuously with stake size. It does not change LTV, and staked SKR is never seized — the bond is a lock, not a penalty. |
+| **$10,000 SKR Track** | 25% | SKR is the primary collateral asset and the protocol's core reputation engine. Holding SKR grants up to a 25% interest discount, sliding continuously with balance size non-custodially. Official staking is supported via Seed Vault and stake.solanamobile.com. |
 | **Technical Execution** | 25% | Macro-free native Rust (`solana-program`) smart contract with pure integer math, 122 test functions, deployed and bytecode-hash-verified on Solana Mainnet-beta (program `4Dp2A6…`, sha256 `cac19e08…`, slot `454108434`), plus an Android release build with R8 obfuscation and anti-emulator detection. |
 | **Real-World Impact** | 25% | Addresses the $500B+ informal peer credit market (ROSCAs, community lending, pawnshops) by providing decentralized, transparent, and non-predatory micro-loans on mobile. |
 
