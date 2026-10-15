@@ -47,7 +47,7 @@ ClockLend features a deep, end-to-end native SKR integration:
 
 ### ANDROID APK URL*
 *(Direct download link to your functional APK)*
-`https://github.com/luckysitara/ClockLend/releases/download/v1.0/clocklend-v1.0.apk`
+`https://github.com/luckysitara/ClockLend/releases/download/v1.0/clocklend.apk`
 
 ---
 

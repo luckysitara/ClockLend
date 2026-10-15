@@ -5,7 +5,7 @@
 > **Devnet Program ID:** [`HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3`](https://explorer.solana.com/address/HAjGxuih14imCMaWvCnJQ3nSdWmS8PQKzp74gyAgjsH3?cluster=devnet) (exists on devnet only)  
 > **Physical Target Hardware:** Solana Seeker (Android 14+ / Seed Vault / MWA 2.0)  
 > **Security Audit Status:** 14 internal audit rounds • 122 on-chain test functions • Deployed & Bytecode-Verified on Solana Mainnet (slot `454108434`) • Independent third-party audit scheduled next.  
-> **Direct Production Release APK (v1.0):** [`https://github.com/luckysitara/ClockLend/releases/download/v1.0/clocklend-v1.0.apk`](https://github.com/luckysitara/ClockLend/releases/download/v1.0/clocklend-v1.0.apk)
+> **Direct Production Release APK:** [`https://github.com/luckysitara/ClockLend/releases/download/v1.0/clocklend.apk`](https://github.com/luckysitara/ClockLend/releases/download/v1.0/clocklend.apk)
 
 ---
 
