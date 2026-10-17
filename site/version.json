@@ -1,8 +1,8 @@
 {
-  "minimumVersion": "2.0.0",
-  "minimumBuildNumber": 2,
+  "minimumVersion": "5.0.0",
+  "minimumBuildNumber": 5,
   "latestVersion": "5.0.0",
-  "forceUpdate": false,
+  "forceUpdate": true,
   "dappStoreUrl": "solanadappstore://details?id=com.clocklend.app",
   "marketUrl": "market://details?id=com.clocklend.app",
   "webUrl": "https://clocklend.kikhaus.com",

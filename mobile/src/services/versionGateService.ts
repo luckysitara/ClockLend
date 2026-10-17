@@ -24,9 +24,9 @@ export interface VersionGateResult {
 }
 
 const DEFAULT_CONFIG: VersionConfig = {
-  minimumVersion: '1.0.0',
-  minimumBuildNumber: 1,
-  latestVersion: '1.0.0',
+  minimumVersion: '5.0.0',
+  minimumBuildNumber: 5,
+  latestVersion: '5.0.0',
   forceUpdate: true,
   dappStoreUrl: 'solanadappstore://details?id=com.clocklend.app',
   marketUrl: 'market://details?id=com.clocklend.app',

@@ -746,6 +746,22 @@ export default {
       }
     }
 
+    // Version Control / Remote Gating endpoint
+    if (url.pathname === '/version' || url.pathname === '/version.json') {
+      return json({
+        minimumVersion: '5.0.0',
+        minimumBuildNumber: 5,
+        latestVersion: '5.0.0',
+        forceUpdate: true,
+        dappStoreUrl: 'solanadappstore://details?id=com.clocklend.app',
+        marketUrl: 'market://details?id=com.clocklend.app',
+        webUrl: 'https://clocklend.kikhaus.com',
+        title: 'Update Required',
+        message:
+          'A newer version of ClockLend is available on the Solana dApp Store. Please update your app to continue using the protocol.',
+      });
+    }
+
     // Health / Status endpoint
     if (url.pathname === '/' || url.pathname === '/health' || url.pathname === '/status') {
       try {
