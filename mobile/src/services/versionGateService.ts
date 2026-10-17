@@ -73,8 +73,8 @@ export function isVersionOutdated(installed: string, required: string): boolean 
  * Fetch remote version policy and check against device's installed version.
  */
 export async function checkAppVersion(): Promise<VersionGateResult> {
-  const installedVersion = Application.nativeApplicationVersion || '4.0.0';
-  const installedBuild = parseInt(Application.nativeBuildVersion || '4', 10);
+  const installedVersion = Application.nativeApplicationVersion || '5.0.0';
+  const installedBuild = parseInt(Application.nativeBuildVersion || '5', 10);
 
   let remoteConfig: VersionConfig = { ...DEFAULT_CONFIG };
 
